@@ -94,6 +94,10 @@ type ItemResult struct {
 	SkippedReason string
 	Action        string // "moved" / "would-move" / "skipped"
 	Err           error
+	// AutoAdded is true when lookupOrAdd auto-fetched the recording from
+	// Encora (i.e. it was not previously present in the local DB). Used by
+	// history-event recording to phrase the summary correctly.
+	AutoAdded bool
 }
 
 // Result aggregates per-item outcomes.
@@ -145,12 +149,15 @@ func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemRe
 	item := ItemResult{Source: src}
 
 	if !e.resolveID(src, opts, &item) {
+		e.recordIngestEvent(ctx, opts, &item)
 		return item
 	}
 	if !e.lookupRecording(ctx, opts, &item) {
+		e.recordIngestEvent(ctx, opts, &item)
 		return item
 	}
 	if !e.buildPlan(src, &item) {
+		e.recordIngestEvent(ctx, opts, &item)
 		return item
 	}
 	if opts.DryRun {
@@ -158,6 +165,7 @@ func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemRe
 		return item
 	}
 	e.applyPlan(ctx, &item)
+	e.recordIngestEvent(ctx, opts, &item)
 	return item
 }
 
@@ -187,7 +195,7 @@ func (e *Engine) resolveID(src string, opts Options, item *ItemResult) bool {
 }
 
 func (e *Engine) lookupRecording(ctx context.Context, opts Options, item *ItemResult) bool {
-	recording, err := e.lookupOrAdd(ctx, item.EncoraID, opts)
+	recording, autoAdded, err := e.lookupOrAdd(ctx, item.EncoraID, opts)
 	if err != nil {
 		item.Err = err
 		item.SkippedReason = err.Error()
@@ -195,6 +203,7 @@ func (e *Engine) lookupRecording(ctx context.Context, opts Options, item *ItemRe
 		return false
 	}
 	item.Recording = recording
+	item.AutoAdded = autoAdded
 	return true
 }
 
@@ -289,6 +298,93 @@ func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
 	}
 }
 
+// recordIngestEvent persists a single history row summarizing the
+// outcome of an ingestOne pipeline run. Best-effort: a DB write failure
+// is logged at warn level but does not fail the ingest, since history
+// is observability — not the source of truth.
+//
+// Skips recording entirely for:
+//   - Dry-run invocations (no real action took place).
+//   - "no encora id" skips, which are noisy false starts during a
+//     directory walk (a scan of a tree typically encounters a lot of
+//     un-ID'd files; persisting one row per such file would drown the
+//     audit trail).
+func (e *Engine) recordIngestEvent(ctx context.Context, opts Options, item *ItemResult) {
+	if opts.DryRun {
+		return
+	}
+	if item.Action == ActionSkipped && item.SkippedReason == "no encora id" {
+		return
+	}
+
+	event := storage.HistoryEvent{
+		Kind:    storage.HistoryKindIngest,
+		Summary: ingestEventSummary(item),
+		Details: ingestEventDetails(item),
+	}
+	if item.EncoraID > 0 {
+		id := item.EncoraID
+		event.RecordingID = &id
+	}
+
+	if _, err := storage.RecordEvent(ctx, e.DB, event); err != nil {
+		e.Logger.Warn().Err(err).
+			Int64("encora_id", item.EncoraID).
+			Str("action", item.Action).
+			Msg("failed to record history event")
+	}
+}
+
+// ingestEventSummary builds the one-line human-readable description of
+// what happened to the item.
+func ingestEventSummary(item *ItemResult) string {
+	switch item.Action {
+	case ActionMoved:
+		if item.AutoAdded && item.Recording != nil {
+			return fmt.Sprintf("Auto-fetched and orphaned %s", item.Recording.Show)
+		}
+		if item.Plan != nil {
+			return fmt.Sprintf("Moved %s -> %s", item.Source, item.Plan.AbsoluteFile())
+		}
+		return fmt.Sprintf("Moved %s", item.Source)
+	case ActionSkipped:
+		if item.SkippedReason != "" {
+			return fmt.Sprintf("Skipped %s: %s", item.Source, item.SkippedReason)
+		}
+		return fmt.Sprintf("Skipped %s", item.Source)
+	default:
+		return fmt.Sprintf("%s %s", item.Action, item.Source)
+	}
+}
+
+// ingestEventDetails builds the structured details map persisted as
+// JSON alongside the history event. Keys are stable so future readers
+// can rely on them.
+func ingestEventDetails(item *ItemResult) map[string]any {
+	details := map[string]any{
+		"action":         item.Action,
+		"source":         item.Source,
+		"encora_id":      item.EncoraID,
+		"subtitle_count": len(item.SubtitlePaths),
+	}
+	if item.Plan != nil {
+		details["dest"] = item.Plan.AbsoluteFile()
+	}
+	if item.NFOPath != "" {
+		details["nfo_path"] = item.NFOPath
+	}
+	if item.Err != nil {
+		details["error"] = item.Err.Error()
+	}
+	if item.AutoAdded {
+		details["auto_added"] = true
+	}
+	if item.ResolvedFrom != "" {
+		details["resolved_from"] = string(item.ResolvedFrom)
+	}
+	return details
+}
+
 // lookupOrAdd reads from the local DB; if missing it auto-fetches the
 // recording via /recording/{id} from Encora and persists it as an orphan
 // (no collection / wants membership). If opts.AddToCollection is set, it
@@ -296,38 +392,40 @@ func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
 // — that flag now ONLY governs the optional Encora write, not whether the
 // auto-fetch runs.
 //
-// Returns a clear error when Encora itself doesn't know the id (404).
+// The returned bool is true when the recording was freshly auto-fetched
+// from Encora (i.e. was not previously cached locally). Returns a clear
+// error when Encora itself doesn't know the id (404).
 func (e *Engine) lookupOrAdd(
 	ctx context.Context,
 	id int64,
 	opts Options,
-) (*encora.Recording, error) {
+) (*encora.Recording, bool, error) {
 	loaded, err := storage.LoadRecording(ctx, e.DB, id)
 	if err == nil {
-		return &loaded.Recording, nil
+		return &loaded.Recording, false, nil
 	}
 	if !errors.Is(err, storage.ErrRecordingNotFound) {
-		return nil, fmt.Errorf("load recording: %w", err)
+		return nil, false, fmt.Errorf("load recording: %w", err)
 	}
 
 	recording, _, fetchErr := e.Client.Recording(ctx, id)
 	if errors.Is(fetchErr, encora.ErrNotFound) {
-		return nil, fmt.Errorf("recording %d doesn't exist in Encora", id)
+		return nil, false, fmt.Errorf("recording %d doesn't exist in Encora", id)
 	}
 	if fetchErr != nil {
-		return nil, fmt.Errorf("fetch recording %d: %w", id, fetchErr)
+		return nil, false, fmt.Errorf("fetch recording %d: %w", id, fetchErr)
 	}
 
 	if perr := syncpkg.PersistRecording(ctx, e.DB, recording, time.Now); perr != nil {
-		return nil, fmt.Errorf("persist recording %d: %w", id, perr)
+		return nil, false, fmt.Errorf("persist recording %d: %w", id, perr)
 	}
 
 	if opts.AddToCollection {
 		if _, addErr := e.Client.AddToCollection(ctx, id); addErr != nil {
-			return nil, fmt.Errorf("add to collection: %w", addErr)
+			return nil, false, fmt.Errorf("add to collection: %w", addErr)
 		}
 	}
-	return &recording, nil
+	return &recording, true, nil
 }
 
 // plannedSubtitlePaths is what *would* be written without actually
