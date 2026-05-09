@@ -22,6 +22,8 @@ import Sync from './components/Sync.js';
 import Recording from './components/Recording.js';
 import Queue from './components/Queue.js';
 import History from './components/History.js';
+import People from './components/People.js';
+import Person from './components/Person.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -64,8 +66,8 @@ if (!root) {
     '/wants':           wrap(Wants),
     '/sync':            wrap(Sync),
     '/queue':           wrap(Queue),
-    '/people':          wrap(stubPage('People')),
-    '/people/:id':      wrap(stubPage('Person detail')),
+    '/people':          wrap(People),
+    '/people/:id':      wrap(Person),
     '/history':         wrap(History),
     '/mismatches':      wrap(stubPage('Mismatches')),
     '/apply':           wrap(stubPage('Apply')),
