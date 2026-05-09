@@ -112,6 +112,20 @@ export const state = {
     results: null,        // null until first apply; array thereafter.
     applyError: null,
   },
+  // jobs powers the /jobs page. scheduled mirrors
+  // /api/v1/jobs/scheduled; queue mirrors /api/v1/jobs/queue. timer
+  // holds the setInterval handle so onremove can cancel polling on
+  // route change. triggering tracks per-row "Run now" buttons that
+  // are mid-POST so a re-render doesn't lose the disabled state.
+  jobs: {
+    scheduled: [],
+    queue: [],
+    loading: true,
+    error: null,
+    timer: null,
+    triggering: {},
+    triggerError: null,
+  },
   // settings holds the parsed /api/v1/settings payload. Read-only —
   // the page is documentation, not a control panel.
   settings: {

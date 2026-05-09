@@ -65,6 +65,7 @@ const NAV_GROUPS = [
   {
     label: 'System',
     items: [
+      { href: '/jobs', name: 'Jobs', match: (p) => p === '/jobs' },
       { href: '/settings', name: 'Settings', match: (p) => p === '/settings' },
     ],
   },
