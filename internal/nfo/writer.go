@@ -9,6 +9,8 @@
 package nfo
 
 import (
+	"context"
+	"database/sql"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -19,7 +21,9 @@ import (
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/rename"
+	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // isoYearLen is the prefix-length of year on Encora's ISO date strings.
@@ -34,6 +38,8 @@ type MovieNFO struct {
 	OriginalTitle string     `xml:"originaltitle,omitempty"`
 	Year          string     `xml:"year,omitempty"`
 	Premiered     string     `xml:"premiered,omitempty"`
+	Thumbs        []Thumb    `xml:"thumb,omitempty"`
+	Fanart        *Fanart    `xml:"fanart,omitempty"`
 	Plot          string     `xml:"plot,omitempty"`
 	Set           *MovieSet  `xml:"set,omitempty"`
 	Tags          []string   `xml:"tag,omitempty"`
@@ -42,6 +48,21 @@ type MovieNFO struct {
 	UniqueIDs     []UniqueID `xml:"uniqueid"`
 	Studios       []string   `xml:"studio,omitempty"`
 	FileInfo      *FileInfo  `xml:"fileinfo,omitempty"`
+}
+
+// Thumb is a single <thumb> hint that points Jellyfin/Plex at a local
+// image file. The Aspect attr distinguishes poster from other thumbs;
+// path is relative to the NFO's directory and uses forward slashes.
+type Thumb struct {
+	Aspect string `xml:"aspect,attr,omitempty"`
+	Path   string `xml:",chardata"`
+}
+
+// Fanart wraps one or more <thumb> children to convey backdrop hints.
+// Jellyfin expects fanart references nested under <fanart>, separate
+// from the top-level poster <thumb>.
+type Fanart struct {
+	Thumbs []Thumb `xml:"thumb"`
 }
 
 // MovieSet groups related recordings (one show, many tours/dates) so
@@ -266,4 +287,147 @@ func WriteFile(folder string, nfo MovieNFO) (string, error) {
 // path in scope.
 func MovieNFOPathForPlan(p rename.Plan) string {
 	return filepath.Join(p.AbsoluteFolder(), "movie.nfo")
+}
+
+// renderedBackdropName is the filename the imagerender package writes
+// when it produces a playbill-style burned-in backdrop. When present in
+// the same backdrop directory as the raw screen-grabs, it takes
+// precedence — Jellyfin/Plex pull the rendered version into their own
+// metadata cache and we never want them showing the un-overlaid grab.
+const renderedBackdropName = "rendered.jpg"
+
+// WriteOptions carries the optional plumbing the writer needs to emit
+// local image references in the NFO. Both DB and Cache are optional;
+// when either is nil or the cache is disabled, the writer skips image
+// resolution and the NFO simply omits the <thumb> / <fanart> elements.
+type WriteOptions struct {
+	// DB is queried for the user's image_choice row. nil disables image
+	// references regardless of Cache state.
+	DB *sql.DB
+	// Cache is the on-disk image cache. nil or Cache.Disabled() == true
+	// disables image references.
+	Cache *imagecache.Cache
+}
+
+// WriteRecordingFile renders the NFO for rec into folder, including
+// local poster / fanart references when opts has a usable DB + Cache.
+// Returns the absolute path to the written movie.nfo.
+//
+// Image-reference resolution is best-effort: any error from the image
+// choice lookup is swallowed silently so a transient DB hiccup never
+// blocks an otherwise-successful ingest. The caller's logger picks up
+// the missing references on the next manual inspection.
+func WriteRecordingFile(
+	ctx context.Context,
+	folder string,
+	rec encora.Recording,
+	opts WriteOptions,
+) (string, error) {
+	model := FromRecording(rec)
+	posterRel, fanartRel := resolveLocalImagePaths(ctx, opts.DB, opts.Cache, rec, folder)
+	if posterRel != "" {
+		model.Thumbs = append(model.Thumbs, Thumb{Aspect: "poster", Path: posterRel})
+	}
+	if fanartRel != "" {
+		model.Fanart = &Fanart{Thumbs: []Thumb{{Path: fanartRel}}}
+	}
+	return WriteFile(folder, model)
+}
+
+// resolveLocalImagePaths returns NFO-relative paths to the poster and
+// fanart images on disk, or empty strings when imaging is disabled or
+// the file is missing. Both paths use forward slashes regardless of
+// host OS — the Jellyfin/Plex convention. The fanart path prefers a
+// rendered.jpg sibling (the imagerender output with the playbill-style
+// overlay burned in) over the raw selected screen-grab.
+//
+// Returns (poster, fanart). Either can be empty independently.
+func resolveLocalImagePaths(
+	ctx context.Context,
+	db *sql.DB,
+	cache *imagecache.Cache,
+	rec encora.Recording,
+	nfoDir string,
+) (string, string) {
+	if cache == nil || cache.Disabled() || db == nil {
+		return "", ""
+	}
+	choice, err := storage.GetImageChoice(ctx, db, rec.ID)
+	if err != nil {
+		// Best-effort: a DB read failure isn't worth failing the NFO
+		// over. Caller still gets a valid NFO without image hints.
+		return "", ""
+	}
+
+	return relPosterPath(cache, rec, choice, nfoDir), relFanartPath(cache, rec, choice, nfoDir)
+}
+
+// relPosterPath returns the NFO-relative path to the user's selected
+// poster, or "" when the file isn't on disk.
+func relPosterPath(
+	cache *imagecache.Cache,
+	rec encora.Recording,
+	choice storage.ImageChoice,
+	nfoDir string,
+) string {
+	idx := choice.ResolvePoster()
+	if !cache.HasPoster(rec.Metadata.ShowID, idx) {
+		return ""
+	}
+	abs := cache.PosterPath(rec.Metadata.ShowID, idx)
+	return relForNFO(nfoDir, abs)
+}
+
+// relFanartPath returns the NFO-relative path to the fanart, preferring
+// a rendered.jpg sibling when present. Returns "" when neither the
+// rendered nor the raw selected backdrop is on disk.
+func relFanartPath(
+	cache *imagecache.Cache,
+	rec encora.Recording,
+	choice storage.ImageChoice,
+	nfoDir string,
+) string {
+	idx := choice.ResolveBackdrop()
+	rawAbs := cache.BackdropPath(rec.ID, idx)
+	if rawAbs == "" {
+		return ""
+	}
+	// rendered.jpg lives in the same directory as the raw indexed
+	// backdrops. When the renderer has produced one, we point Jellyfin
+	// at it instead — the playbill-style overlay is the whole point of
+	// the rendered output.
+	renderedAbs := filepath.Join(filepath.Dir(rawAbs), renderedBackdropName)
+	if fileExists(renderedAbs) {
+		return relForNFO(nfoDir, renderedAbs)
+	}
+	if cache.HasBackdrop(rec.ID, idx) {
+		return relForNFO(nfoDir, rawAbs)
+	}
+	return ""
+}
+
+// relForNFO converts an absolute on-disk path into a path relative to
+// nfoDir, normalized to forward slashes. Returns "" when the relative
+// computation fails (different volumes on Windows, etc.) — better to
+// omit the element than emit a broken reference.
+func relForNFO(nfoDir, abs string) string {
+	rel, err := filepath.Rel(nfoDir, abs)
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+// fileExists is a small helper around os.Stat used by the rendered.jpg
+// precedence check. Mirrors imagecache.fileExists but kept package-local
+// to avoid widening that package's public surface.
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }

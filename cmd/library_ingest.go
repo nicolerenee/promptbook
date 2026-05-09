@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -88,6 +89,15 @@ func runLibraryIngest(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Optional image cache: when library.imageRoot is configured, the
+	// NFO writer will emit <thumb> / <fanart> hints pointing at cached
+	// posters/backdrops. Empty root yields a nil cache and the writer
+	// quietly omits those elements.
+	var imgCache *imagecache.Cache
+	if appConfig.Library.ImageRoot != "" {
+		imgCache = imagecache.New(appConfig.Library.ImageRoot, nil, log.Logger)
+	}
+
 	engine := &ingest.Engine{
 		DB:             db,
 		Client:         client,
@@ -99,6 +109,7 @@ func runLibraryIngest(cmd *cobra.Command, args []string) error {
 		},
 		InteractiveReader: os.Stdin,
 		Logger:            log.Logger,
+		ImageCache:        imgCache,
 	}
 
 	res, err := engine.Ingest(ctx, src, ingest.Options{

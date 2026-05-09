@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -59,6 +60,12 @@ type Engine struct {
 	SubtitleFetcher   SubtitleFetcher
 	InteractiveReader io.Reader
 	Logger            zerolog.Logger
+	// ImageCache is the optional on-disk poster/backdrop cache. When
+	// configured, the NFO writer emits <thumb> / <fanart> hints pointing
+	// at the locally-cached files. nil (or a Disabled cache) leaves
+	// those elements omitted — Jellyfin/Plex fall back to upstream
+	// scrapes.
+	ImageCache *imagecache.Cache
 }
 
 // Options tunes a single Ingest invocation.
@@ -253,7 +260,12 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 		item.SubtitlePaths = paths
 	}
 
-	nfoPath, nfoErr := nfo.WriteFile(item.Plan.AbsoluteFolder(), nfo.FromRecording(*item.Recording))
+	nfoPath, nfoErr := nfo.WriteRecordingFile(
+		ctx,
+		item.Plan.AbsoluteFolder(),
+		*item.Recording,
+		nfo.WriteOptions{DB: e.DB, Cache: e.ImageCache},
+	)
 	if nfoErr != nil {
 		item.Err = nfoErr
 		return

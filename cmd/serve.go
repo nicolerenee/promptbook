@@ -137,7 +137,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		log.Info().Msg("image cache disabled (library.imageRoot not configured)")
 	}
 
-	ingestOpt := buildIngestEngine(db, encClient)
+	ingestOpt := buildIngestEngine(db, encClient, imgCache)
 	runner := buildJobRunner(ctx, db, encClient)
 
 	srv, err := server.New(server.Options{
@@ -181,7 +181,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 // client and a library root are configured. Returns nil otherwise so
 // the queue-import handler 503s instead of failing requests at run
 // time.
-func buildIngestEngine(db *sql.DB, encClient *encora.Client) server.IngestRunner {
+func buildIngestEngine(
+	db *sql.DB, encClient *encora.Client, imgCache *imagecache.Cache,
+) server.IngestRunner {
 	if encClient == nil || appConfig.Library.Root == "" {
 		log.Info().Msg("queue import disabled (encora api key or library.root missing)")
 		return nil
@@ -195,7 +197,8 @@ func buildIngestEngine(db *sql.DB, encClient *encora.Client) server.IngestRunner
 		SubtitleFetcher: &ingest.HTTPSubtitleFetcher{
 			HTTP: &http.Client{Timeout: serveSubtitleHTTPTimeout},
 		},
-		Logger: log.Logger,
+		Logger:     log.Logger,
+		ImageCache: imgCache,
 	}
 }
 

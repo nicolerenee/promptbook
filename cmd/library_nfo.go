@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -49,6 +50,15 @@ func runLibraryNFO(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
+	// Build an image cache view when library.imageRoot is configured so
+	// the regenerated NFOs reference the locally-cached posters /
+	// backdrops. Empty root yields a disabled cache and the writer
+	// quietly omits the image elements.
+	var imgCache *imagecache.Cache
+	if appConfig.Library.ImageRoot != "" {
+		imgCache = imagecache.New(appConfig.Library.ImageRoot, nil, log.Logger)
+	}
+
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -80,7 +90,12 @@ func runLibraryNFO(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		written, writeErr := nfo.WriteFile(path, nfo.FromRecording(loaded.Recording))
+		written, writeErr := nfo.WriteRecordingFile(
+			ctx,
+			path,
+			loaded.Recording,
+			nfo.WriteOptions{DB: db, Cache: imgCache},
+		)
 		if writeErr != nil {
 			return fmt.Errorf("write nfo for %s: %w", path, writeErr)
 		}
