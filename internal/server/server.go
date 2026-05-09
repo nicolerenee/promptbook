@@ -21,6 +21,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/config"
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
 )
@@ -70,6 +71,10 @@ type Server struct {
 	// the queue-import handler 503s in that case so other endpoints stay
 	// usable.
 	ingestEngine IngestRunner
+	// jobRunner powers /api/v1/jobs/*. nil when the server was
+	// constructed without one (tests or jobs disabled); each handler
+	// returns 503 in that case so the rest of the API stays alive.
+	jobRunner *jobs.Runner
 	// sleeper is the function the apply batch driver uses to honor a
 	// 429's Retry-After before issuing the next request. Defaults to
 	// time.Sleep; tests inject a recorder to assert the call without
@@ -116,6 +121,10 @@ type Options struct {
 	// satisfying IngestRunner; production wiring passes a real
 	// *ingest.Engine.
 	IngestEngine IngestRunner
+	// JobRunner is optional. When nil, /api/v1/jobs/* responds 503.
+	// Production wiring passes a *jobs.Runner the cmd layer started
+	// alongside the HTTP server.
+	JobRunner *jobs.Runner
 	// Sleeper is optional. When nil, time.Sleep is used. Tests inject a
 	// recorder that captures the requested duration without sleeping
 	// for real, so the Retry-After honor logic stays exercisable under
@@ -175,6 +184,7 @@ func New(opts Options) (*Server, error) {
 		encora:            opts.Encora,
 		encoraDestructive: opts.EncoraDestructive,
 		ingestEngine:      opts.IngestEngine,
+		jobRunner:         opts.JobRunner,
 		sleeper:           sleeper,
 		version:           version,
 		config:            opts.Config,

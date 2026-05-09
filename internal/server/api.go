@@ -101,6 +101,12 @@ func (s *Server) routes() {
 	api.POST("/encora/wants/:id/remove", s.handleRemoveFromWants)
 	api.POST("/encora/wants/:id/add", s.handleAddToWants)
 
+	// Scheduled-jobs API. The Mithril /jobs page polls these every
+	// 5s; the runner returns 503 when not wired (tests + no-config).
+	api.GET("/jobs/scheduled", s.handleListScheduledJobs)
+	api.GET("/jobs/queue", s.handleListJobQueue)
+	api.POST("/jobs/scheduled/:name/run", s.handleRunJob)
+
 	// SPA catch-all. Echo prefers more-specific matches, so /api/v1/*
 	// (registered above) and /static/* (registered in server.New) win
 	// over this for their respective prefixes. Every other GET — `/`,
