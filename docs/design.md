@@ -3,7 +3,7 @@
 Originally written 2026-05-07 while paused on Encora API access. Status block
 below tracks what has changed since.
 
-## Status (2026-05-08)
+## Status (2026-05-09)
 
 - ✅ **Phase 0 — API recon done.** Encora API key arrived; key lives in 1P
   at `op://kube-shared/encora-api/credential`. Findings written up at
@@ -12,11 +12,28 @@ below tracks what has changed since.
 - ✅ **Phase 1 — Repo bootstrap done.** Project landed in its own repo
   (`github.com/nicolerenee/promptbook`) as a Go binary with cobra subcommands,
   viper config, modernc.org/sqlite + goose migrations, zerolog logging.
-  Stub subcommands return ErrNotImplemented; storage opens cleanly.
-- 🚧 **Phase 2 — `promptbook sync`.** Next up. Pulls /collection + /wants
-  into SQLite. With 28 owned + 14 wanted recordings on this user's account,
-  one paginated call each suffices.
-- ⏳ Phases 3–7 (rename → nfo → serve → deploy → Jellyfin library) follow.
+- ✅ **Phase 2 — `promptbook collection sync`.** /collection + /wants
+  paginate into SQLite via fixture-tested logic; rate-limit honoured with
+  bail-out + sync_runs row. Schema in `00002_recordings.sql`.
+- ✅ **Phase 3 — Noun-verb CLI restructure.** Old `sync`/`rename`/`nfo`
+  flat commands replaced with `collection sync`/`collection show ID`,
+  `library ingest|scan|rename|nfo`, plus `serve`.
+- ✅ **Phase 4 — `library ingest` + rename/nfo packages.** Resolves the
+  encora id from flag/sidecar/filename/folder, builds a canonical name
+  from configurable templates, moves the file (with cross-device
+  fallback), downloads subtitles when present, writes Jellyfin
+  movie.nfo. End-to-end fixture-backed tests against an in-memory SQLite.
+- ✅ **Phase 5 — `promptbook serve` (basic).** Echo HTTP server bound
+  loopback-only by default. JSON `/api/v1/*` for recordings, wants,
+  sync runs, health. HTML pages for the collection grid, recording
+  detail, wants, sync log. JWT/OIDC auth deferred to Phase 5b.
+- ⏳ **Phase 5b — JWT/OIDC.** Wire freckle.id JWKS validation onto
+  `/api/v1/*` and gate non-localhost listens behind it.
+- ⏳ **Phase 6 — Atlantis deploy.** HelmRelease in `nicolerenee/infra`
+  under `kubernetes/apps/media-tools/promptbook/`. HTTPRoute on the
+  public envoy with OIDC SecurityPolicy at `promptbook.freckle.media`.
+- ⏳ **Phase 7 — Add `/store01/Performances/` as a Jellyfin library**
+  and verify NFOs read cleanly without TMDB.
 
 ### Architectural pivots since the original write-up
 

@@ -19,35 +19,34 @@ definitions or sync logic.
 Phases done:
 
 - ✅ Phase 0 — Encora API recon (docs/encora-api.md)
-- ✅ Phase 1 — Repo bootstrap (this commit)
+- ✅ Phase 1 — Repo bootstrap
+- ✅ Phase 2 — `collection sync`: paginated /collection + /wants into
+  SQLite, rate-limit honored, fixture-tested via httptest. Real schema
+  in `00002_recordings.sql`.
+- ✅ Phase 3 — Noun-verb CLI restructure (collection.{sync,show},
+  library.{ingest,scan,rename,nfo}, serve).
+- ✅ Phase 4 — `library ingest` workflow + rename + nfo packages.
+  Resolver chain (flag/sidecar/filename/folder/interactive), template
+  engine with smart partial-date, Plan/Apply mover with cross-device
+  fallback, Jellyfin movie.nfo writer with golden test, subtitle
+  fetcher behind an interface.
+- ✅ Phase 5 — `promptbook serve` (basic). Echo HTTP, JSON `/api/v1/*`,
+  HTML pages via embedded html/template + Pico CSS. Loopback-only by
+  default; JWT/OIDC arrives in Phase 5b.
 
 Phases queued (in order):
 
-- Phase 2 — `promptbook sync`: pull /collection + /wants into SQLite. Real
-  schema lands here, replacing the placeholder migration. Honor 30-req/min
-  rate limit via the `X-RateLimit-Remaining` header on every response.
-- Phase 3 — `promptbook rename <path> [--encora-id N] [--dry-run]`:
-  configurable folder/file templates with token substitution. Accept encora
-  ID from `--flag`, `.encora-id` sidecar, or filename patterns
-  (`[encora-N]`, `{e-N}`, `[e-N]`). v1 is explicit-id only; auto-match
-  against the synced collection comes in v2.
-- Phase 4 — `promptbook nfo <path> [--dry-run]`: walk renamed tree, regex
-  encora-id from folder name, fetch detail from local DB, write Jellyfin
-  movie.nfo. Cast `<actor><thumb>` URLs come from StageMedia.me (separate
-  API key) in v2.
-- Phase 5 — `promptbook serve`: echo HTTP, html/template pages, JWT auth
-  via OIDC freckle.id JWKS on /api/v1/*. Admin pages for custom poster /
-  headshot overrides. Background sync goroutine.
+- Phase 5b — JWT/OIDC on /api/v1/* via freckle.id JWKS. Admin pages for
+  custom poster / headshot overrides.
 - Phase 6 — Deploy to atlantis cluster under
-  `kubernetes/apps/media-tools/promptbook/` (in the
-  `nicolerenee/infra` repo). HTTPRoute on public envoy with OIDC
-  SecurityPolicy at `promptbook.freckle.media`.
-- Phase 7 — Add `/store01/Performances/` as a Jellyfin library and verify
-  NFO metadata picks up cleanly.
+  `kubernetes/apps/media-tools/promptbook/` (in `nicolerenee/infra`).
+  HTTPRoute on public envoy with OIDC SecurityPolicy at
+  `promptbook.freckle.media`.
+- Phase 7 — Add `/store01/Performances/` as a Jellyfin library and
+  verify NFO metadata reads cleanly.
 
-`docs/design.md` has the full architectural detail and the original design
-rationale. The "Status (2026-05-08)" block at the top reflects what's
-current.
+`docs/design.md` has the full architectural detail. The "Status
+(2026-05-09)" block at the top reflects what's current.
 
 ## Stack
 
@@ -62,17 +61,29 @@ current.
 
 ```text
 main.go                  one-line entry point
-cmd/                     cobra subcommands (root, sync, rename, nfo, serve)
+cmd/                     cobra subcommands
+  root.go                root command + viper config + logging setup
+  collection.go          parent for collection.* verbs
+  collection_sync.go     `promptbook collection sync`
+  collection_show.go     `promptbook collection show ID`
+  library.go             parent for library.* verbs
+  library_ingest.go      `promptbook library ingest SRC`
+  library_scan.go        `promptbook library scan PATH`
+  library_rename.go      `promptbook library rename PATH`
+  library_nfo.go         `promptbook library nfo PATH`
+  serve.go               `promptbook serve`
+  testing.go             RunForTest helper (not for production code)
 internal/
   config/                viper-backed Config struct
-  encora/                Encora API client + types
-  storage/               sqlite open + embedded goose migrations
-    migrations/          *.sql migration files
-  sync/                  collection/wants → DB sync logic (planned)
-  rename/                template tokens, path planner, mover (planned)
-  nfo/                   movie.nfo writer (planned)
-  server/                echo server + JWT middleware (planned)
-  web/                   html/template + static assets (planned)
+  encora/                Encora API client + types + httptest fixtures
+  storage/               sqlite open + LoadRecording + ParseRecordingID
+    migrations/          *.sql migration files (00001 init, 00002 real schema)
+  sync/                  collection/wants → DB sync (rate-limit aware)
+  rename/                parser + template engine + planner + mover
+  nfo/                   Jellyfin movie.nfo writer + golden testdata
+  ingest/                full ingest orchestration + subtitle downloader
+  server/                echo server + handlers (api.go, pages.go)
+  web/                   html/template + static assets (embedded)
 build/                   build output
 ```
 
@@ -126,7 +137,10 @@ checking the rate-limit budget.
 ```bash
 export PROMPTBOOK_ENCORA_APIKEY="$(op read 'op://kube-shared/encora-api/credential')"
 task build
-./build/promptbook --log-pretty sync
+./build/promptbook --log-pretty collection sync
+./build/promptbook --log-pretty library scan ~/incoming
+./build/promptbook --log-pretty library ingest ~/incoming --dry-run
+./build/promptbook --log-pretty serve   # http://127.0.0.1:8080
 ```
 
 ## Git
