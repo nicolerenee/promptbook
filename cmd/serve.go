@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/server"
+	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -35,7 +36,22 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	srv, err := server.New(server.Options{DB: db, Logger: log.Logger})
+	var smClient *stagemedia.Client
+	if appConfig.Stagemedia.APIKey != "" {
+		smClient, err = stagemedia.New(stagemedia.Options{
+			BaseURL:   appConfig.Stagemedia.BaseURL,
+			APIKey:    appConfig.Stagemedia.APIKey,
+			UserAgent: appConfig.Stagemedia.UserAgent,
+			Logger:    log.Logger,
+		})
+		if err != nil {
+			return fmt.Errorf("build stagemedia client: %w", err)
+		}
+	} else {
+		log.Info().Msg("stagemedia disabled (no api key configured)")
+	}
+
+	srv, err := server.New(server.Options{DB: db, Logger: log.Logger, Stagemedia: smClient})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
