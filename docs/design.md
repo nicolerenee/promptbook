@@ -1,6 +1,50 @@
 # Promptbook Catalog + Performances Library Cleanup — Plan
 
-Written 2026-05-07. Paused waiting on Encora API access (support ticket open).
+Originally written 2026-05-07 while paused on Encora API access. Status block
+below tracks what has changed since.
+
+## Status (2026-05-08)
+
+- ✅ **Phase 0 — API recon done.** Encora API key arrived; key lives in 1P
+  at `op://kube-shared/encora-api/credential`. Findings written up at
+  `docs/encora-api.md`. Real-API JSON fixtures saved at
+  `internal/encora/testdata/` for unit-test shaping.
+- ✅ **Phase 1 — Repo bootstrap done.** Project landed in its own repo
+  (`github.com/nicolerenee/promptbook`) as a Go binary with cobra subcommands,
+  viper config, modernc.org/sqlite + goose migrations, zerolog logging.
+  Stub subcommands return ErrNotImplemented; storage opens cleanly.
+- 🚧 **Phase 2 — `promptbook sync`.** Next up. Pulls /collection + /wants
+  into SQLite. With 28 owned + 14 wanted recordings on this user's account,
+  one paginated call each suffices.
+- ⏳ Phases 3–7 (rename → nfo → serve → deploy → Jellyfin library) follow.
+
+### Architectural pivots since the original write-up
+
+- **Language**: Python sync script + nginx static site → single Go binary
+  (cobra subcommands + echo for `serve`). Driven by user preference for Go.
+- **Naming**: project was originally going to be called "slimes". Renamed
+  to "promptbook" before publishing — "slime tutorial" is YouTube-bootleg
+  culture, opposite of Encora's NFT/trader culture. See
+  `feedback_naming_carries_baggage.md` in the infra repo memory for context.
+- **API mirror**: original plan had slimes serve a wire-compatible mirror of
+  the encora API at `/api/*` so Python scripts could swap base URLs. With
+  rename/nfo as Go subcommands of the same binary that share the storage
+  layer, the API mirror requirement softens — the web `/api/v1/*` surface
+  becomes promptbook-native rather than encora-shaped.
+- **Per-record detail calls**: Phase 0 recon proved
+  `collection.data[i].recording` is byte-identical to `/recording/{id}`.
+  Sync no longer needs per-record fan-out for the hot path.
+
+The sections below are the original design — folder scheme, sync semantics,
+poster fallback chain, etc. Treat them as the canonical reference for
+*what* we're building. The *how* has shifted in places (e.g. nginx → echo,
+Python → Go) but most decisions stand.
+
+---
+
+## What this is (original)
+
+Originally written 2026-05-07. Paused waiting on Encora API access (support ticket open).
 
 ## What this is
 

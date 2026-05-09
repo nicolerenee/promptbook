@@ -14,6 +14,41 @@ The design doc lives at `docs/design.md`. Phase 0 API recon findings are at
 at `internal/encora/testdata/` — useful when adding tests for the type
 definitions or sync logic.
 
+## Roadmap
+
+Phases done:
+
+- ✅ Phase 0 — Encora API recon (docs/encora-api.md)
+- ✅ Phase 1 — Repo bootstrap (this commit)
+
+Phases queued (in order):
+
+- Phase 2 — `promptbook sync`: pull /collection + /wants into SQLite. Real
+  schema lands here, replacing the placeholder migration. Honor 30-req/min
+  rate limit via the `X-RateLimit-Remaining` header on every response.
+- Phase 3 — `promptbook rename <path> [--encora-id N] [--dry-run]`:
+  configurable folder/file templates with token substitution. Accept encora
+  ID from `--flag`, `.encora-id` sidecar, or filename patterns
+  (`[encora-N]`, `{e-N}`, `[e-N]`). v1 is explicit-id only; auto-match
+  against the synced collection comes in v2.
+- Phase 4 — `promptbook nfo <path> [--dry-run]`: walk renamed tree, regex
+  encora-id from folder name, fetch detail from local DB, write Jellyfin
+  movie.nfo. Cast `<actor><thumb>` URLs come from StageMedia.me (separate
+  API key) in v2.
+- Phase 5 — `promptbook serve`: echo HTTP, html/template pages, JWT auth
+  via OIDC freckle.id JWKS on /api/v1/*. Admin pages for custom poster /
+  headshot overrides. Background sync goroutine.
+- Phase 6 — Deploy to atlantis cluster under
+  `kubernetes/apps/media-tools/promptbook/` (in the
+  `nicolerenee/infra` repo). HTTPRoute on public envoy with OIDC
+  SecurityPolicy at `promptbook.freckle.media`.
+- Phase 7 — Add `/store01/Performances/` as a Jellyfin library and verify
+  NFO metadata picks up cleanly.
+
+`docs/design.md` has the full architectural detail and the original design
+rationale. The "Status (2026-05-08)" block at the top reflects what's
+current.
+
 ## Stack
 
 - Go 1.25, modules under `github.com/nicolerenee/promptbook`
