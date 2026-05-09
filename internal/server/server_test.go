@@ -2012,7 +2012,6 @@ func TestAPIRecordingByIDNFOMissing(t *testing.T) {
 	assert.Nil(t, body.NFOModifiedAt)
 }
 
-
 // fixtureBackedServerExposingDB returns the same fixture-seeded server
 // as fixtureBackedServer, plus the underlying *sql.DB so callers can
 // seed extra rows (e.g. recording_versions pointing at a temp dir).
