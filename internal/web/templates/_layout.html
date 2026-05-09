@@ -1,31 +1,28 @@
-{{define "_layout.html"}}
-<!doctype html>
-<html lang="en">
+{{define "_layout.html"}}<!doctype html>
+<html lang="en" data-theme="light" data-density="cozy">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — promptbook</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/theme.js" defer></script>
+  <script src="/static/api.js" defer></script>
+  {{block "head" .}}{{end}}
 </head>
 <body>
-  <nav class="container">
-    <ul>
-      <li><strong><a href="/">promptbook</a></strong></li>
-    </ul>
-    <ul>
-      <li><a href="/">Recordings</a></li>
-      <li><a href="/wants">Wants</a></li>
-      <li><a href="/people">People</a></li>
-      <li><a href="/queue">Queue</a></li>
-      <li><a href="/sync">Sync</a></li>
-      <li><a href="/history">History</a></li>
-      <li><a href="/mismatches">Mismatches</a></li>
-    </ul>
-  </nav>
-  <main class="container">
-    {{template "body" .}}
+<div class="pb-app">
+  {{template "_sidebar.html" .}}
+  <main class="pb-main">
+    {{template "_topbar.html" .}}
+    <div class="pb-page">
+      {{template "body" .}}
+    </div>
   </main>
+</div>
 </body>
 </html>
 {{end}}
