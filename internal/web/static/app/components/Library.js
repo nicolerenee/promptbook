@@ -47,7 +47,11 @@ const SORT_COLUMNS = [
     compare: (a, b) => cmpStr(a.status, b.status) },
   { key: 'recording',    label: 'Recording',
     compare: (a, b) => {
+      // Primary: show name. Within a show, sort chronologically so
+      // multiple Halcyon Crossing recordings group naturally and read in
+      // performance order. Tour + id tiebreak when dates collide.
       let c = cmpStr(a.show, b.show); if (c) return c;
+      c = cmpStr(a.date_full, b.date_full); if (c) return c;
       c = cmpStr(a.tour, b.tour); if (c) return c;
       return cmpNum(a.id, b.id);
     } },
@@ -59,7 +63,10 @@ const SORT_COLUMNS = [
     compare: (a, b) => cmpEmptyLast(a.local_format, b.local_format) },
 ];
 
-const DEFAULT_SORT = { key: 'date', dir: 'desc' };
+// Default sort: by recording (show name + date asc within show). Reads
+// like a phone-book grouped by show, with each show's recordings in
+// chronological order.
+const DEFAULT_SORT = { key: 'recording', dir: 'asc' };
 
 function cmpStr(a, b) {
   const sa = a == null ? '' : String(a).toLowerCase();
