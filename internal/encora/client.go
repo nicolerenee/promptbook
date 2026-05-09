@@ -85,6 +85,10 @@ type RateLimitInfo struct {
 	Limit     int
 	Remaining int
 	Reset     time.Time
+	// RetryAfter is parsed from the Retry-After header on 429 responses.
+	// Encora documents this as integer seconds; the HTTP-date form is not
+	// honored. Zero when the header is absent or malformed.
+	RetryAfter time.Duration
 }
 
 // Profile returns the authenticated user's Encora profile.
@@ -153,6 +157,43 @@ func (c *Client) Subtitles(ctx context.Context, id int64) ([]Subtitle, RateLimit
 // --add-to-collection against a mock client.
 func (c *Client) AddToCollection(ctx context.Context, id int64) (RateLimitInfo, error) {
 	return c.do(ctx, http.MethodPost, fmt.Sprintf("collection/%d/collect", id), nil)
+}
+
+// UpdateCollectionFormat POSTs to /collection/{id}/format/{format}. The
+// format string is URL-PathEscape'd because it lives in the path, not in
+// the query string. The pre-escaped path is fed through doAbsolute so the
+// already-encoded percent triplets survive into the wire request.
+func (c *Client) UpdateCollectionFormat(
+	ctx context.Context, id int64, format string,
+) (RateLimitInfo, error) {
+	u := *c.baseURL
+	u.Path = fmt.Sprintf("/api/collection/%d/format/", id)
+	return c.doAbsolute(ctx, http.MethodPost, u.String()+url.PathEscape(format), nil)
+}
+
+// UpdateCollectionNotes POSTs to /collection/{id}/notes/{notes}. The notes
+// string is URL-PathEscape'd because it lives in the path.
+func (c *Client) UpdateCollectionNotes(
+	ctx context.Context, id int64, notes string,
+) (RateLimitInfo, error) {
+	u := *c.baseURL
+	u.Path = fmt.Sprintf("/api/collection/%d/notes/", id)
+	return c.doAbsolute(ctx, http.MethodPost, u.String()+url.PathEscape(notes), nil)
+}
+
+// RemoveFromCollection POSTs to /collection/{id}/remove.
+func (c *Client) RemoveFromCollection(ctx context.Context, id int64) (RateLimitInfo, error) {
+	return c.do(ctx, http.MethodPost, fmt.Sprintf("collection/%d/remove", id), nil)
+}
+
+// AddToWants POSTs to /wants/{id}/add.
+func (c *Client) AddToWants(ctx context.Context, id int64) (RateLimitInfo, error) {
+	return c.do(ctx, http.MethodPost, fmt.Sprintf("wants/%d/add", id), nil)
+}
+
+// RemoveFromWants POSTs to /wants/{id}/remove.
+func (c *Client) RemoveFromWants(ctx context.Context, id int64) (RateLimitInfo, error) {
+	return c.do(ctx, http.MethodPost, fmt.Sprintf("wants/%d/remove", id), nil)
 }
 
 // do executes a request and decodes a JSON body. The path is relative to
@@ -234,6 +275,14 @@ func parseRateLimit(h http.Header) RateLimitInfo {
 	if v := h.Get("X-Ratelimit-Reset"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			rl.Reset = time.Unix(n, 0)
+		}
+	}
+	if v := h.Get("Retry-After"); v != "" {
+		// RFC 7231 allows HTTP-date or delta-seconds; Encora docs only
+		// emit integer seconds, so handle the integer form. Malformed or
+		// HTTP-date values leave RetryAfter at zero.
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			rl.RetryAfter = time.Duration(n) * time.Second
 		}
 	}
 	return rl
