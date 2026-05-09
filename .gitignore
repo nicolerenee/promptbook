@@ -26,6 +26,9 @@ go.work.sum
 # Build output
 build/
 
+# Taskfile cache
+.task/
+
 # Local config
 config.yaml
 .promptbook.yaml
