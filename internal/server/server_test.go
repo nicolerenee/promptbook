@@ -393,6 +393,127 @@ func TestAPIRecordingsStatusFilter(t *testing.T) {
 	}
 }
 
+func TestAPIQueueEmpty(t *testing.T) {
+	t.Parallel()
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/queue", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(t, body.Items)
+}
+
+func TestAPIQueueLists(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	suggested := int64(90100222)
+	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
+		FilePath:            "/incoming/marigold.mkv",
+		FileSizeBytes:       1024,
+		SuggestedConfidence: storage.ConfidenceLow,
+		Notes:               "no match",
+	})
+	require.NoError(t, err)
+	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FileSizeBytes:        2048,
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/queue", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Len(t, body.Items, 2)
+
+	paths := make(map[string]bool, len(body.Items))
+	for _, item := range body.Items {
+		if p, ok := item["file_path"].(string); ok {
+			paths[p] = true
+		}
+	}
+	assert.True(t, paths["/incoming/marigold.mkv"])
+	assert.True(t, paths["/incoming/greenwich-beacon.mkv"])
+}
+
+func TestPagesQueueEmpty(t *testing.T) {
+	t.Parallel()
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/queue", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "No files in the manual import queue")
+}
+
+func TestPagesQueueLists(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
+		FilePath:            "/incoming/cresthaven.mkv",
+		FileSizeBytes:       4096,
+		SuggestedConfidence: storage.ConfidenceMedium,
+	})
+	require.NoError(t, err)
+	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
+		FilePath:            "/incoming/cats.mkv",
+		FileSizeBytes:       8192,
+		SuggestedConfidence: storage.ConfidenceLow,
+	})
+	require.NoError(t, err)
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/queue", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	body := rr.Body.String()
+	assert.Contains(t, body, "/incoming/cresthaven.mkv")
+	assert.Contains(t, body, "/incoming/cats.mkv")
+}
+
 func TestPagesHomeStatusFilter(t *testing.T) {
 	t.Parallel()
 
