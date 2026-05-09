@@ -50,3 +50,21 @@ export function humanSize(b) {
   if (n >= KiB) return (n / KiB).toFixed(2) + ' KB';
   return n + ' B';
 }
+
+// errorMessage extracts a human-readable string from a fetch failure
+// produced by api.js. The api wrapper attaches the response body to
+// .body — usually a JSON {message: "..."} from echo's NewHTTPError,
+// occasionally a plain string. Falls back to .message and finally
+// to String(err) so callers always get something to show.
+export function errorMessage(err) {
+  if (!err) return 'unknown error';
+  if (err.body) {
+    try {
+      const parsed = JSON.parse(err.body);
+      if (parsed && parsed.message) return String(parsed.message);
+      if (parsed && parsed.error) return String(parsed.error);
+    } catch (_) { /* not JSON; fall through. */ }
+    if (typeof err.body === 'string' && err.body.length < 240) return err.body;
+  }
+  return err.message || String(err);
+}

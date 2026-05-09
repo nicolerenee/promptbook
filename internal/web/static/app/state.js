@@ -17,6 +17,26 @@ export const state = {
     loading: true,
     error: null,
   },
+  // queue mirrors the legacy /static/queue.js view-model. items holds
+  // the current /api/v1/queue rows; importing tracks per-row buttons
+  // disabled while a POST is in flight so a re-render doesn't lose
+  // the "Importing…" affordance.
+  queue: {
+    items: [],
+    loading: true,
+    error: null,
+    importing: {},        // {[queueID]: true} while a POST is mid-flight.
+  },
+  // history mirrors the legacy /static/history.js view-model. kind is
+  // the active filter tab; recordingID, when set, scopes the list to
+  // a single recording's audit trail (driven by ?recording_id=).
+  history: {
+    items: [],
+    kind: '',             // '' = All; otherwise lowercase HistoryKind* token.
+    recordingID: null,
+    loading: true,
+    error: null,
+  },
   // theme tracks the active DaisyUI theme name. Persisted to
   // localStorage by the toggle in Topbar so a refresh keeps the
   // preference.
