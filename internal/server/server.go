@@ -222,11 +222,13 @@ func New(opts Options) (*Server, error) {
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
 	// Serve cached images straight off disk when caching is on. The
 	// /images/* route is registered alongside /static/* so the SPA
-	// catch-all (registered in routes()) can't swallow it.
+	// catch-all (registered in routes()) can't swallow it. On a cache
+	// miss imagesHandler renders an SVG placeholder rather than 404 —
+	// keeps the UI from showing broken-image icons when a refresh job
+	// hasn't fired yet (or never will, for entities without an
+	// upstream image).
 	if opts.ImageCache != nil && !opts.ImageCache.Disabled() {
-		srv.echo.GET("/images/*", echo.WrapHandler(http.StripPrefix(
-			"/images/", http.FileServer(http.Dir(opts.ImageCache.Root)),
-		)))
+		srv.echo.GET("/images/*", srv.imagesHandler)
 	}
 	return srv, nil
 }
