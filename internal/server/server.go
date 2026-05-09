@@ -19,9 +19,24 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
 )
+
+// IngestRunner is the slice of *ingest.Engine the server needs to run a
+// single-file ingest from the manual import queue. Surfaced as an
+// interface so tests can substitute a stub without spinning up the full
+// engine (which would require a real Encora client + library config).
+// The real *ingest.Engine satisfies this interface.
+type IngestRunner interface {
+	Ingest(ctx context.Context, src string, opts ingest.Options) (*ingest.Result, error)
+}
+
+// Compile-time guard that *ingest.Engine satisfies IngestRunner so
+// production wiring (cmd/serve.go) can pass the real engine on
+// Options.IngestEngine without an adapter.
+var _ IngestRunner = (*ingest.Engine)(nil)
 
 // HTTP server timing. ReadHeaderTimeout defends against slowloris-style
 // stalls without disrupting normal browser usage. shutdownTimeout caps
@@ -49,6 +64,11 @@ type Server struct {
 	stagemedia        StagemediaImageClient
 	encora            EncoraWriteClient
 	encoraDestructive EncoraDestructiveClient
+	// ingestEngine drives `POST /api/v1/queue/{id}/import`. nil when the
+	// server was constructed without one (tests or no-encora-key wiring);
+	// the queue-import handler 503s in that case so other endpoints stay
+	// usable.
+	ingestEngine IngestRunner
 	// sleeper is the function the apply batch driver uses to honor a
 	// 429's Retry-After before issuing the next request. Defaults to
 	// time.Sleep; tests inject a recorder to assert the call without
@@ -80,6 +100,12 @@ type Options struct {
 	// split so the apply pipeline can never reach the remove/add-wants
 	// methods by accident.
 	EncoraDestructive EncoraDestructiveClient
+	// IngestEngine is optional. When nil, POST /api/v1/queue/{id}/import
+	// responds 503 so read-only queue views still work without ingest
+	// wiring (e.g. when no library.root is configured). Tests pass a stub
+	// satisfying IngestRunner; production wiring passes a real
+	// *ingest.Engine.
+	IngestEngine IngestRunner
 	// Sleeper is optional. When nil, time.Sleep is used. Tests inject a
 	// recorder that captures the requested duration without sleeping
 	// for real, so the Retry-After honor logic stays exercisable under
@@ -125,6 +151,7 @@ func New(opts Options) (*Server, error) {
 		stagemedia:        opts.Stagemedia,
 		encora:            opts.Encora,
 		encoraDestructive: opts.EncoraDestructive,
+		ingestEngine:      opts.IngestEngine,
 		sleeper:           sleeper,
 		version:           version,
 	}

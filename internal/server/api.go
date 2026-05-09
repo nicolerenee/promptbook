@@ -84,6 +84,7 @@ func (s *Server) routes() {
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
 	api.GET("/queue", s.handleListQueue)
+	api.POST("/queue/:id/import", s.handleImportQueue)
 	api.GET("/people", s.handleListPeople)
 	api.GET("/people/:id", s.handleGetPerson)
 	api.GET("/history", s.handleListHistory)

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -2049,4 +2051,195 @@ func fixtureBackedServerExposingDB(t *testing.T) (*server.Server, *gosql.DB) {
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
 	return srv, db
+}
+
+// stubIngestRunner records the (src, opts) tuple of every Ingest call
+// and returns a scripted ingest.Result. Used by the queue-import tests
+// so we can exercise the handler without spinning up the real engine
+// (which would require a live Encora client + library config).
+type stubIngestRunner struct {
+	mu    sync.Mutex
+	calls []stubIngestCall
+	// nextResult, when non-nil, is returned verbatim from the next
+	// Ingest call. Defaults to a single moved item with the canonical
+	// dest path baked in.
+	nextResult *ingest.Result
+	// nextErr, when non-nil, is returned as the engine-level error.
+	nextErr error
+}
+
+type stubIngestCall struct {
+	Src  string
+	Opts ingest.Options
+}
+
+func (s *stubIngestRunner) Ingest(_ context.Context, src string, opts ingest.Options) (*ingest.Result, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, stubIngestCall{Src: src, Opts: opts})
+	if s.nextErr != nil {
+		return nil, s.nextErr
+	}
+	if s.nextResult != nil {
+		return s.nextResult, nil
+	}
+	// Default: report a successful move with no plan attached. The
+	// handler tolerates a nil Plan (dest stays empty in the response),
+	// which is fine for tests that only assert the success path.
+	return &ingest.Result{
+		Items: []ingest.ItemResult{{
+			Source:   src,
+			EncoraID: int64(opts.FlagEncoraID),
+			Action:   ingest.ActionMoved,
+		}},
+	}, nil
+}
+
+// queueImportTestServer wires a fresh DB + stub ingest runner into a
+// server and returns both. Mirrors applyTestServer for the queue-import
+// path. Pass a nil runner to simulate the not-configured wiring.
+func queueImportTestServer(t *testing.T, runner server.IngestRunner) (*server.Server, *gosql.DB) {
+	t.Helper()
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srv, err := server.New(server.Options{DB: db, IngestEngine: runner})
+	require.NoError(t, err)
+	return srv, db
+}
+
+func TestAPIImportQueueSuccess(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	suggested := int64(90100222)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FileSizeBytes:        2048,
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	url := "/api/v1/queue/" + strconv.FormatInt(queueID, 10) + "/import"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, url, nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		OK     bool   `json:"ok"`
+		Action string `json:"action"`
+		Error  string `json:"error"`
+		Dest   string `json:"dest"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.True(t, resp.OK)
+	assert.Equal(t, ingest.ActionMoved, resp.Action)
+
+	// Engine called with the suggested id, source = entry.FilePath.
+	require.Len(t, stub.calls, 1)
+	assert.Equal(t, "/incoming/greenwich-beacon.mkv", stub.calls[0].Src)
+	assert.Equal(t, int(suggested), stub.calls[0].Opts.FlagEncoraID)
+
+	// Queue entry removed on success.
+	_, err = storage.LoadQueueEntry(t.Context(), db, queueID)
+	require.ErrorIs(t, err, storage.ErrQueueEntryNotFound)
+
+	// History event recorded with kind=manual_import + recording_id.
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindManualImport},
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, storage.HistoryKindManualImport, events[0].Kind)
+	require.NotNil(t, events[0].RecordingID)
+	assert.Equal(t, suggested, *events[0].RecordingID)
+}
+
+func TestAPIImportQueueNotFound(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubIngestRunner{}
+	srv, _ := queueImportTestServer(t, stub)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/queue/9999/import", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
+	assert.Empty(t, stub.calls, "engine must not run when the queue entry is missing")
+}
+
+func TestAPIImportQueueEngineNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	srv, db := queueImportTestServer(t, nil)
+
+	suggested := int64(90100222)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	url := "/api/v1/queue/" + strconv.FormatInt(queueID, 10) + "/import"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, url, nil)
+	srv.Handler().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code, rr.Body.String())
+}
+
+func TestAPIImportQueueExplicitID(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	suggested := int64(1111)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceLow,
+	})
+	require.NoError(t, err)
+
+	body, err := json.Marshal(map[string]any{"recording_id": 9999})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	url := "/api/v1/queue/" + strconv.FormatInt(queueID, 10) + "/import"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, url,
+		strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	require.Len(t, stub.calls, 1)
+	assert.Equal(t, 9999, stub.calls[0].Opts.FlagEncoraID,
+		"explicit recording_id must override the suggested id")
+}
+
+func TestAPIImportQueueMissingSuggestion(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:            "/incoming/unknown.mkv",
+		SuggestedConfidence: storage.ConfidenceLow,
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	url := "/api/v1/queue/" + strconv.FormatInt(queueID, 10) + "/import"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, url, nil)
+	srv.Handler().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	assert.Empty(t, stub.calls, "engine must not run when no recording id is available")
 }

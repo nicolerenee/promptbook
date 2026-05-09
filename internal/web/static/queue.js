@@ -1,10 +1,11 @@
 // queue.js — fetches /api/v1/queue and renders the manual import queue.
 //
 // API gap notes:
-//   - The Match / Resolve buttons are cosmetic for v1; there's no
-//     POST /api/v1/queue/{id}/import endpoint yet, so they're no-ops
-//     with a "(coming soon)" tooltip.
-//   - The design's "● ingesting" pulse + inline progress bar is also
+//   - The Match button POSTs to /api/v1/queue/{id}/import for high-
+//     confidence rows. The Resolve… button is still cosmetic — picking
+//     a recording from a different shape (search/autocomplete) is a
+//     future UX flow.
+//   - The design's "● ingesting" pulse + inline progress bar is
 //     dropped — promptbook doesn't track in-flight ingest state for
 //     queue rows. A future SSE or polling endpoint would let us add
 //     it back.
@@ -138,10 +139,17 @@
       var pathCell = '<span class="pb-cell-mono" title="' + path + '" ' +
         'style="display:inline-block;max-width:480px;overflow:hidden;text-overflow:ellipsis;' +
         'white-space:nowrap;vertical-align:middle">' + path + '</span>';
-      var actionBtn = it.suggested_confidence === 'high' ?
-        '<button class="pb-btn pb-btn-primary" type="button" title="(coming soon)" disabled>Match</button>' :
-        '<button class="pb-btn" type="button" title="(coming soon)" disabled>Resolve…</button>';
-      html += '<tr>' +
+      var actionBtn;
+      if (it.suggested_confidence === 'high' && it.suggested_recording_id) {
+        actionBtn = '<button class="pb-btn pb-btn-primary" type="button" ' +
+          'data-queue-import="' + it.id + '" ' +
+          'data-queue-path="' + escapeHTML(it.file_path || '') + '" ' +
+          'data-queue-suggested="' + it.suggested_recording_id + '">Match</button>';
+      } else {
+        actionBtn = '<button class="pb-btn" type="button" ' +
+          'title="(coming soon)" disabled>Resolve…</button>';
+      }
+      html += '<tr data-queue-row="' + it.id + '">' +
         '<td><input type="checkbox" class="pb-checkbox" disabled title="(coming soon)"></td>' +
         '<td class="pb-cell-mono">' + escapeHTML(relativeTime(it.discovered_at)) + '</td>' +
         '<td>' + confBadge + '</td>' +
@@ -164,6 +172,64 @@
       escapeHTML(err && err.message ? err.message : String(err)) + '</div>';
   }
 
+  // errorMessage extracts a human-readable message from a fetch failure.
+  // PB.api errors carry the response body on .body — usually a JSON
+  // {message: "..."} from echo's NewHTTPError, occasionally a plain
+  // string. Fall back to the synthetic .message if neither is useful.
+  function errorMessage(err) {
+    if (!err) return 'unknown error';
+    if (err.body) {
+      try {
+        var parsed = JSON.parse(err.body);
+        if (parsed && parsed.message) return String(parsed.message);
+        if (parsed && parsed.error) return String(parsed.error);
+      } catch (_) { /* not JSON; fall through */ }
+      if (typeof err.body === 'string' && err.body.length < 240) return err.body;
+    }
+    return err.message || String(err);
+  }
+
+  function handleImportClick(btn) {
+    var queueID = btn.getAttribute('data-queue-import');
+    var path = btn.getAttribute('data-queue-path') || '';
+    var suggested = btn.getAttribute('data-queue-suggested') || '';
+    if (!queueID) return;
+    var msg = 'Import ' + path + ' as recording enc-' + suggested + '?';
+    if (!window.confirm(msg)) return;
+
+    btn.setAttribute('disabled', 'disabled');
+    btn.textContent = 'Importing…';
+
+    window.PB.api.post('/queue/' + encodeURIComponent(queueID) + '/import', {})
+      .then(function (resp) {
+        if (resp && resp.ok) {
+          var row = document.querySelector('[data-queue-row="' + queueID + '"]');
+          if (row && row.parentNode) row.parentNode.removeChild(row);
+          return;
+        }
+        btn.removeAttribute('disabled');
+        btn.textContent = 'Match';
+        window.alert('Import failed: ' + ((resp && resp.error) || 'unknown error'));
+      })
+      .catch(function (err) {
+        btn.removeAttribute('disabled');
+        btn.textContent = 'Match';
+        window.alert('Import failed: ' + errorMessage(err));
+      });
+  }
+
+  function bindImportButtons(root) {
+    root.addEventListener('click', function (ev) {
+      var btn = ev.target;
+      while (btn && btn !== root && !btn.hasAttribute('data-queue-import')) {
+        btn = btn.parentNode;
+      }
+      if (!btn || btn === root) return;
+      ev.preventDefault();
+      handleImportClick(btn);
+    });
+  }
+
   function init() {
     var root = document.getElementById('page-root');
     if (!root || root.getAttribute('data-page') !== 'queue') return;
@@ -177,6 +243,7 @@
         renderHeader(items);
         renderMetrics(root, items);
         renderTable(root, items);
+        bindImportButtons(root);
       })
       .catch(function (err) { renderError(root, err); });
   }
