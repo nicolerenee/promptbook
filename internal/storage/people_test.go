@@ -1,0 +1,205 @@
+package storage_test
+
+import (
+	"context"
+	"database/sql"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/brianvoe/gofakeit/v7"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/nicolerenee/promptbook/internal/storage"
+)
+
+func TestUpsertAndLoadPerformer(t *testing.T) {
+	t.Parallel()
+
+	gofakeit.Seed(0)
+	ctx := t.Context()
+	db := openTestDB(ctx, t)
+
+	want := storage.Performer{
+		PerformerID: gofakeit.Int64(),
+		Name:        gofakeit.Name(),
+		Slug:        gofakeit.LetterN(8),
+		URL:         gofakeit.URL(),
+		LastSeenAt:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	require.NoError(t, storage.UpsertPerformer(ctx, db, want))
+
+	got, err := storage.LoadPerformer(ctx, db, want.PerformerID)
+	require.NoError(t, err)
+	assert.Equal(t, want.PerformerID, got.PerformerID)
+	assert.Equal(t, want.Name, got.Name)
+	assert.Equal(t, want.Slug, got.Slug)
+	assert.Equal(t, want.URL, got.URL)
+	assert.WithinDuration(t, want.LastSeenAt, got.LastSeenAt, time.Second)
+}
+
+func TestUpsertPerformerOverwrites(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := openTestDB(ctx, t)
+
+	const id int64 = 90004242
+	first := storage.Performer{
+		PerformerID: id,
+		Name:        "Delilah Sant",
+		Slug:        "idina-menzel",
+		URL:         "https://encora.example/p/idina-menzel",
+		LastSeenAt:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	second := storage.Performer{
+		PerformerID: id,
+		Name:        "Delilah Sant (Tony winner)",
+		Slug:        "idina-menzel-v2",
+		URL:         "https://encora.example/p/idina-menzel-v2",
+		LastSeenAt:  time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC),
+	}
+
+	require.NoError(t, storage.UpsertPerformer(ctx, db, first))
+	require.NoError(t, storage.UpsertPerformer(ctx, db, second))
+
+	got, err := storage.LoadPerformer(ctx, db, id)
+	require.NoError(t, err)
+	assert.Equal(t, second.Name, got.Name)
+	assert.Equal(t, second.Slug, got.Slug)
+	assert.Equal(t, second.URL, got.URL)
+	assert.WithinDuration(t, second.LastSeenAt, got.LastSeenAt, time.Second)
+}
+
+func TestLoadPerformerNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := openTestDB(ctx, t)
+
+	_, err := storage.LoadPerformer(ctx, db, 99999999)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, storage.ErrPerformerNotFound)
+}
+
+func TestUpsertAndLoadCharacter(t *testing.T) {
+	t.Parallel()
+
+	gofakeit.Seed(0)
+	ctx := t.Context()
+	db := openTestDB(ctx, t)
+
+	want := storage.Character{
+		CharacterID: gofakeit.Int64(),
+		Name:        gofakeit.Name(),
+		Slug:        gofakeit.LetterN(8),
+		URL:         gofakeit.URL(),
+		LastSeenAt:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	require.NoError(t, storage.UpsertCharacter(ctx, db, want))
+
+	got, err := storage.LoadCharacter(ctx, db, want.CharacterID)
+	require.NoError(t, err)
+	assert.Equal(t, want.CharacterID, got.CharacterID)
+	assert.Equal(t, want.Name, got.Name)
+	assert.Equal(t, want.Slug, got.Slug)
+	assert.Equal(t, want.URL, got.URL)
+	assert.WithinDuration(t, want.LastSeenAt, got.LastSeenAt, time.Second)
+}
+
+func TestLoadCharacterNotFound(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := openTestDB(ctx, t)
+
+	_, err := storage.LoadCharacter(ctx, db, 99999999)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, storage.ErrCharacterNotFound)
+}
+
+func TestListRecordingsForPerformer(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db := openTestDB(ctx, t)
+
+	const (
+		showID         int64 = 1
+		recordingIDOne int64 = 1001
+		recordingIDTwo int64 = 1002
+		performerID    int64 = 7777
+		characterID    int64 = 8888
+	)
+
+	seedShow(ctx, t, db, showID, "Greenwich Beacon")
+	seedRecording(ctx, t, db, recordingIDOne, showID)
+	seedRecording(ctx, t, db, recordingIDTwo, showID)
+
+	// Three cast_entries: one in each recording, plus a duplicate in
+	// recording one, so DISTINCT collapses to two ids.
+	seedCastEntry(ctx, t, db, recordingIDOne, performerID, characterID, 0)
+	seedCastEntry(ctx, t, db, recordingIDOne, performerID, characterID, 1)
+	seedCastEntry(ctx, t, db, recordingIDTwo, performerID, characterID, 0)
+
+	ids, err := storage.ListRecordingsForPerformer(ctx, db, performerID)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{recordingIDOne, recordingIDTwo}, ids)
+
+	// A performer with no cast_entries returns an empty (non-nil) slice.
+	emptyIDs, err := storage.ListRecordingsForPerformer(ctx, db, 9999)
+	require.NoError(t, err)
+	require.NotNil(t, emptyIDs)
+	assert.Empty(t, emptyIDs)
+}
+
+// openTestDB opens a fresh on-disk SQLite database under t.TempDir and runs
+// every embedded migration. Using a file (rather than ":memory:") matches the
+// production code path exercised by storage.Open.
+func openTestDB(ctx context.Context, t *testing.T) *sql.DB {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
+	db, err := storage.Open(ctx, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func seedShow(ctx context.Context, t *testing.T, db *sql.DB, id int64, name string) {
+	t.Helper()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO shows (show_id, name) VALUES (?, ?)
+	`, id, name)
+	require.NoError(t, err)
+}
+
+func seedRecording(ctx context.Context, t *testing.T, db *sql.DB, id, showID int64) {
+	t.Helper()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO recordings (
+			recording_id, show_id, tour, date_full, raw_json
+		) VALUES (?, ?, '', '', '{}')
+	`, id, showID)
+	require.NoError(t, err)
+}
+
+func seedCastEntry(
+	ctx context.Context,
+	t *testing.T,
+	db *sql.DB,
+	recordingID, performerID, characterID int64,
+	order int,
+) {
+	t.Helper()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO cast_entries (
+			recording_id,
+			performer_id, performer_name,
+			character_id, character_name, character_order
+		) VALUES (?, ?, '', ?, '', ?)
+	`, recordingID, performerID, characterID, order)
+	require.NoError(t, err)
+}
