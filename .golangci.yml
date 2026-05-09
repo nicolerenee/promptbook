@@ -18,6 +18,12 @@ issues:
   # Default: 3
   max-same-issues: 50
 
+run:
+  # Skip Claude Code agent worktrees that live inside this repo.
+  # They contain sibling-branch source that pollutes lint runs.
+  skip-dirs:
+    - .claude
+
 formatters:
   enable:
     - goimports # checks if the code and import statements are formatted according to the 'goimports' command
