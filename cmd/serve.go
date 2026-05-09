@@ -19,6 +19,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
+	"github.com/nicolerenee/promptbook/internal/sync"
 )
 
 // imageFetchHTTPTimeout caps any single image download from the local
@@ -139,7 +140,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	ingestOpt := buildIngestEngine(db, encClient, imgCache)
-	runner := buildJobRunner(ctx, db, encClient)
+	runner := buildJobRunner(ctx, db, encClient, smClient, imgCache)
 
 	// Renderer is nil when image caching is off so the picker
 	// handlers' nil-check 503s rather than half-mutating state. When
@@ -214,22 +215,43 @@ func buildIngestEngine(
 // jobs the current configuration supports. Returns nil when neither
 // job has the prerequisites configured — the server's nil-check then
 // 503s on /api/v1/jobs/* and the rest of the API stays usable.
-func buildJobRunner(_ context.Context, db *sql.DB, encClient *encora.Client) *jobs.Runner {
+func buildJobRunner(
+	_ context.Context,
+	db *sql.DB,
+	encClient *encora.Client,
+	smClient *stagemedia.Client,
+	imgCache *imagecache.Cache,
+) *jobs.Runner {
 	runner := jobs.New(jobs.Options{
 		DB:      db,
 		Logger:  log.Logger,
 		Workers: jobRunnerWorkers,
 	})
 
+	// Coerce the concrete clients into the sync interfaces with a
+	// true nil interface so the fetcher's nil-check fires correctly
+	// when caching is off. Mirrors the pattern in cmd/collection_sync.go.
+	var smSync sync.StagemediaImageClient
+	if smClient != nil {
+		smSync = smClient
+	}
+	var encScreenshots sync.EncoraScreenshotClient
+	if imgCache != nil && !imgCache.Disabled() && encClient != nil {
+		encScreenshots = encClient
+	}
+
 	registered := 0
 
 	if encClient != nil {
 		err := runner.Register(jobs.JobDef{
 			Job: &builtin.RefreshEncoraJob{
-				DB:           db,
-				Client:       encClient,
-				Logger:       log.Logger,
-				BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
+				DB:                db,
+				Client:            encClient,
+				Logger:            log.Logger,
+				BurstReserve:      appConfig.Encora.RateLimit.BurstReserve,
+				ImageCache:        imgCache,
+				Stagemedia:        smSync,
+				EncoraScreenshots: encScreenshots,
 			},
 			Interval: refreshEncoraInterval,
 			// OnStartup intentionally false: the runner's restart

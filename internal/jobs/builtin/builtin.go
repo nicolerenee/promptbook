@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/scanner"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
@@ -22,11 +23,21 @@ import (
 // burst-reserve floor and pause-between-pages are read from the same
 // config the CLI uses, so the rate-limit policy is identical between
 // `promptbook collection sync` and the in-process scheduler.
+//
+// ImageCache + Stagemedia + EncoraScreenshots must be supplied when
+// the user has image caching configured — otherwise the scheduled
+// refresh runs without populating the local image cache and the
+// catalog accumulates recordings whose posters never land on disk.
+// CLI parity: `cmd/collection_sync.go` passes all three; this job's
+// caller (`cmd/serve.go`'s buildJobRunner) does the same.
 type RefreshEncoraJob struct {
-	DB           *sql.DB
-	Client       *encora.Client
-	Logger       zerolog.Logger
-	BurstReserve int
+	DB                *sql.DB
+	Client            *encora.Client
+	Logger            zerolog.Logger
+	BurstReserve      int
+	ImageCache        *imagecache.Cache
+	Stagemedia        pbsync.StagemediaImageClient
+	EncoraScreenshots pbsync.EncoraScreenshotClient
 }
 
 // Name is the registry key for this job. Stable string — surfaced in
@@ -40,8 +51,11 @@ func (j *RefreshEncoraJob) Run(ctx context.Context) error {
 		return errors.New("refresh-encora: encora client not configured")
 	}
 	_, err := pbsync.Sync(ctx, j.Client, j.DB, pbsync.Options{
-		BurstReserve: j.BurstReserve,
-		Logger:       j.Logger,
+		BurstReserve:      j.BurstReserve,
+		Logger:            j.Logger,
+		ImageCache:        j.ImageCache,
+		Stagemedia:        j.Stagemedia,
+		EncoraScreenshots: j.EncoraScreenshots,
 	})
 	if err != nil {
 		return fmt.Errorf("refresh-encora sync: %w", err)
