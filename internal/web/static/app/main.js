@@ -19,6 +19,7 @@ import Layout from './components/Layout.js';
 import Library from './components/Library.js';
 import Wants from './components/Wants.js';
 import Sync from './components/Sync.js';
+import Recording from './components/Recording.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -57,7 +58,7 @@ if (!root) {
 } else {
   m.route(root, '/', {
     '/':                wrap(Library),
-    '/recordings/:id':  wrap(stubPage('Recording detail')),
+    '/recordings/:id':  wrap(Recording),
     '/wants':           wrap(Wants),
     '/sync':            wrap(Sync),
     '/queue':           wrap(stubPage('Manual import queue')),

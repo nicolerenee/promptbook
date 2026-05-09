@@ -37,6 +37,21 @@ export const state = {
     loading: true,
     error: null,
   },
+  // recording is the detail-page view-model. `id` is the currently
+  // routed enc-NNNN; `loaded` holds the /api/v1/recordings/:id payload
+  // (PascalCase fields because storage.LoadedRecording has no json
+  // tags) merged with the lower-case server-side enrichment fields
+  // (posters, nfo_content, nfo_modified_at). `dangerBusy` flips on
+  // while a destructive POST is in flight, and `dangerError` carries
+  // the inline error string when one comes back.
+  recording: {
+    id: null,
+    loaded: null,
+    loading: true,
+    error: null,
+    dangerBusy: false,
+    dangerError: '',
+  },
   // theme tracks the active DaisyUI theme name. Persisted to
   // localStorage by the toggle in Topbar so a refresh keeps the
   // preference.
