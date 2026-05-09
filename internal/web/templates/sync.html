@@ -1,0 +1,35 @@
+{{define "sync.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<header>
+  <h1>{{.Title}}</h1>
+  <p>Last 30 sync runs</p>
+</header>
+
+{{if .Runs}}
+<table>
+  <thead>
+    <tr>
+      <th>id</th><th>kind</th><th>started</th><th>finished</th>
+      <th>ok</th><th>err</th><th>rl rem</th><th>error</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Runs}}
+    <tr>
+      <td>{{.ID}}</td>
+      <td>{{.Kind}}</td>
+      <td>{{.StartedAt}}</td>
+      <td>{{.FinishedAt}}</td>
+      <td>{{.OkCount}}</td>
+      <td>{{.ErrorCount}}</td>
+      <td>{{.RateLimitRemaining}}</td>
+      <td>{{.ErrorText}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  <p><em>No sync runs yet.</em></p>
+{{end}}
+{{end}}

@@ -1,0 +1,22 @@
+/* Promptbook layout overrides on top of Pico CSS. Keep this small —
+   anything heavier should live alongside templates. */
+
+main.container {
+  padding-block: 1rem;
+}
+
+table {
+  font-size: 0.95rem;
+}
+
+dl > dt {
+  font-weight: bold;
+  margin-top: 0.5rem;
+}
+dl > dd {
+  margin-inline-start: 1rem;
+}
+
+small {
+  color: var(--pico-muted-color);
+}

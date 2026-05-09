@@ -1,0 +1,27 @@
+{{define "wants.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<header>
+  <h1>{{.Title}}</h1>
+  <p>{{len .Recordings}} on the wishlist</p>
+</header>
+
+{{if .Recordings}}
+<table>
+  <thead>
+    <tr><th>Show</th><th>Tour</th><th>Date</th></tr>
+  </thead>
+  <tbody>
+  {{range .Recordings}}
+    <tr>
+      <td><a href="/recordings/{{.ID}}">{{.Show}}</a></td>
+      <td>{{.Tour}}</td>
+      <td>{{smartDate .DateFull .DateMonthKnown .DateDayKnown}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  <p><em>Wishlist is empty.</em></p>
+{{end}}
+{{end}}

@@ -1,0 +1,37 @@
+{{define "recording.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+{{$r := .Recording.Recording}}
+<header>
+  <h1>{{$r.Show}}</h1>
+  <p>{{$r.Tour}} — {{smartDate $r.Date.FullDate $r.Date.MonthKnown $r.Date.DayKnown}}</p>
+  <p><small>encora id <a href="https://encora.it/recordings/{{$r.ID}}">{{$r.ID}}</a></small></p>
+</header>
+
+<dl>
+  <dt>Master</dt><dd>{{or $r.Master "—"}}</dd>
+  <dt>Type</dt><dd>{{or $r.Metadata.RecordingType "—"}} / {{or $r.Metadata.MediaType "—"}}</dd>
+  <dt>Venue</dt><dd>{{or $r.Metadata.Venue "—"}}, {{or $r.Metadata.City "—"}}</dd>
+  {{if .Recording.InCollection}}
+  <dt>Owned format</dt><dd>{{or .Recording.Format "—"}}</dd>
+  <dt>Watched</dt><dd>{{.Recording.UserWatched}}</dd>
+  {{end}}
+</dl>
+
+{{if $r.Cast}}
+<h2>Cast</h2>
+<ul>
+  {{range $r.Cast}}
+  <li>
+    {{.Performer.Name}} as {{.Character.Name}}
+    {{if .Status}}<small>({{.Status.Label}})</small>{{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}
+
+{{if $r.Notes}}
+<h2>Notes</h2>
+<p>{{$r.Notes}}</p>
+{{end}}
+{{end}}

@@ -1,0 +1,46 @@
+{{define "home.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<header>
+  <h1>{{.Title}}</h1>
+  <p>
+    {{if eq .OwnedFilter "true"}}Owned recordings{{else if eq .OwnedFilter "false"}}Not yet owned{{else}}All recordings{{end}}
+    — {{len .Recordings}} total
+  </p>
+  <nav>
+    <a href="/?owned=true">Owned</a> ·
+    <a href="/?owned=false">Not owned</a> ·
+    <a href="/?owned=any">All</a>
+  </nav>
+</header>
+
+{{if .Recordings}}
+<table>
+  <thead>
+    <tr>
+      <th>Show</th>
+      <th>Tour</th>
+      <th>Date</th>
+      <th>Master</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Recordings}}
+    <tr>
+      <td><a href="/recordings/{{.ID}}">{{.Show}}</a></td>
+      <td>{{.Tour}}</td>
+      <td>{{smartDate .DateFull .DateMonthKnown .DateDayKnown}}</td>
+      <td>{{.Master}}</td>
+      <td>
+        {{if .InCollection}}<small>owned</small>{{end}}
+        {{if .InWants}}<small>wanted</small>{{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  <p><em>Nothing here. Run <code>promptbook collection sync</code> to populate the cache.</em></p>
+{{end}}
+{{end}}
