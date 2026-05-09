@@ -64,3 +64,20 @@ nav.status-tabs .status-tab-active {
 .status-missing         { color: #cf222e; }
 .status-wanted          { color: #0969da; }
 .status-orphan          { color: #6e7781; }
+
+/* Manual-import-queue confidence badges. Same shape as status badges
+   so they read as a related taxonomy. */
+.confidence-badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+  line-height: 1.4;
+}
+.confidence-low    { color: #6e7781; }
+.confidence-medium { color: #9a6700; }
+.confidence-high   { color: #1a7f37; }
