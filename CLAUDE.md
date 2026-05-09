@@ -93,6 +93,21 @@ build/                   build output
 - Markdown is linted with `markdownlint-cli2`. Default rules + the project's
   `.markdownlint.yaml`.
 
+## Test conventions
+
+- **Table-driven tests** for any function with multiple input variations.
+  Use a `tests := []struct{...}{...}` slice with a `name` field and
+  `t.Run(tt.name, ...)`.
+- **`github.com/stretchr/testify/require`** for fatal preconditions
+  (`require.NoError(t, err)`).
+- **`github.com/stretchr/testify/assert`** for non-fatal assertions
+  (`assert.Equal(t, want, got)`).
+- **`github.com/brianvoe/gofakeit/v7`** for synthetic test data. Seed with
+  `gofakeit.Seed(0)` for determinism.
+- Real-API JSON fixtures (`internal/encora/testdata/*.json`) for
+  shape-fidelity tests against live API responses; gofakeit for synthetic
+  data in business-logic tests.
+
 ## Encora rate limit
 
 The Encora API is hard-capped at 30 requests per minute. The HTTP client
