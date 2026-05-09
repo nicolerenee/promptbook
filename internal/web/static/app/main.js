@@ -24,6 +24,8 @@ import Queue from './components/Queue.js';
 import History from './components/History.js';
 import People from './components/People.js';
 import Person from './components/Person.js';
+import Mismatches from './components/Mismatches.js';
+import Settings from './components/Settings.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -69,8 +71,8 @@ if (!root) {
     '/people':          wrap(People),
     '/people/:id':      wrap(Person),
     '/history':         wrap(History),
-    '/mismatches':      wrap(stubPage('Mismatches')),
+    '/mismatches':      wrap(Mismatches),
     '/apply':           wrap(stubPage('Apply')),
-    '/settings':        wrap(stubPage('Settings')),
+    '/settings':        wrap(Settings),
   });
 }

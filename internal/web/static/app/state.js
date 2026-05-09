@@ -98,6 +98,27 @@ export const state = {
     error: null,
     imgError: false,
   },
+  // mismatches owns the reconciliation page state. `type` filters by
+  // mismatch type (empty = All); `selected` is a Set of recording ids
+  // ticked for batch apply. `applying` is true while a POST /apply is
+  // in flight; `results` carries the per-action outcome on completion.
+  mismatches: {
+    items: [],
+    type: '',
+    selected: new Set(),
+    loading: true,
+    error: null,
+    applying: false,
+    results: null,        // null until first apply; array thereafter.
+    applyError: null,
+  },
+  // settings holds the parsed /api/v1/settings payload. Read-only —
+  // the page is documentation, not a control panel.
+  settings: {
+    data: null,
+    loading: true,
+    error: null,
+  },
   // theme tracks the active DaisyUI theme name. Persisted to
   // localStorage by the toggle in Topbar so a refresh keeps the
   // preference.
