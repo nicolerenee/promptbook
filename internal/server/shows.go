@@ -47,11 +47,16 @@ type ShowListItem struct {
 }
 
 // handleListShows aggregates every recording into its show and returns
-// a list (sorted by name asc) with state-count buckets and year span.
-// Sorting beyond name happens client-side — the API stays a stable
-// canonical ordering so cache layers can ETag the response cleanly.
+// a paginated, sorted slice with state-count buckets and year span.
+// Sort happens server-side over the in-memory aggregate — the catalog
+// is bounded by maxStateScan + the shows table size so this stays
+// fast — and pagination then trims the slice to the requested page.
 func (s *Server) handleListShows(c echo.Context) error {
 	ctx := c.Request().Context()
+	limit := paramInt(c, "limit", defaultListLimit)
+	offset := paramInt(c, "offset", 0)
+	sortKey := c.QueryParam("sort")
+	dir := parseSortDir(c)
 
 	// Pull every reconciled state in a single pass, then group by show.
 	// maxStateScan caps the result so a runaway library doesn't blow
@@ -85,9 +90,24 @@ func (s *Server) handleListShows(c echo.Context) error {
 		s.logger.Warn().Err(posterErr).Msg("decorate show poster urls failed; serving without")
 	}
 
-	sortShowsByName(items)
+	sortShows(items, sortKey, dir)
 
-	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
+	total := len(items)
+	page := paginateShows(items, limit, offset)
+
+	return c.JSON(http.StatusOK, pageEnvelope(page, total, limit, offset))
+}
+
+// paginateShows returns the requested window of items, or an empty
+// slice when offset is past the end. Lifted out of handleListShows so
+// the slicing math stays out of the handler.
+func paginateShows(items []ShowListItem, limit, offset int) []ShowListItem {
+	total := len(items)
+	if offset >= total {
+		return []ShowListItem{}
+	}
+	end := min(offset+limit, total)
+	return items[offset:end]
 }
 
 // loadAllShows returns {show_id: name} for every row in the shows
@@ -238,17 +258,48 @@ func (s *Server) decorateShowPosters(ctx context.Context, items []ShowListItem) 
 	return nil
 }
 
-// sortShowsByName sorts in place by case-insensitive name asc, ties
-// broken by id asc so equal names read deterministically.
-func sortShowsByName(items []ShowListItem) {
+// sortShows orders items in place by the supplied (sortKey, dir).
+// Unknown keys fall back to name asc — the canonical default that
+// keeps the API ETag-friendly. Ties are broken by id asc so equal
+// keys read deterministically across pages.
+func sortShows(items []ShowListItem, sortKey string, dir sortDir) {
+	cmp := showsCompareFn(sortKey)
+	desc := dir == sortDesc
 	sort.SliceStable(items, func(i, j int) bool {
-		ni := strings.ToLower(items[i].Name)
-		nj := strings.ToLower(items[j].Name)
-		if ni != nj {
-			return ni < nj
+		c := cmp(items[i], items[j])
+		if desc {
+			c = -c
+		}
+		if c != 0 {
+			return c < 0
 		}
 		return items[i].ID < items[j].ID
 	})
+}
+
+// showsCompareFn maps a sort key to the comparator that drives
+// sortShows. Unknown keys fall back to name. Year columns coerce nil
+// to zero so a show without dated recordings pins to the bottom of an
+// asc sort — same trick the legacy client-side sort applied.
+func showsCompareFn(key string) func(a, b ShowListItem) int {
+	switch key {
+	case "recording_count":
+		return func(a, b ShowListItem) int { return cmpInt(a.RecordingCount, b.RecordingCount) }
+	case "first_year":
+		return func(a, b ShowListItem) int { return cmpInt(intOrZero(a.FirstYear), intOrZero(b.FirstYear)) }
+	case "last_year":
+		return func(a, b ShowListItem) int { return cmpInt(intOrZero(a.LastYear), intOrZero(b.LastYear)) }
+	default: // "name" or unknown.
+		return func(a, b ShowListItem) int { return cmpString(a.Name, b.Name) }
+	}
+}
+
+// intOrZero dereferences a nullable int pointer for comparator use.
+func intOrZero(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 // ShowDetailResponse is the wire shape for GET /api/v1/shows/:id.

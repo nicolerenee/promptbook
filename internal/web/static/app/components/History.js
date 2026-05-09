@@ -2,18 +2,23 @@
 //
 // Renders the audit log at /api/v1/history. Tabs filter by `kind`; an
 // optional ?recording_id= scopes the list to a single recording's
-// timeline. URL state (?kind=, ?recording_id=) survives reload.
+// timeline. URL state (?kind=, ?recording_id=, ?page=) survives reload.
 //
 // Visual structure mirrors Library.js: page header w/ sub-text, kind
 // filter tabs (tabs-box), then a table. Each row's `details` JSON is
 // flattened to a one-line summary instead of the legacy expandable
 // pretty-printed pane — the audit pages we hit so far don't lean on the
 // raw JSON, and the SPA prefers a compact row.
+//
+// Pagination + filter both run server-side now: flipping a kind tab
+// triggers a refetch (with offset=0) so the totals + page indicator
+// stay honest. The shared Pagination component drives Prev / Next.
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
 import { relativeTime, errorMessage } from '../utils/format.js';
+import Pagination from './Pagination.js';
 
 // KIND_META keys on the lowercase API tokens, matching
 // internal/storage/history.go's HistoryKind* constants. Badge colors
@@ -103,18 +108,9 @@ function detailSummary(it) {
   return meta ? meta.label : (it.kind || '');
 }
 
-// countByKind returns {kind: count, '': total} so each tab can show
-// its tally without re-filtering the array.
-function countByKind(items) {
-  const out = { '': items.length };
-  KIND_FILTERS.forEach((f) => { if (f.key) out[f.key] = 0; });
-  items.forEach((it) => { if (out[it.kind] != null) out[it.kind]++; });
-  return out;
-}
-
-// readURLParams pulls the active kind / recording_id filter out of the
-// current Mithril route. Mithril gives us m.route.param() for the
-// querystring portion.
+// readURLParams pulls the active kind / recording_id / page filter
+// out of the current Mithril route. Mithril gives us m.route.param()
+// for the querystring portion.
 function readURLParams() {
   const params = m.route.param() || {};
   const h = state.history;
@@ -126,6 +122,9 @@ function readURLParams() {
   const rawRec = params.recording_id || params.recordingId || '';
   const id = parseInt(rawRec, 10);
   h.recordingID = (id > 0) ? id : null;
+
+  const page = parseInt(params.page, 10);
+  h.offset = (page > 1) ? (page - 1) * h.limit : 0;
 }
 
 // pushURLParams syncs state.history back to the browser URL so a
@@ -135,22 +134,27 @@ function pushURLParams() {
   const out = {};
   if (h.kind) out.kind = h.kind;
   if (h.recordingID) out.recording_id = String(h.recordingID);
+  const page = Math.floor(h.offset / h.limit) + 1;
+  if (page > 1) out.page = String(page);
   m.route.set('/history', out, { replace: true });
 }
 
-// loadHistory fetches the audit log with the active recording_id
-// filter (if any). The kind filter is applied client-side so changing
-// tabs doesn't trigger a refetch — the dataset is small (50-page
-// paginated default, 500 here) and counting stays accurate across
-// tabs.
+// loadHistory fetches the audit log with the active filters + page.
+// Kind filter is applied server-side now (the legacy "fetch 500 and
+// filter client-side" trick doesn't survive pagination — total counts
+// per tab would be wrong).
 function loadHistory() {
   const h = state.history;
   h.loading = true;
   h.error = null;
-  let path = '/history?limit=500';
-  if (h.recordingID) path += '&recording_id=' + h.recordingID;
-  return api.get(path).then((body) => {
+  const params = new URLSearchParams();
+  params.set('limit', String(h.limit));
+  params.set('offset', String(h.offset));
+  if (h.kind) params.set('kind', h.kind);
+  if (h.recordingID) params.set('recording_id', String(h.recordingID));
+  return api.get('/history?' + params.toString()).then((body) => {
     h.items = (body && body.items) || [];
+    h.total = (body && body.total) || 0;
     h.loading = false;
   }).catch((err) => {
     h.error = err;
@@ -158,16 +162,29 @@ function loadHistory() {
   });
 }
 
-// setKind updates the active filter and re-syncs the URL. No refetch
-// — filtering happens client-side off the cached list.
+// setKind updates the active filter, resets offset to 0 (the new
+// dataset's row counts may shrink the page count below the current
+// page), and refetches.
 function setKind(key) {
-  state.history.kind = key;
+  const h = state.history;
+  h.kind = key;
+  h.offset = 0;
   pushURLParams();
+  loadHistory();
+}
+
+// setOffset is the Pagination component's callback.
+function setOffset(newOffset) {
+  state.history.offset = newOffset;
+  pushURLParams();
+  loadHistory();
 }
 
 // Tab renders one filter chip. Mirrors Library.js's pattern so the two
-// pages share a visual grammar.
-function Tab(filter, counts, active) {
+// pages share a visual grammar. The count comes off the server's
+// total when the tab matches the active filter, otherwise we omit it
+// since a per-tab count would require N+1 queries.
+function Tab(filter, active, total) {
   const isActive = filter.key === active;
   return m('a', {
     role: 'tab',
@@ -177,8 +194,9 @@ function Tab(filter, counts, active) {
     href: '#',
   }, [
     m('span', filter.label),
-    m('span', { class: 'badge badge-sm badge-ghost ml-2' },
-      counts[filter.key] || 0),
+    isActive
+      ? m('span', { class: 'badge badge-sm badge-ghost ml-2' }, total)
+      : null,
   ]);
 }
 
@@ -216,12 +234,17 @@ const History = {
 
   // onupdate fires on every route change while we stay mounted. The
   // SPA uses History for /history only, so any update implies the
-  // querystring (kind / recording_id) may have changed. Re-read; if
-  // recording_id changed we need to refetch, otherwise just redraw.
+  // querystring (kind / recording_id / page) may have changed.
   onupdate() {
-    const prevRecording = state.history.recordingID;
+    const prev = {
+      kind: state.history.kind,
+      rec:  state.history.recordingID,
+      off:  state.history.offset,
+    };
     readURLParams();
-    if (state.history.recordingID !== prevRecording) {
+    if (state.history.kind !== prev.kind ||
+        state.history.recordingID !== prev.rec ||
+        state.history.offset !== prev.off) {
       loadHistory();
     }
   },
@@ -230,7 +253,7 @@ const History = {
     const h = state.history;
     const items = h.items;
 
-    if (h.loading) {
+    if (h.loading && items.length === 0) {
       return m('div', { class: 'p-8 opacity-60' }, 'Loading history…');
     }
     if (h.error) {
@@ -239,13 +262,17 @@ const History = {
       ]);
     }
 
-    const counts = countByKind(items);
-    const filtered = h.kind
-      ? items.filter((it) => it.kind === h.kind)
-      : items.slice();
+    const total = h.total;
+    const start = total === 0 ? 0 : h.offset + 1;
+    const end = Math.min(h.offset + h.limit, total);
 
     const subParts = [];
-    subParts.push(items.length + ' event' + (items.length === 1 ? '' : 's'));
+    if (total === 0) {
+      subParts.push('0 events');
+    } else {
+      subParts.push('Showing ' + start + '–' + end + ' of ' + total +
+        ' event' + (total === 1 ? '' : 's'));
+    }
     if (h.recordingID) subParts.push('scoped to enc-' + h.recordingID);
     subParts.push('newest first');
     const subText = subParts.join(' · ');
@@ -276,7 +303,7 @@ const History = {
 
       // Kind filter tabs.
       m('div', { role: 'tablist', class: 'tabs tabs-box' },
-        KIND_FILTERS.map((f) => Tab(f, counts, h.kind))),
+        KIND_FILTERS.map((f) => Tab(f, h.kind, total))),
 
       // Table.
       m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
@@ -287,18 +314,29 @@ const History = {
             m('th', { style: 'width:140px' }, 'Recording'),
             m('th', 'Details'),
           ])),
-          m('tbody', filtered.length === 0
+          m('tbody', items.length === 0
             ? m('tr', m('td', {
                 colspan: 4, class: 'text-center opacity-60 py-8',
-              }, items.length === 0
+              }, total === 0 && !h.kind && !h.recordingID
                 ? [
                     'No events yet. Run ',
                     m('code', 'promptbook collection sync'),
                     ' or ingest some recordings to populate the log.',
                   ]
                 : 'No events match this filter.'))
-            : filtered.map(Row)),
+            : items.map(Row)),
         ])),
+
+      // Pagination strip — events read better as a "showing X-Y of Z"
+      // range than as page numbers because users think in events not
+      // pages.
+      m(Pagination, {
+        offset: h.offset,
+        limit: h.limit,
+        total: h.total,
+        setOffset,
+        showRange: true,
+      }),
     ]);
   },
 };

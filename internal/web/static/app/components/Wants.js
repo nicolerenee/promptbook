@@ -3,16 +3,18 @@
 // The Wants page is the user's Encora "shopping list" — recordings
 // flagged on Encora but not yet in collection. Every row's status is
 // `wanted`, so there's no filter-by-status dimension here; the page
-// is a flat sortable table fronted by a small header summary.
+// is a flat sortable + paginated table fronted by a small header
+// summary.
 //
 // Visual structure (matches design + Library patterns):
-//   - Page header: title + "{N} active wants" sub-text + cosmetic
+//   - Page header: title + "Showing X–Y of Z" sub-text + cosmetic
 //     "Sync now" / "+ Add want" stub buttons. Buttons are disabled
 //     for now — wiring them up is a later wave's work (POST endpoints
 //     don't exist yet for the SPA-driven add flow).
-//   - Sortable table with columns: Recording, Date, Master, Added,
-//     Status. Header click toggles asc/desc; URL persists ?sort=&dir=
-//     so deep links / back-forward keep the view.
+//   - Sortable + paginated table with columns: Recording, Date,
+//     Master, Added, Status. Header click toggles asc/desc; URL
+//     persists ?sort=&dir=&page= so deep links / back-forward keep
+//     the view.
 //
 // Default sort: wants_added desc — newest additions surface first,
 // which is what the legacy page achieved (it sorted by date_full but
@@ -23,66 +25,24 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
 import { smartDate, relativeTime } from '../utils/format.js';
+import Pagination from './Pagination.js';
 
 // SORT_COLUMNS lists every sortable column in render order. `key` is
-// the URL token; `compare` is a stable comparator that sorts in
-// ascending order — sortItems below applies the direction sign.
+// the URL token that the server resolves against its whitelist
+// (wantsSortFragments). Status is fixed (every row is wanted) so
+// there's no sort key for it.
 const SORT_COLUMNS = [
-  { key: 'recording',    label: 'Recording',
-    compare: (a, b) => {
-      let c = cmpStr(a.show, b.show); if (c) return c;
-      c = cmpStr(a.tour, b.tour); if (c) return c;
-      return cmpNum(a.id, b.id);
-    } },
-  { key: 'date',         label: 'Date',
-    compare: (a, b) => cmpStr(a.date_full, b.date_full) },
-  { key: 'master',       label: 'Master',
-    compare: (a, b) => cmpStr(a.master, b.master) },
-  { key: 'wants_added',  label: 'Added',
-    // Empty wants_added pins to the bottom in either direction —
-    // backfilled legacy rows have null and shouldn't dominate the top
-    // of an asc sort.
-    compare: (a, b) => cmpEmptyLast(a.wants_added, b.wants_added) },
-  { key: 'status',       label: 'Status',
-    compare: () => 0 }, // every row is `wanted`; sort is a no-op.
+  { key: 'recording',    label: 'Recording' },
+  { key: 'date',         label: 'Date' },
+  { key: 'master',       label: 'Master' },
+  { key: 'wants_added',  label: 'Added' },
 ];
 
 const DEFAULT_SORT = { key: 'wants_added', dir: 'desc' };
 
-function cmpStr(a, b) {
-  const sa = a == null ? '' : String(a).toLowerCase();
-  const sb = b == null ? '' : String(b).toLowerCase();
-  if (sa < sb) return -1;
-  if (sa > sb) return 1;
-  return 0;
-}
-function cmpNum(a, b) { return (Number(a) || 0) - (Number(b) || 0); }
-function cmpEmptyLast(a, b) {
-  const ea = a == null || a === '';
-  const eb = b == null || b === '';
-  if (ea && !eb) return 1;
-  if (!ea && eb) return -1;
-  if (ea && eb) return 0;
-  return cmpStr(a, b);
-}
-
-// sortItems returns a new sorted slice. wants_added uses cmpEmptyLast
-// directly (sign-independent) so empty rows always trail regardless
-// of the active direction — same trick Library uses for local_format.
-function sortItems(items, sort) {
-  const col = SORT_COLUMNS.find((c) => c.key === sort.key);
-  if (!col) return items.slice();
-  const sign = sort.dir === 'desc' ? -1 : 1;
-  const out = items.slice();
-  out.sort((a, b) => {
-    if (col.key === 'wants_added') return col.compare(a, b);
-    return sign * col.compare(a, b);
-  });
-  return out;
-}
-
-// readURLParams pulls the sort selection out of the current Mithril
-// route. Wants has no status filter, so this is sort/dir only.
+// readURLParams pulls the sort + page selection out of the current
+// Mithril route. Wants has no status filter, so this is sort/dir/page
+// only.
 function readURLParams() {
   const params = m.route.param() || {};
   const w = state.wants;
@@ -97,21 +57,50 @@ function readURLParams() {
     w.sortKey = col.key;
     w.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
   }
+
+  const page = parseInt(params.page, 10);
+  w.offset = (page > 1) ? (page - 1) * w.limit : 0;
 }
 
 // pushURLParams syncs state.wants back to the browser URL so a
-// reload or share keeps the view.
+// reload or share keeps the view. page=1 is dropped since it's the
+// default.
 function pushURLParams() {
   const w = state.wants;
-  m.route.set('/wants', {
+  const out = {
     sort: w.sortKey,
     dir:  w.sortDir,
-  }, { replace: true });
+  };
+  const page = Math.floor(w.offset / w.limit) + 1;
+  if (page > 1) out.page = String(page);
+  m.route.set('/wants', out, { replace: true });
+}
+
+// loadWants fetches the active page from the server.
+function loadWants() {
+  const w = state.wants;
+  w.loading = true;
+  w.error = null;
+  const params = new URLSearchParams();
+  params.set('limit', String(w.limit));
+  params.set('offset', String(w.offset));
+  params.set('sort', w.sortKey);
+  params.set('dir', w.sortDir);
+  return api.get('/wants?' + params.toString()).then((body) => {
+    w.items = (body && body.items) || [];
+    w.total = (body && body.total) || 0;
+    w.loading = false;
+  }).catch((err) => {
+    w.error = err;
+    w.loading = false;
+  });
 }
 
 // setSort toggles direction when the user clicks the active column,
 // otherwise drops to the column's default direction (desc for date /
 // wants_added, asc for everything else, mirroring Library's behavior).
+// Resets to page 1 since the row at offset N changes meaning when the
+// sort axis flips.
 function setSort(key) {
   const w = state.wants;
   if (w.sortKey === key) {
@@ -120,7 +109,16 @@ function setSort(key) {
     w.sortKey = key;
     w.sortDir = (key === 'date' || key === 'wants_added') ? 'desc' : 'asc';
   }
+  w.offset = 0;
   pushURLParams();
+  loadWants();
+}
+
+// setOffset is the Pagination component's callback.
+function setOffset(newOffset) {
+  state.wants.offset = newOffset;
+  pushURLParams();
+  loadWants();
 }
 
 // HeaderCell renders one sortable <th>. Caret indicates the active
@@ -175,29 +173,20 @@ function Row(it) {
 const Wants = {
   oninit() {
     readURLParams();
-    state.wants.loading = true;
-    state.wants.error = null;
-    api.get('/wants').then((body) => {
-      state.wants.items = (body && body.items) || [];
-      state.wants.loading = false;
-    }).catch((err) => {
-      state.wants.error = err;
-      state.wants.loading = false;
-    });
+    loadWants();
   },
 
   // onupdate fires on every route change while we stay mounted.
   // Wants is only mounted at /wants so any update implies the
-  // querystring (sort / dir) may have changed.
+  // querystring (sort / dir / page) may have changed.
   onupdate() {
     readURLParams();
   },
 
   view() {
     const w = state.wants;
-    const items = w.items;
 
-    if (w.loading) {
+    if (w.loading && w.items.length === 0) {
       return m('div', { class: 'p-8 opacity-60' }, 'Loading wants…');
     }
     if (w.error) {
@@ -206,10 +195,14 @@ const Wants = {
       ]);
     }
 
-    const sorted = sortItems(items, { key: w.sortKey, dir: w.sortDir });
-    const total = items.length;
-    const subText = 'Your shopping list · ' + total +
-      (total === 1 ? ' active want' : ' active wants');
+    const items = w.items;
+    const total = w.total;
+    const start = total === 0 ? 0 : w.offset + 1;
+    const end = Math.min(w.offset + w.limit, total);
+    const subText = total === 0
+      ? 'Your shopping list · 0 active wants'
+      : 'Your shopping list · Showing ' + start + '–' + end + ' of ' + total +
+        ' active want' + (total === 1 ? '' : 's');
 
     return m('div', { class: 'space-y-6' }, [
       // Page header.
@@ -238,11 +231,20 @@ const Wants = {
             'promptbook collection sync.')
         : m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
             m('table', { class: 'table table-zebra' }, [
-              m('thead', m('tr',
-                SORT_COLUMNS.map((col) => HeaderCell(col, w.sortKey, w.sortDir)),
-              )),
-              m('tbody', sorted.map(Row)),
+              m('thead', m('tr', [
+                ...SORT_COLUMNS.map((col) => HeaderCell(col, w.sortKey, w.sortDir)),
+                m('th', 'Status'),
+              ])),
+              m('tbody', items.map(Row)),
             ])),
+
+      // Pagination strip.
+      m(Pagination, {
+        offset: w.offset,
+        limit: w.limit,
+        total: w.total,
+        setOffset,
+      }),
     ]);
   },
 };

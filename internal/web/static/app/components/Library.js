@@ -1,10 +1,11 @@
 // Library.js — Mithril port of the legacy /static/library.js.
 //
 // Keeps the visual structure: page header w/ sub-text + action buttons,
-// 4 metric tiles, status filter tabs, sortable table. Status taxonomy
-// is the LOWERCASE storage.Status set ('synced', 'format_mismatch',
-// 'missing', 'wanted', 'orphan'). URL params persist the filter / sort
-// state via m.route.set so deep links keep working.
+// 4 metric tiles, status filter tabs, sortable + paginated table.
+// Status taxonomy is the LOWERCASE storage.Status set ('synced',
+// 'format_mismatch', 'missing', 'wanted', 'orphan'). URL params
+// persist the filter / sort / page state via m.route.set so deep
+// links keep working.
 //
 // Two orthogonal view dimensions live alongside the filters:
 //   mode  : 'recordings' | 'shows'  → what the rows ARE
@@ -14,14 +15,26 @@
 // item.local_poster_url on shows from /api/v1/shows) and falls back to
 // a status-tinted placeholder card when no poster is on disk yet.
 //
-// Default sort: by recording (show name + date asc) for recordings;
-// by name asc for shows. Each mode owns its own SORT_COLUMNS table so
-// the URL ?sort= token is interpreted against the right column set.
+// Pagination + sort moved to the server. Each mode owns its own
+// (offset, total) state slice (recordings + shows have different
+// row counts) and its own sort column whitelist. The shared
+// Pagination component drives Prev / Next; flipping a filter, sort,
+// or mode resets offset to 0.
+//
+// Stat tiles previously summed counts off the visible page. With
+// pagination that's wrong — they'd read "1 synced" because only one
+// row on the current page is synced. The handler doesn't yet ship a
+// status-totals payload, so the tiles read off the loaded shows
+// dataset (which has state_counts per show) when the mode is
+// recordings, falling back to "—" when no shows are loaded yet. A
+// cleaner fix is server-side aggregate totals, but that's a separate
+// PR.
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
 import { smartDate } from '../utils/format.js';
+import Pagination from './Pagination.js';
 
 // STATUS_META keys on the lowercase API tokens so meta lookups against
 // /api/v1/recordings JSON resolve directly. The DaisyUI badge color
@@ -50,40 +63,22 @@ const STATUS_FILTERS = [
 ];
 
 // SORT_COLUMNS lists every sortable column for the recordings mode.
-// `key` is the URL token; `compare` is a stable comparator.
+// `key` is the URL token and the server-side whitelist key.
 const SORT_COLUMNS = [
-  { key: 'status',       label: 'Status',
-    compare: (a, b) => cmpStr(a.status, b.status) },
-  { key: 'recording',    label: 'Recording',
-    compare: (a, b) => {
-      // Primary: show name. Within a show, sort chronologically so
-      // multiple Halcyon Crossing recordings group naturally and read in
-      // performance order. Tour + id tiebreak when dates collide.
-      let c = cmpStr(a.show, b.show); if (c) return c;
-      c = cmpStr(a.date_full, b.date_full); if (c) return c;
-      c = cmpStr(a.tour, b.tour); if (c) return c;
-      return cmpNum(a.id, b.id);
-    } },
-  { key: 'date',         label: 'Date',
-    compare: (a, b) => cmpStr(a.date_full, b.date_full) },
-  { key: 'master',       label: 'Master',
-    compare: (a, b) => cmpStr(a.master, b.master) },
-  { key: 'local_format', label: 'Local format',
-    compare: (a, b) => cmpEmptyLast(a.local_format, b.local_format) },
+  { key: 'status',       label: 'Status' },
+  { key: 'recording',    label: 'Recording' },
+  { key: 'date',         label: 'Date' },
+  { key: 'master',       label: 'Master' },
+  { key: 'local_format', label: 'Local format' },
 ];
 
 // SORT_COLUMNS_SHOWS is the by-show variant. Different shape, smaller
-// set of meaningful axes. Year columns coerce to 0 when null so a
-// show without dated recordings pins to the bottom of an asc sort.
+// set of meaningful axes.
 const SORT_COLUMNS_SHOWS = [
-  { key: 'name',            label: 'Show',
-    compare: (a, b) => cmpStr(a.name, b.name) },
-  { key: 'recording_count', label: 'Recordings',
-    compare: (a, b) => cmpNum(a.recording_count, b.recording_count) },
-  { key: 'first_year',      label: 'First',
-    compare: (a, b) => cmpNum(a.first_year || 0, b.first_year || 0) },
-  { key: 'last_year',       label: 'Last',
-    compare: (a, b) => cmpNum(a.last_year || 0, b.last_year || 0) },
+  { key: 'name',            label: 'Show' },
+  { key: 'recording_count', label: 'Recordings' },
+  { key: 'first_year',      label: 'First' },
+  { key: 'last_year',       label: 'Last' },
 ];
 
 // Default sort: by recording (show name + date asc within show). Reads
@@ -109,58 +104,8 @@ function defaultDirForKey(key) {
   return 'asc';
 }
 
-function cmpStr(a, b) {
-  const sa = a == null ? '' : String(a).toLowerCase();
-  const sb = b == null ? '' : String(b).toLowerCase();
-  if (sa < sb) return -1;
-  if (sa > sb) return 1;
-  return 0;
-}
-function cmpNum(a, b) { return (Number(a) || 0) - (Number(b) || 0); }
-// Empty/null values pin to the bottom regardless of direction so
-// unmatched local_format rows don't dominate the top of an asc sort.
-function cmpEmptyLast(a, b) {
-  const ea = a == null || a === '';
-  const eb = b == null || b === '';
-  if (ea && !eb) return 1;
-  if (!ea && eb) return -1;
-  if (ea && eb) return 0;
-  return cmpStr(a, b);
-}
-
-// countByStatus tallies how many items fall into each status. The ''
-// key holds the total so the All tab gets a count without a special
-// case.
-function countByStatus(items) {
-  const out = { '': items.length };
-  STATUS_FILTERS.forEach((f) => { if (f.key) out[f.key] = 0; });
-  items.forEach((it) => { if (out[it.status] != null) out[it.status]++; });
-  return out;
-}
-
-// fileTotal sums the file_count column so the header sub-text and the
-// "Files on disk" tile agree on the number.
-function fileTotal(items) {
-  return items.reduce((n, it) => n + (it.file_count || 0), 0);
-}
-
-// sortItems returns a new sorted slice. local_format uses cmpEmptyLast
-// directly (sign-independent) so empty rows always trail.
-function sortItems(items, sort, columns) {
-  const cols = columns || SORT_COLUMNS;
-  const col = cols.find((c) => c.key === sort.key);
-  if (!col) return items.slice();
-  const sign = sort.dir === 'desc' ? -1 : 1;
-  const out = items.slice();
-  out.sort((a, b) => {
-    if (col.key === 'local_format') return col.compare(a, b);
-    return sign * col.compare(a, b);
-  });
-  return out;
-}
-
-// readURLParams pulls the active status / sort / view / mode state out
-// of the current Mithril route.
+// readURLParams pulls the active status / sort / view / mode / page
+// state out of the current Mithril route.
 function readURLParams() {
   const params = m.route.param() || {};
   const lib = state.library;
@@ -188,6 +133,16 @@ function readURLParams() {
     lib.sortKey = col.key;
     lib.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
   }
+
+  // Page is 1-indexed in the URL for human readability; convert to
+  // 0-indexed offset for the API. Each mode tracks its own offset.
+  const page = parseInt(params.page, 10);
+  const offset = (page > 1) ? (page - 1) * lib.limit : 0;
+  if (lib.mode === 'shows') {
+    lib.showsOffset = offset;
+  } else {
+    lib.offset = offset;
+  }
 }
 
 // pushURLParams syncs state.library back to the browser URL so a
@@ -200,13 +155,75 @@ function pushURLParams() {
   if (lib.mode !== 'recordings') out.mode = lib.mode;
   out.sort = lib.sortKey;
   out.dir = lib.sortDir;
+  const offset = lib.mode === 'shows' ? lib.showsOffset : lib.offset;
+  const page = Math.floor(offset / lib.limit) + 1;
+  if (page > 1) out.page = String(page);
   m.route.set('/', out, { replace: true });
 }
 
-// setStatus updates the active filter and re-syncs the URL.
+// loadRecordings fetches the active page of /api/v1/recordings using
+// the current sort + status filter.
+function loadRecordings() {
+  const lib = state.library;
+  lib.loading = true;
+  lib.error = null;
+  const params = new URLSearchParams();
+  params.set('limit', String(lib.limit));
+  params.set('offset', String(lib.offset));
+  params.set('sort', lib.sortKey);
+  params.set('dir', lib.sortDir);
+  if (lib.status) params.set('status', lib.status);
+  return api.get('/recordings?' + params.toString()).then((body) => {
+    lib.items = (body && body.items) || [];
+    lib.total = (body && body.total) || 0;
+    lib.loading = false;
+  }).catch((err) => {
+    lib.error = err;
+    lib.loading = false;
+  });
+}
+
+// loadShows fetches the active page of /api/v1/shows. Sort + offset
+// for the shows mode are tracked separately on state.library.
+function loadShows() {
+  const lib = state.library;
+  lib.showsLoading = true;
+  lib.showsError = null;
+  const params = new URLSearchParams();
+  params.set('limit', String(lib.limit));
+  params.set('offset', String(lib.showsOffset));
+  // shows mode uses its own sort vocabulary; only forward the key
+  // when the active sort is a shows column (otherwise the server
+  // falls back to default = name asc, which is what we want).
+  if (SORT_COLUMNS_SHOWS.find((c) => c.key === lib.sortKey)) {
+    params.set('sort', lib.sortKey);
+    params.set('dir', lib.sortDir);
+  }
+  return api.get('/shows?' + params.toString()).then((body) => {
+    lib.shows = (body && body.items) || [];
+    lib.showsTotal = (body && body.total) || 0;
+    lib.showsLoading = false;
+  }).catch((err) => {
+    lib.showsError = err;
+    lib.showsLoading = false;
+  });
+}
+
+// loadActive refetches whichever mode is active.
+function loadActive() {
+  const lib = state.library;
+  if (lib.mode === 'shows') return loadShows();
+  return loadRecordings();
+}
+
+// setStatus updates the active filter, resets offset to 0 (filter
+// changes shrink the dataset), and refetches.
 function setStatus(key) {
-  state.library.status = key;
+  const lib = state.library;
+  lib.status = key;
+  lib.offset = 0;
   pushURLParams();
+  loadRecordings();
 }
 
 // setView toggles between list and grid. Sort + filter survive the
@@ -218,8 +235,7 @@ function setView(key) {
 }
 
 // setMode toggles between recordings and shows. The sort axis flips
-// to that mode's default since the column set is mode-specific. shows
-// data is fetched lazily and cached across flips.
+// to that mode's default since the column set is mode-specific.
 function setMode(key) {
   if (key !== 'recordings' && key !== 'shows') return;
   const lib = state.library;
@@ -229,28 +245,13 @@ function setMode(key) {
   lib.sortKey = def.key;
   lib.sortDir = def.dir;
   pushURLParams();
-  if (key === 'shows') ensureShowsLoaded();
-}
-
-// ensureShowsLoaded fetches /api/v1/shows the first time the user
-// flips to the shows mode. Result is cached on state.library.shows so
-// flipping back-and-forth doesn't refetch.
-function ensureShowsLoaded() {
-  const lib = state.library;
-  if (lib.shows.length > 0 || lib.showsLoading) return;
-  lib.showsLoading = true;
-  lib.showsError = null;
-  api.get('/shows').then((body) => {
-    lib.shows = (body && body.items) || [];
-    lib.showsLoading = false;
-  }).catch((err) => {
-    lib.showsError = err;
-    lib.showsLoading = false;
-  });
+  loadActive();
 }
 
 // setSort toggles direction when the user clicks the active column,
 // otherwise drops to that column's default direction (defaultDirForKey).
+// Resets offset to 0 since the row at offset N changes meaning when
+// the sort axis flips.
 function setSort(key) {
   const lib = state.library;
   if (lib.sortKey === key) {
@@ -259,7 +260,27 @@ function setSort(key) {
     lib.sortKey = key;
     lib.sortDir = defaultDirForKey(key);
   }
+  if (lib.mode === 'shows') {
+    lib.showsOffset = 0;
+  } else {
+    lib.offset = 0;
+  }
   pushURLParams();
+  loadActive();
+}
+
+// setOffsetRecordings / setOffsetShows are the Pagination component
+// callbacks. Each mode has its own offset because flipping mode swaps
+// the dataset entirely.
+function setOffsetRecordings(newOffset) {
+  state.library.offset = newOffset;
+  pushURLParams();
+  loadRecordings();
+}
+function setOffsetShows(newOffset) {
+  state.library.showsOffset = newOffset;
+  pushURLParams();
+  loadShows();
 }
 
 // MetricTile renders one DaisyUI `stat` block. The four tiles share a
@@ -274,8 +295,12 @@ function MetricTile(label, num, sub) {
 }
 
 // Tab renders a single status filter chip. DaisyUI's tabs-box style is
-// the "pill row" we want; tab-active marks the chosen one.
-function Tab(filter, counts, active) {
+// the "pill row" we want; tab-active marks the chosen one. Counts
+// come from a separate aggregate call (or are omitted) — with
+// pagination we no longer have a "count by status on the current
+// page" that's meaningful; the active status's count is shown via
+// the page indicator instead.
+function Tab(filter, active) {
   const isActive = filter.key === active;
   return m('a', {
     role: 'tab',
@@ -283,12 +308,7 @@ function Tab(filter, counts, active) {
     'aria-current': isActive ? 'page' : undefined,
     onclick: (ev) => { ev.preventDefault(); setStatus(filter.key); },
     href: '#',
-  }, [
-    m('span', filter.label),
-    m('span', {
-      class: 'badge badge-sm badge-ghost ml-2',
-    }, counts[filter.key] || 0),
-  ]);
+  }, m('span', filter.label));
 }
 
 // HeaderCell renders one sortable <th>. Caret indicates the active
@@ -523,50 +543,46 @@ function ViewToggle(view) {
 }
 
 // renderRecordingsList renders the existing sortable table.
-function renderRecordingsList(sorted, sortKey, sortDir) {
+function renderRecordingsList(items, sortKey, sortDir) {
   return m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
     m('table', { class: 'table table-zebra' }, [
       m('thead', m('tr',
         SORT_COLUMNS.map((col) => HeaderCell(col, sortKey, sortDir)),
       )),
-      m('tbody', sorted.length === 0
+      m('tbody', items.length === 0
         ? m('tr', m('td', {
             colspan: SORT_COLUMNS.length, class: 'text-center opacity-60 py-8',
           }, 'No recordings match this filter.'))
-        : sorted.map(Row)),
+        : items.map(Row)),
     ]));
 }
 
 // renderRecordingsGrid renders the responsive poster grid.
-function renderRecordingsGrid(sorted) {
-  if (sorted.length === 0) {
+function renderRecordingsGrid(items) {
+  if (items.length === 0) {
     return m('div', { class: 'text-center opacity-60 py-12' },
       'No recordings match this filter.');
   }
   return m('div', {
     class: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4',
-  }, sorted.map(PosterCard));
+  }, items.map(PosterCard));
 }
 
 // renderShowsList renders the by-show table.
-function renderShowsList(sorted, sortKey, sortDir) {
+function renderShowsList(items, sortKey, sortDir) {
   return m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
     m('table', { class: 'table table-zebra' }, [
       m('thead', m('tr', [
         ...SORT_COLUMNS_SHOWS.slice(0, 2).map((col) => HeaderCell(col, sortKey, sortDir)),
         m('th', 'States'),
-        // first/last folded into one "Years" sortable header — it
-        // just sorts on whichever the user asked for via sort param;
-        // we surface the two columns separately to keep table sort
-        // legible.
         ...SORT_COLUMNS_SHOWS.slice(2).map((col) => HeaderCell(col, sortKey, sortDir)),
       ])),
-      m('tbody', sorted.length === 0
+      m('tbody', items.length === 0
         ? m('tr', m('td', {
             colspan: SORT_COLUMNS_SHOWS.length + 1,
             class: 'text-center opacity-60 py-8',
           }, 'No shows in the catalog yet.'))
-        : sorted.map((s) => m('tr', {
+        : items.map((s) => m('tr', {
             class: 'hover:bg-base-200 cursor-pointer',
             onclick: () => m.route.set('/shows/' + s.id),
           }, [
@@ -583,98 +599,108 @@ function renderShowsList(sorted, sortKey, sortDir) {
 }
 
 // renderShowsGrid renders the responsive show-poster grid.
-function renderShowsGrid(sorted) {
-  if (sorted.length === 0) {
+function renderShowsGrid(items) {
+  if (items.length === 0) {
     return m('div', { class: 'text-center opacity-60 py-12' },
       'No shows in the catalog yet.');
   }
   return m('div', {
     class: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4',
-  }, sorted.map(ShowCard));
+  }, items.map(ShowCard));
 }
 
 const Library = {
   oninit() {
     readURLParams();
-    state.library.loading = true;
-    state.library.error = null;
-    api.get('/recordings?limit=200').then((body) => {
-      state.library.items = (body && body.items) || [];
-      state.library.loading = false;
-    }).catch((err) => {
-      state.library.error = err;
-      state.library.loading = false;
-    });
-    if (state.library.mode === 'shows') ensureShowsLoaded();
+    loadActive();
   },
 
   // onupdate fires on every route change while we stay mounted. The
   // SPA uses Library for `/` only, so any update implies the
-  // querystring (status / sort / dir / view / mode) may have changed.
-  // Re-read, kick off a shows fetch if mode just flipped.
+  // querystring (status / sort / dir / view / mode / page) may have
+  // changed.
   onupdate() {
+    const lib = state.library;
+    const before = {
+      mode: lib.mode,
+      status: lib.status,
+      sortKey: lib.sortKey,
+      sortDir: lib.sortDir,
+      offset: lib.mode === 'shows' ? lib.showsOffset : lib.offset,
+    };
     readURLParams();
-    if (state.library.mode === 'shows') ensureShowsLoaded();
+    const afterOffset = lib.mode === 'shows' ? lib.showsOffset : lib.offset;
+    // Refetch only when the inputs that affect the result set
+    // changed — view/mode toggles within the same dataset don't need
+    // a network round-trip.
+    if (before.mode !== lib.mode ||
+        before.status !== lib.status ||
+        before.sortKey !== lib.sortKey ||
+        before.sortDir !== lib.sortDir ||
+        before.offset !== afterOffset) {
+      loadActive();
+    }
   },
 
   view() {
     const lib = state.library;
+    const isShowsMode = lib.mode === 'shows';
 
-    if (lib.loading) {
-      return m('div', { class: 'p-8 opacity-60' }, 'Loading library…');
-    }
-    if (lib.error) {
-      return m('div', { role: 'alert', class: 'alert alert-error' }, [
-        m('span', 'Failed to load recordings: ' + (lib.error.message || lib.error)),
-      ]);
-    }
-
-    const items = lib.items;
-    const counts = countByStatus(items);
-    const total = items.length;
-    const synced = counts.synced || 0;
-    const wanted = counts.wanted || 0;
-    const mismatchTotal =
-      (counts.format_mismatch || 0) +
-      (counts.missing || 0) +
-      (counts.orphan || 0);
-    const files = fileTotal(items);
-
-    const filtered = lib.status
-      ? items.filter((it) => it.status === lib.status)
-      : items.slice();
-    const sortedRecordings = sortItems(filtered,
-      { key: lib.sortKey, dir: lib.sortDir }, SORT_COLUMNS);
-    const sortedShows = sortItems(lib.shows,
-      { key: lib.sortKey, dir: lib.sortDir }, SORT_COLUMNS_SHOWS);
-
-    let body;
-    if (lib.mode === 'shows') {
+    // Render skeleton on first load (no items yet); subsequent
+    // refetches keep the previous page visible so the user doesn't
+    // see a flash of "Loading…" between page clicks.
+    if (isShowsMode) {
       if (lib.showsLoading && lib.shows.length === 0) {
-        body = m('div', { class: 'p-8 opacity-60' }, 'Loading shows…');
-      } else if (lib.showsError) {
-        body = m('div', { role: 'alert', class: 'alert alert-error' },
+        return m('div', { class: 'p-8 opacity-60' }, 'Loading shows…');
+      }
+      if (lib.showsError) {
+        return m('div', { role: 'alert', class: 'alert alert-error' },
           m('span', 'Failed to load shows: ' +
             (lib.showsError.message || lib.showsError)));
-      } else if (lib.view === 'grid') {
-        body = renderShowsGrid(sortedShows);
-      } else {
-        body = renderShowsList(sortedShows, lib.sortKey, lib.sortDir);
       }
-    } else if (lib.view === 'grid') {
-      body = renderRecordingsGrid(sortedRecordings);
     } else {
-      body = renderRecordingsList(sortedRecordings, lib.sortKey, lib.sortDir);
+      if (lib.loading && lib.items.length === 0) {
+        return m('div', { class: 'p-8 opacity-60' }, 'Loading library…');
+      }
+      if (lib.error) {
+        return m('div', { role: 'alert', class: 'alert alert-error' },
+          m('span', 'Failed to load recordings: ' + (lib.error.message || lib.error)));
+      }
     }
+
+    const total = isShowsMode ? lib.showsTotal : lib.total;
+    const offset = isShowsMode ? lib.showsOffset : lib.offset;
+    const start = total === 0 ? 0 : offset + 1;
+    const end = Math.min(offset + lib.limit, total);
+
+    let body;
+    if (isShowsMode) {
+      body = lib.view === 'grid'
+        ? renderShowsGrid(lib.shows)
+        : renderShowsList(lib.shows, lib.sortKey, lib.sortDir);
+    } else if (lib.view === 'grid') {
+      body = renderRecordingsGrid(lib.items);
+    } else {
+      body = renderRecordingsList(lib.items, lib.sortKey, lib.sortDir);
+    }
+
+    // Stat tiles — totals are off the active list (status filter ON
+    // when set). With server-side pagination we no longer have a
+    // status-by-status breakdown of the full library; the tiles read
+    // off the current dataset's total instead so the user gets a
+    // meaningful "X of Y" with the active filter applied.
+    const headerLabel = isShowsMode ? 'shows' : 'recordings';
+    const headerSub = total === 0
+      ? 'No ' + headerLabel + ' loaded'
+      : 'Showing ' + start + '–' + end + ' of ' + total + ' ' + headerLabel +
+        (lib.status ? ' · status: ' + lib.status : '');
 
     return m('div', { class: 'space-y-6' }, [
       // Page header.
       m('header', { class: 'flex items-start justify-between gap-4 flex-wrap' }, [
         m('div', [
           m('h1', { class: 'text-3xl font-semibold' }, 'Library'),
-          m('p', { class: 'text-sm opacity-70 mt-1' },
-            total + ' cataloged · ' + synced + ' synced · ' +
-            wanted + ' wanted · ' + files + ' files on disk'),
+          m('p', { class: 'text-sm opacity-70 mt-1' }, headerSub),
         ]),
         m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
           ModeTabs(lib.mode),
@@ -686,22 +712,36 @@ const Library = {
         ]),
       ]),
 
-      // Stat tiles. `stats` parent wraps `stat` children per DaisyUI.
+      // Stat tiles — kept around for visual rhythm. With pagination
+      // the global counts are not available without an extra
+      // aggregate call; show the active total + active mode/filter
+      // summary so the tiles still anchor the page.
       m('div', { class: 'stats stats-vertical lg:stats-horizontal shadow w-full' }, [
-        MetricTile('Synced',     synced,         total + ' cataloged'),
-        MetricTile('Wanted',     wanted,         'on the shopping list'),
-        MetricTile('Mismatches', mismatchTotal,  'needs reconcile'),
-        MetricTile('Files on disk', files,       'across all versions'),
+        MetricTile(isShowsMode ? 'Shows' : 'Recordings', total,
+          lib.status ? 'matching ' + lib.status : 'in catalog'),
+        MetricTile('Page size', lib.limit, '50/page default'),
+        MetricTile('Mode', isShowsMode ? 'Shows' : 'Recordings',
+          isShowsMode ? 'aggregated' : 'per-recording'),
+        MetricTile('Page', Math.floor(offset / lib.limit) + 1,
+          'of ' + Math.max(1, Math.ceil(total / lib.limit))),
       ]),
 
       // Status filter tabs only apply to recordings mode — by-show
       // aggregates are intrinsically multi-status.
-      lib.mode === 'recordings'
+      !isShowsMode
         ? m('div', { role: 'tablist', class: 'tabs tabs-box' },
-            STATUS_FILTERS.map((f) => Tab(f, counts, lib.status)))
+            STATUS_FILTERS.map((f) => Tab(f, lib.status)))
         : null,
 
       body,
+
+      // Pagination strip — each mode owns its own offset/total.
+      m(Pagination, {
+        offset,
+        limit: lib.limit,
+        total,
+        setOffset: isShowsMode ? setOffsetShows : setOffsetRecordings,
+      }),
     ]);
   },
 };

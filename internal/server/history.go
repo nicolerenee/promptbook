@@ -1,6 +1,9 @@
 package server
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -84,7 +87,12 @@ func (s *Server) handleListHistory(c echo.Context) error {
 		opts.RecordingID = &id
 	}
 
-	events, err := storage.ListHistory(c.Request().Context(), s.db, opts)
+	ctx := c.Request().Context()
+	total, err := countHistoryEvents(ctx, s.db, opts)
+	if err != nil {
+		return err
+	}
+	events, err := storage.ListHistory(ctx, s.db, opts)
 	if err != nil {
 		return err
 	}
@@ -92,11 +100,45 @@ func (s *Server) handleListHistory(c echo.Context) error {
 	for _, e := range events {
 		items = append(items, toHistoryItem(e))
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		itemsKey:  items,
-		limitKey:  limit,
-		offsetKey: offset,
-	})
+	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
+}
+
+// countHistoryEvents tallies history rows matching the same kind /
+// recording_id filter the items list reflects. Mirrors
+// storage.ListHistory's WHERE construction so the SPA's "Page N of M"
+// math agrees with the rendered slice.
+func countHistoryEvents(
+	ctx context.Context,
+	db *sql.DB,
+	opts storage.ListHistoryOptions,
+) (int, error) {
+	var (
+		where []string
+		args  []any
+	)
+	if len(opts.Kinds) > 0 {
+		placeholders := make([]string, len(opts.Kinds))
+		for i, k := range opts.Kinds {
+			placeholders[i] = "?"
+			args = append(args, k)
+		}
+		where = append(where, "kind IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if opts.RecordingID != nil {
+		where = append(where, "recording_id = ?")
+		args = append(args, *opts.RecordingID)
+	}
+	q := "SELECT COUNT(*) FROM history"
+	if len(where) > 0 {
+		// Concatenated fragments are static column-name + "?" placeholder
+		// strings; user values bind via args.
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count history: %w", err)
+	}
+	return n, nil
 }
 
 // parseHistoryKindParam splits a comma-separated kind value into the

@@ -19,8 +19,8 @@ export const state = {
   library: {
     items: [],
     status: '',           // '' = All; otherwise lowercase storage.Status.
-    sortKey: 'date',
-    sortDir: 'desc',
+    sortKey: 'recording',
+    sortDir: 'asc',
     loading: true,
     error: null,
     view: 'list',         // 'list' | 'grid'.
@@ -28,16 +28,29 @@ export const state = {
     shows: [],
     showsLoading: false,
     showsError: null,
+    // Pagination — recordings + shows each track their own offset +
+    // total because flipping mode swaps the dataset entirely. limit
+    // is hardcoded to 50 in the API layer; the SPA mirrors it here so
+    // the indicator math agrees with the server's slice.
+    offset: 0,
+    total: 0,
+    showsOffset: 0,
+    showsTotal: 0,
+    limit: 50,
   },
   // wants holds the /api/v1/wants response + the current sort
   // selection. Status is fixed (every row is `wanted`) so unlike
-  // Library there's no filter dimension to track.
+  // Library there's no filter dimension to track. offset / total /
+  // limit drive the shared Pagination component.
   wants: {
     items: [],
     sortKey: 'wants_added',
     sortDir: 'desc',
     loading: true,
     error: null,
+    offset: 0,
+    total: 0,
+    limit: 50,
   },
   // sync mirrors /api/v1/sync/runs. Default order matches the API
   // (id desc, i.e. newest first); column clicks let the user re-sort
@@ -132,17 +145,26 @@ export const state = {
   // history mirrors the legacy /static/history.js view-model. kind is
   // the active filter tab; recordingID, when set, scopes the list to
   // a single recording's audit trail (driven by ?recording_id=).
+  // offset / total / limit drive the shared Pagination component;
+  // the kind filter is applied server-side now so re-tab triggers a
+  // refetch with offset=0.
   history: {
     items: [],
     kind: '',             // '' = All; otherwise lowercase HistoryKind* token.
     recordingID: null,
     loading: true,
     error: null,
+    offset: 0,
+    total: 0,
+    limit: 50,
   },
   // people is the /people index page state. q is the live search
   // query persisted to ?q=; sortKey/sortDir mirror Library's URL-
   // backed sort. items caches /api/v1/people responses across
-  // navigations away and back.
+  // navigations away and back. offset / total / limit drive the
+  // shared Pagination component; search filters the current page
+  // client-side (instant feedback) so changing q does NOT reset
+  // offset or refetch.
   people: {
     items: [],
     q: '',
@@ -150,6 +172,9 @@ export const state = {
     sortDir: 'asc',
     loading: true,
     error: null,
+    offset: 0,
+    total: 0,
+    limit: 50,
   },
   // person is the /people/:id detail page state. detail holds the
   // PersonDetail JSON; imgError flips to true when the headshot URL

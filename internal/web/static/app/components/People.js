@@ -1,13 +1,19 @@
 // People.js — Mithril port of the legacy /static/people.js.
 //
-// Renders the /people index: page header w/ count, search input that
-// filters client-side by name, and a sortable table of performers
-// (avatar, name, recording count, per-state badge cluster). Clicking a
-// row routes to /people/:id.
+// Renders the /people index: page header w/ count + "showing N of M",
+// search input that filters CURRENT-PAGE rows client-side (so the
+// keypresses give instant feedback even though they only narrow the
+// 50 visible rows), and a sortable table of performers (avatar, name,
+// recording count, per-state badge cluster). Clicking a row routes to
+// /people/:id.
 //
-// Default sort is name ascending — matches the API's ORDER BY p.name
-// and the legacy page's implicit ordering. The search box persists as
-// ?q=<term> so deep links and refreshes keep the filter.
+// Pagination + sort live on the server now — flipping a column header
+// rebuilds the URL with sort/dir + page=1, the SPA refetches, and the
+// shared Pagination component drives the Prev / Next buttons. Search
+// stays client-side on purpose: filtering the visible page gives an
+// instant "did I spell the name right?" loop, and the user can hit
+// Next to see the rest. A future wave can promote search to a server-
+// side query if 50-row pages stop being enough context.
 //
 // Avatar fallback: /api/v1/people doesn't expose headshot_url on the
 // list (only the detail endpoint does). We render DaisyUI's
@@ -18,6 +24,7 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
+import Pagination from './Pagination.js';
 
 // STATUS_META mirrors Library.js so the badge cluster colour-codes the
 // per-state breakdown the same way the library page does.
@@ -34,26 +41,15 @@ const STATUS_META = {
 // after.
 const STATE_ORDER = ['synced', 'format_mismatch', 'missing', 'wanted', 'orphan'];
 
-// SORT_COLUMNS lists the sortable headers in render order. Matches
-// Library.js's pattern: `key` is both URL token + the column id;
-// `compare` is a stable comparator.
+// SORT_COLUMNS lists the sortable headers in render order. `key` is
+// both URL token + the column id; the server resolves it against a
+// whitelist (peopleSortFragments) and falls back to default on miss.
 const SORT_COLUMNS = [
-  { key: 'name',  label: 'Performer',
-    compare: (a, b) => cmpStr(a.name, b.name) },
-  { key: 'count', label: 'Recordings',
-    compare: (a, b) => cmpNum(a.recording_count, b.recording_count) },
+  { key: 'name',  label: 'Performer' },
+  { key: 'count', label: 'Recordings' },
 ];
 
 const DEFAULT_SORT = { key: 'name', dir: 'asc' };
-
-function cmpStr(a, b) {
-  const sa = a == null ? '' : String(a).toLowerCase();
-  const sb = b == null ? '' : String(b).toLowerCase();
-  if (sa < sb) return -1;
-  if (sa > sb) return 1;
-  return 0;
-}
-function cmpNum(a, b) { return (Number(a) || 0) - (Number(b) || 0); }
 
 // monogram returns up to 2 initial characters from the performer's
 // name. "Eva Noblezada" → "EN", "Cher" → "C", empty → "?". Mirrors the
@@ -69,8 +65,8 @@ function monogram(name) {
   return letters.toUpperCase() || '?';
 }
 
-// readURLParams pulls the active search/sort state out of the current
-// Mithril route. Empty params land on defaults.
+// readURLParams pulls the active search/sort/page state out of the
+// current Mithril route. Empty params land on defaults.
 function readURLParams() {
   const params = m.route.param() || {};
   const p = state.people;
@@ -87,11 +83,14 @@ function readURLParams() {
     p.sortKey = col.key;
     p.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
   }
+
+  const page = parseInt(params.page, 10);
+  p.offset = (page > 1) ? (page - 1) * p.limit : 0;
 }
 
 // pushURLParams syncs state.people back to the browser URL so a reload
 // or share keeps the same filtered/sorted view. Empty values are
-// dropped.
+// dropped; page=1 is dropped since it's the default.
 function pushURLParams() {
   const p = state.people;
   const out = {};
@@ -100,10 +99,36 @@ function pushURLParams() {
     out.sort = p.sortKey;
     out.dir = p.sortDir;
   }
+  const page = Math.floor(p.offset / p.limit) + 1;
+  if (page > 1) out.page = String(page);
   m.route.set('/people', out, { replace: true });
 }
 
-// setQuery updates the search query and re-syncs the URL.
+// loadPeople fetches the active page from the server. Sort + offset
+// are URL-driven, so the URL is the single source of truth.
+function loadPeople() {
+  const p = state.people;
+  p.loading = true;
+  p.error = null;
+  const params = new URLSearchParams();
+  params.set('limit', String(p.limit));
+  params.set('offset', String(p.offset));
+  params.set('sort', p.sortKey);
+  params.set('dir', p.sortDir);
+  return api.get('/people?' + params.toString()).then((body) => {
+    p.items = (body && body.items) || [];
+    p.total = (body && body.total) || 0;
+    p.loading = false;
+  }).catch((err) => {
+    p.error = err;
+    p.loading = false;
+  });
+}
+
+// setQuery updates the search query + URL but does NOT reset offset
+// or refetch — search filters the current page client-side for
+// instant feedback. The user pages forward with Next » to search the
+// rest of the list.
 function setQuery(q) {
   state.people.q = q || '';
   pushURLParams();
@@ -111,6 +136,8 @@ function setQuery(q) {
 
 // setSort toggles direction when the active column is clicked, else
 // drops to the column's default direction (count desc, otherwise asc).
+// Resets to page 1 since the row at offset N changes meaning when the
+// sort axis flips.
 function setSort(key) {
   const p = state.people;
   if (p.sortKey === key) {
@@ -119,7 +146,17 @@ function setSort(key) {
     p.sortKey = key;
     p.sortDir = key === 'count' ? 'desc' : 'asc';
   }
+  p.offset = 0;
   pushURLParams();
+  loadPeople();
+}
+
+// setOffset is the Pagination component's callback. Updates state +
+// URL + refetch.
+function setOffset(newOffset) {
+  state.people.offset = newOffset;
+  pushURLParams();
+  loadPeople();
 }
 
 // filterItems narrows the list by case-insensitive name substring.
@@ -127,17 +164,6 @@ function filterItems(items, q) {
   const needle = String(q || '').trim().toLowerCase();
   if (!needle) return items.slice();
   return items.filter((it) => (it.name || '').toLowerCase().includes(needle));
-}
-
-// sortItems returns a new sorted slice. Direction is applied via the
-// sign trick used in Library.js.
-function sortItems(items, sort) {
-  const col = SORT_COLUMNS.find((c) => c.key === sort.key);
-  if (!col) return items.slice();
-  const sign = sort.dir === 'desc' ? -1 : 1;
-  const out = items.slice();
-  out.sort((a, b) => sign * col.compare(a, b));
-  return out;
 }
 
 // AvatarPlaceholder renders DaisyUI's avatar-placeholder with the
@@ -229,15 +255,7 @@ function SearchIcon() {
 const People = {
   oninit() {
     readURLParams();
-    state.people.loading = true;
-    state.people.error = null;
-    api.get('/people?limit=500').then((body) => {
-      state.people.items = (body && body.items) || [];
-      state.people.loading = false;
-    }).catch((err) => {
-      state.people.error = err;
-      state.people.loading = false;
-    });
+    loadPeople();
   },
 
   // onupdate fires on every route change while we stay mounted. Like
@@ -250,7 +268,7 @@ const People = {
   view() {
     const p = state.people;
 
-    if (p.loading) {
+    if (p.loading && p.items.length === 0) {
       return m('div', { class: 'p-8 opacity-60' }, 'Loading people…');
     }
     if (p.error) {
@@ -259,21 +277,28 @@ const People = {
       ]);
     }
 
+    // Search filters the CURRENT page only — see header comment.
     const filtered = filterItems(p.items, p.q);
-    const sorted = sortItems(filtered, { key: p.sortKey, dir: p.sortDir });
-    const total = p.items.length;
-    const showing = sorted.length;
+    const total = p.total;
+    const showing = filtered.length;
+    const start = total === 0 ? 0 : p.offset + 1;
+    const end = Math.min(p.offset + p.limit, total);
+
+    let subText;
+    if (p.q) {
+      subText = showing + ' on this page match "' + p.q + '" · ' +
+        total + ' performers in your library';
+    } else {
+      subText = 'Showing ' + start + '–' + end + ' of ' + total +
+        ' performer' + (total === 1 ? '' : 's') + ' in your library';
+    }
 
     return m('div', { class: 'space-y-6' }, [
       // Page header.
       m('header', { class: 'flex items-start justify-between gap-4 flex-wrap' }, [
         m('div', [
           m('h1', { class: 'text-3xl font-semibold' }, 'People'),
-          m('p', { class: 'text-sm opacity-70 mt-1' },
-            (p.q
-              ? showing + ' of ' + total + ' performers'
-              : total + ' performer' + (total === 1 ? '' : 's')) +
-            ' in your library'),
+          m('p', { class: 'text-sm opacity-70 mt-1' }, subText),
         ]),
         // Action stub — kept for visual parity with Library.
         m('div', { class: 'flex items-center gap-2' }, [
@@ -288,7 +313,7 @@ const People = {
           SearchIcon(),
           m('input', {
             type: 'search',
-            placeholder: 'Search performers',
+            placeholder: 'Search performers (current page)',
             value: p.q,
             oninput: (ev) => setQuery(ev.target.value),
           }),
@@ -303,14 +328,24 @@ const People = {
             HeaderCell(SORT_COLUMNS[1], p.sortKey, p.sortDir, 'text-right'),
             m('th', 'States'),
           ])),
-          m('tbody', sorted.length === 0
+          m('tbody', filtered.length === 0
             ? m('tr', m('td', {
                 colspan: 4, class: 'text-center opacity-60 py-8',
               }, p.q
-                ? 'No performers match this search.'
+                ? 'No performers on this page match this search.'
                 : 'No performers in your library yet.'))
-            : sorted.map(Row)),
+            : filtered.map(Row)),
         ])),
+
+      // Pagination strip — hidden when the entire library fits on
+      // one page. Search doesn't constrain the slice the server
+      // returned, so paging stays driven by total / limit / offset.
+      m(Pagination, {
+        offset: p.offset,
+        limit: p.limit,
+        total: p.total,
+        setOffset,
+      }),
     ]);
   },
 };

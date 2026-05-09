@@ -78,16 +78,45 @@ type PersonDetail struct {
 func (s *Server) handleListPeople(c echo.Context) error {
 	limit := paramInt(c, "limit", peopleListLimit)
 	offset := paramInt(c, "offset", 0)
+	sortKey := c.QueryParam("sort")
+	dir := parseSortDir(c)
 
-	items, err := loadPeopleList(c.Request().Context(), s.db, limit, offset)
+	ctx := c.Request().Context()
+	total, err := countPeopleList(ctx, s.db)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		itemsKey:  items,
-		limitKey:  limit,
-		offsetKey: offset,
-	})
+	items, err := loadPeopleList(ctx, s.db, sortKey, dir, limit, offset)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
+}
+
+// countPeopleList counts every performer with at least one cast credit
+// against a recording the user owns or wants. Mirrors the FROM/WHERE
+// in loadPeopleList exactly so the SPA's "Page N of M" math agrees
+// with the row count.
+func countPeopleList(ctx context.Context, db *sql.DB) (int, error) {
+	var n int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM (
+			SELECT p.performer_id
+			FROM performers p
+			JOIN cast_entries ce ON ce.performer_id = p.performer_id
+			WHERE ce.recording_id IN (
+				SELECT recording_id FROM collection
+				UNION
+				SELECT recording_id FROM wants
+			)
+			GROUP BY p.performer_id
+		)
+	`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count people list: %w", err)
+	}
+	return n, nil
 }
 
 func (s *Server) handleGetPerson(c echo.Context) error {
@@ -127,11 +156,22 @@ func parsePerformerID(s string) (int64, error) {
 	return id, nil
 }
 
+// peopleSortFragments maps the sort keys exposed on the SPA's People
+// page to the SQL ORDER BY tail used to satisfy them. Whitelist-only
+// — every code path consults this map via resolveSortKey so user input
+// can never reach the SQL string verbatim.
+//
+//nolint:gochecknoglobals // immutable lookup table.
+var peopleSortFragments = map[string]string{
+	"name":  "p.name",
+	"count": "rcount",
+}
+
 // loadPeopleList returns performers that appear on at least one cast
 // entry tied to a recording in either the collection or wants table.
-// Sorted by name ascending so the page is alphabetical. StateCounts is
-// filled per-performer by walking the performer's recording credits and
-// asking storage.LoadState for each — the page-size cap (peopleListLimit
+// Default sort is name ascending. StateCounts is filled per-performer
+// by walking the performer's recording credits and asking
+// storage.LoadState for each — the page-size cap (peopleListLimit
 // performers, each with a small number of credits) keeps the cost
 // bounded; the alternative single-pass SQL is awkward because
 // LocalFormat needs ordered version data ComputeFormatString can chew
@@ -139,9 +179,16 @@ func parsePerformerID(s string) (int64, error) {
 func loadPeopleList(
 	ctx context.Context,
 	db *sql.DB,
+	sortKey string,
+	dir sortDir,
 	limit, offset int,
 ) ([]PersonListItem, error) {
-	rows, err := db.QueryContext(ctx, `
+	frag := resolveSortKey(sortKey, peopleSortFragments, "p.name")
+	orderTail := frag + " " + dir.sortDirSQL() + ", p.performer_id ASC"
+	// orderTail comes from the whitelist + a normalized direction
+	// constant — no user input ends up in the SQL.
+	//nolint:gosec // G202: see comment above; user input is mapped via whitelist.
+	q := `
 		SELECT p.performer_id, p.name, p.slug, COUNT(DISTINCT ce.recording_id) AS rcount
 		FROM performers p
 		JOIN cast_entries ce ON ce.performer_id = p.performer_id
@@ -151,9 +198,10 @@ func loadPeopleList(
 			SELECT recording_id FROM wants
 		)
 		GROUP BY p.performer_id, p.name, p.slug
-		ORDER BY p.name ASC, p.performer_id ASC
+		ORDER BY ` + orderTail + `
 		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`
+	rows, err := db.QueryContext(ctx, q, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("query people list: %w", err)
 	}

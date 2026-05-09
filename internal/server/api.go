@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 // API tunables.
 const (
 	defaultListLimit = 50
-	wantsScanLimit   = 100
 	itemsKey         = "items"
 	limitKey         = "limit"
 	offsetKey        = "offset"
@@ -175,6 +175,8 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 	offset := paramInt(c, "offset", 0)
 	statusParam := c.QueryParam("status")
 	owned := c.QueryParam("owned")
+	sortKey := c.QueryParam("sort")
+	dir := parseSortDir(c)
 
 	statuses := parseStatusParam(statusParam)
 
@@ -186,7 +188,9 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	items, err := loadStatefulRecordings(ctx, s.db, statuses, ownedFilter, limit, offset)
+	items, total, err := loadStatefulRecordings(
+		ctx, s.db, statuses, ownedFilter, sortKey, dir, limit, offset,
+	)
 	if err != nil {
 		return err
 	}
@@ -199,11 +203,7 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 		s.logger.Warn().Err(posterErr).Msg("decorate local poster urls failed; serving without")
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{
-		itemsKey:  items,
-		limitKey:  limit,
-		offsetKey: offset,
-	})
+	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
 }
 
 // decorateLocalPosters sets LocalPosterURL on every item that maps to a
@@ -524,11 +524,21 @@ func readNFO(path string) (string, *time.Time, error) {
 }
 
 func (s *Server) handleListWants(c echo.Context) error {
-	items, err := loadWantsList(c.Request().Context(), s.db, wantsScanLimit, 0)
+	limit := paramInt(c, "limit", defaultListLimit)
+	offset := paramInt(c, "offset", 0)
+	sortKey := c.QueryParam("sort")
+	dir := parseSortDir(c)
+
+	ctx := c.Request().Context()
+	total, err := countWantsList(ctx, s.db)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
+	items, err := loadWantsList(ctx, s.db, sortKey, dir, limit, offset)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
 }
 
 func (s *Server) handleSyncRuns(c echo.Context) error {
@@ -599,48 +609,48 @@ func parseStatusParam(raw string) []storage.Status {
 // recording metadata (show, tour, date, master) needed for the list view.
 // When statuses is empty and ownedFilter is set, the result is post-
 // filtered by collection membership to preserve the legacy ?owned= API.
+//
+// Sort happens in memory after filter + meta load — the recordings
+// list is bounded by maxStateScan (1024) so an O(n log n) sort is
+// cheap. sortKey is one of the keys in recordingsSortKeys; unknown
+// keys fall back to the default (show name asc, then date asc).
+//
+// Returns (page, total) where total is the count of rows matching the
+// status + owned filter (i.e. the SPA can compute "Page N of M"
+// without re-querying).
 func loadStatefulRecordings(
 	ctx context.Context,
 	db *sql.DB,
 	statuses []storage.Status,
-	ownedFilter string,
+	ownedFilter, sortKey string,
+	dir sortDir,
 	limit, offset int,
-) ([]RecordingListItem, error) {
+) ([]RecordingListItem, int, error) {
 	// Pull all matching states (ListStates does its own pagination, but
 	// we want to apply the legacy owned filter before paginating, so ask
 	// for a wide window and slice it ourselves).
 	listOpts := storage.ListStatesOptions{Status: statuses, Limit: maxStateScan}
 	states, err := storage.ListStates(ctx, db, listOpts)
 	if err != nil {
-		return nil, fmt.Errorf("list states: %w", err)
+		return nil, 0, fmt.Errorf("list states: %w", err)
 	}
 
 	if ownedFilter != "" {
 		states = applyOwnedFilter(states, ownedFilter)
 	}
 
-	// Page-slice after filtering so callers asking for "page 2 of owned"
-	// see the right window.
-	total := len(states)
-	if offset >= total {
-		return []RecordingListItem{}, nil
-	}
-	end := min(offset+limit, total)
-	page := states[offset:end]
-
-	if len(page) == 0 {
-		return []RecordingListItem{}, nil
-	}
-
-	meta, err := loadRecordingMeta(ctx, db, page)
+	// Resolve metadata for the entire filtered set so we can sort by
+	// show / date / master before paginating. Page-size is capped at
+	// maxStateScan (1024), well within "load once" territory.
+	meta, err := loadRecordingMeta(ctx, db, states)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	out := make([]RecordingListItem, 0, len(page))
-	for _, st := range page {
+	full := make([]RecordingListItem, 0, len(states))
+	for _, st := range states {
 		m := meta[st.RecordingID]
-		out = append(out, RecordingListItem{
+		full = append(full, RecordingListItem{
 			ID:             st.RecordingID,
 			ShowID:         m.showID,
 			Show:           m.show,
@@ -657,7 +667,63 @@ func loadStatefulRecordings(
 			LocalFormat:    st.LocalFormat,
 		})
 	}
-	return out, nil
+
+	sortRecordings(full, sortKey, dir)
+
+	total := len(full)
+	if offset >= total {
+		return []RecordingListItem{}, total, nil
+	}
+	end := min(offset+limit, total)
+	return full[offset:end], total, nil
+}
+
+// sortRecordings orders items in-place by the supplied sortKey + dir.
+// Unknown keys fall back to the default (show name asc, then
+// date_full asc, with id as the final stable tiebreak).
+func sortRecordings(items []RecordingListItem, sortKey string, dir sortDir) {
+	cmp := recordingsCompareFn(sortKey)
+	desc := dir == sortDesc
+	sort.SliceStable(items, func(i, j int) bool {
+		c := cmp(items[i], items[j])
+		if desc {
+			c = -c
+		}
+		if c != 0 {
+			return c < 0
+		}
+		// Stable tiebreak on id so equal sort keys read deterministically
+		// and pagination doesn't shuffle rows on a refresh.
+		return items[i].ID < items[j].ID
+	})
+}
+
+// recordingsCompareFn maps a sort key to a stable comparator returning
+// -1 / 0 / +1. Unknown keys fall back to the default (show name then
+// date_full then tour). Empty local_format always pins last so unmatched
+// rows don't dominate the top of an asc sort — mirrors the legacy
+// client-side cmpEmptyLast behavior.
+func recordingsCompareFn(key string) func(a, b RecordingListItem) int {
+	switch key {
+	case "status":
+		return func(a, b RecordingListItem) int { return cmpString(a.Status, b.Status) }
+	case "date":
+		return func(a, b RecordingListItem) int { return cmpString(a.DateFull, b.DateFull) }
+	case "master":
+		return func(a, b RecordingListItem) int { return cmpString(a.Master, b.Master) }
+	case "local_format":
+		return func(a, b RecordingListItem) int { return cmpEmptyLast(a.LocalFormat, b.LocalFormat) }
+	default: // "recording" or unknown.
+		return func(a, b RecordingListItem) int {
+			if c := cmpString(a.Show, b.Show); c != 0 {
+				return c
+			}
+			if c := cmpString(a.DateFull, b.DateFull); c != 0 {
+				return c
+			}
+			return cmpString(a.Tour, b.Tour)
+		}
+	}
 }
 
 // maxStateScan caps how many states we materialize before paginating.
@@ -760,17 +826,63 @@ func loadRecordingMeta(
 	return out, nil
 }
 
+// wantsSortFragments maps sort keys exposed on the SPA's Wants page to
+// the SQL ORDER BY tail used to satisfy them. NULL last_synced_at rows
+// always pin to the bottom (NULLS LAST) so legacy backfilled rows
+// don't dominate the top of either direction. NEVER bypass this map —
+// every code path goes through resolveSortKey.
+//
+// The fallback (default) sort is wants_added DESC, recording_id DESC —
+// newest additions first, consistent with the legacy behavior.
+//
+//nolint:gochecknoglobals // immutable lookup table.
+var wantsSortFragments = map[string]string{
+	"wants_added": "w.last_synced_at",
+	"date":        "r.date_full",
+	"master":      "r.master",
+	"recording":   "s.name, r.date_full, r.tour",
+	"show":        "s.name",
+}
+
+// countWantsList returns the count of rows the wants list will surface
+// (mirrors the WHERE clause in loadWantsList exactly). Powers the SPA
+// pagination indicator.
+func countWantsList(ctx context.Context, db *sql.DB) (int, error) {
+	const q = `
+		SELECT COUNT(*)
+		FROM wants w
+		JOIN recordings r ON r.recording_id = w.recording_id
+		LEFT JOIN collection c ON c.recording_id = r.recording_id
+		WHERE c.recording_id IS NULL
+	`
+	var n int
+	if err := db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count wants list: %w", err)
+	}
+	return n, nil
+}
+
 // loadWantsList queries every wants row joined with its recording / show
 // metadata and surfaces wants.last_synced_at as the per-row WantsAdded
-// timestamp. Rows are returned newest-added first so the UI's "added"
-// timeline reads chronologically. Excludes wants whose recording is also
-// in the collection — those are no longer "wants" from a UX standpoint.
+// timestamp. Rows are returned newest-added first by default so the
+// UI's "added" timeline reads chronologically; sortKey can override.
+// Excludes wants whose recording is also in the collection — those are
+// no longer "wants" from a UX standpoint.
 func loadWantsList(
 	ctx context.Context,
 	db *sql.DB,
+	sortKey string,
+	dir sortDir,
 	limit, offset int,
 ) ([]wantsListItem, error) {
-	const q = `
+	frag := resolveSortKey(sortKey, wantsSortFragments, "w.last_synced_at")
+	// Default direction is desc for the natural keys (newest first); only
+	// flip to ASC when the user supplied an explicit sort with dir=asc.
+	orderTail := frag + " " + dir.sortDirSQL() + ", r.recording_id DESC"
+	// Concatenated tail comes from the whitelist + a normalized direction
+	// constant — no user input ends up in the SQL.
+	//nolint:gosec // G202: see comment above; user input is mapped via whitelist.
+	q := `
 		SELECT
 			r.recording_id, COALESCE(s.name, ''), r.tour, r.date_full,
 			r.date_month_known, r.date_day_known, r.master,
@@ -781,7 +893,7 @@ func loadWantsList(
 		LEFT JOIN shows s ON s.show_id = r.show_id
 		LEFT JOIN collection c ON c.recording_id = r.recording_id
 		WHERE c.recording_id IS NULL
-		ORDER BY w.last_synced_at DESC, r.recording_id DESC
+		ORDER BY ` + orderTail + `
 		LIMIT ? OFFSET ?
 	`
 	rows, err := db.QueryContext(ctx, q, limit, offset)
