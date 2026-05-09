@@ -23,12 +23,14 @@ below tracks what has changed since.
   from configurable templates, moves the file (with cross-device
   fallback), downloads subtitles when present, writes Jellyfin
   movie.nfo. End-to-end fixture-backed tests against an in-memory SQLite.
-- ✅ **Phase 5 — `promptbook serve` (basic).** Echo HTTP server bound
-  loopback-only by default. JSON `/api/v1/*` for recordings, wants,
+- ✅ **Phase 5 — `promptbook serve` (basic).** Echo HTTP server listens
+  on `[::]:8080` (all interfaces) by default; override with
+  `server.listen` or `PROMPTBOOK_SERVER_LISTEN` (e.g. `127.0.0.1:8080`)
+  to restrict to loopback. JSON `/api/v1/*` for recordings, wants,
   sync runs, health. HTML pages for the collection grid, recording
   detail, wants, sync log. JWT/OIDC auth deferred to Phase 5b.
 - ⏳ **Phase 5b — JWT/OIDC.** Wire freckle.id JWKS validation onto
-  `/api/v1/*` and gate non-localhost listens behind it.
+  `/api/v1/*` so the all-interfaces default is safe to expose.
 - ⏳ **Phase 6 — Atlantis deploy.** HelmRelease in `nicolerenee/infra`
   under `kubernetes/apps/media-tools/promptbook/`. HTTPRoute on the
   public envoy with OIDC SecurityPolicy at `promptbook.freckle.media`.

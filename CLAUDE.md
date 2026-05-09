@@ -31,8 +31,10 @@ Phases done:
   fallback, Jellyfin movie.nfo writer with golden test, subtitle
   fetcher behind an interface.
 - ✅ Phase 5 — `promptbook serve` (basic). Echo HTTP, JSON `/api/v1/*`,
-  HTML pages via embedded html/template + Pico CSS. Loopback-only by
-  default; JWT/OIDC arrives in Phase 5b.
+  HTML pages via embedded html/template + Pico CSS. Listens on
+  `[::]:8080` (all interfaces) by default; set `server.listen` /
+  `PROMPTBOOK_SERVER_LISTEN` to `127.0.0.1:8080` to restrict to
+  loopback. JWT/OIDC arrives in Phase 5b.
 
 Phases queued (in order):
 

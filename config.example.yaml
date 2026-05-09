@@ -32,6 +32,9 @@ library:
 
 # HTTP server (used by `promptbook serve` only).
 server:
+  # Address echo binds to. Default `[::]:8080` listens on all
+  # interfaces (IPv4 + IPv6). Use `127.0.0.1:8080` to restrict to
+  # loopback only. Override via PROMPTBOOK_SERVER_LISTEN as well.
   listen: "[::]:8080"
   oidc:
     issuer: ""           # e.g. https://id.freckle.family

@@ -24,7 +24,7 @@ promptbook library nfo PATH        # walk a tree and rewrite movie.nfo from cach
 promptbook library watch           # poll incomingDirs and enqueue files for review
 promptbook library queue           # list files waiting for manual import
 
-promptbook serve                   # HTTP UI + JSON API on 127.0.0.1:8080
+promptbook serve                   # HTTP UI + JSON API on [::]:8080
 ```
 
 All commands share `--config`, `--log-level`, `--log-pretty`. Subcommands that
@@ -80,5 +80,7 @@ task build
 - `/sync` recent sync run log
 
 JSON API under `/api/v1/{health,recordings,recordings/{id},wants,sync/runs}`.
-Auth (JWT/OIDC) is deferred to a follow-up phase — the default listen
-address is loopback-only.
+Auth (JWT/OIDC) is deferred to a follow-up phase. The default listen
+address is `[::]:8080` (all interfaces). To restrict the server to
+loopback only, set `server.listen: 127.0.0.1:8080` in your config or
+export `PROMPTBOOK_SERVER_LISTEN=127.0.0.1:8080`.

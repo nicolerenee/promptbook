@@ -18,8 +18,9 @@ var serveCmd = &cobra.Command{
 	Short: "Run the promptbook HTTP server",
 	Long: `Starts the echo HTTP server that serves the catalog pages and the
 /api/v1/* JSON endpoints from the local SQLite cache. JWT/OIDC auth is
-deferred to a later phase — the default listen address is loopback-only
-so the surface stays private.`,
+deferred to a later phase. The default listen address is [::]:8080
+(all interfaces); set server.listen or PROMPTBOOK_SERVER_LISTEN to
+127.0.0.1:8080 to restrict to loopback.`,
 	RunE: runServe,
 }
 
@@ -86,7 +87,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	addr := appConfig.Server.Listen
 	if addr == "" {
-		addr = "127.0.0.1:8080"
+		addr = "[::]:8080"
 	}
 	return srv.Start(ctx, addr)
 }
