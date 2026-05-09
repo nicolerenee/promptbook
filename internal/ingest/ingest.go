@@ -232,6 +232,8 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 	}
 	item.Action = ActionMoved
 
+	e.recordVersion(ctx, item)
+
 	if item.Recording.Metadata.HasSubtitles && e.SubtitleFetcher != nil {
 		paths, subErr := e.SubtitleFetcher.Fetch(ctx, e.Client, *item.Recording, *item.Plan)
 		if subErr != nil {
@@ -246,6 +248,43 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 		return
 	}
 	item.NFOPath = nfoPath
+}
+
+// recordVersion writes a recording_versions row for the file we just
+// moved into the canonical library. Best-effort: a failure here does not
+// roll back the move (the file is already in place and other consumers
+// can recover it via a future scan), so we log a warning and move on.
+func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
+	dest := item.Plan.AbsoluteFile()
+	info, err := os.Stat(dest)
+	if err != nil {
+		e.Logger.Warn().Err(err).Str("path", dest).Msg("failed to stat moved file")
+		return
+	}
+
+	// Use the original source filename for codec/quality heuristics: the
+	// canonical target name is template-driven and rarely carries the
+	// release tags we're sniffing for.
+	sourceName := filepath.Base(item.Source)
+	container := strings.ToLower(strings.TrimPrefix(filepath.Ext(dest), "."))
+	quality := ParseQuality(sourceName)
+	videoCodec := ParseVideoCodec(sourceName)
+	audioCodec := ParseAudioCodec(sourceName)
+	size := info.Size()
+
+	version := storage.RecordingVersion{
+		RecordingID:   item.EncoraID,
+		FilePath:      dest,
+		FileSizeBytes: size,
+		Container:     container,
+		Quality:       quality,
+		VideoCodec:    videoCodec,
+		AudioCodec:    audioCodec,
+		FormatLabel:   DefaultFormatLabel(container, quality, videoCodec, size),
+	}
+	if upsertErr := storage.UpsertVersion(ctx, e.DB, version); upsertErr != nil {
+		e.Logger.Warn().Err(upsertErr).Msg("failed to record version")
+	}
 }
 
 // lookupOrAdd reads from the local DB; if missing it auto-fetches the
