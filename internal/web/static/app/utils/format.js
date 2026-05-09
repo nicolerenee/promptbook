@@ -50,3 +50,22 @@ export function humanSize(b) {
   if (n >= KiB) return (n / KiB).toFixed(2) + ' KB';
   return n + ' B';
 }
+
+// MONTHS_LONG is the locale-independent month list used by
+// formatNFTDate. Hard-coded so the NFT callout renders the same
+// "Month D, YYYY" string regardless of the visitor's browser locale.
+const MONTHS_LONG = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// formatNFTDate renders an ISO date or RFC3339 timestamp as
+// "Month D, YYYY". Returns the raw input on parse failure and an
+// empty string for empty input. Mirrors the legacy
+// recording.js helper so the NFT-callout copy stays byte-identical.
+export function formatNFTDate(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return MONTHS_LONG[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+}
