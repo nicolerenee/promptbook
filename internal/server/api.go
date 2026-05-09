@@ -109,6 +109,12 @@ func (s *Server) routes() {
 	api.POST("/encora/wants/:id/remove", s.handleRemoveFromWants)
 	api.POST("/encora/wants/:id/add", s.handleAddToWants)
 
+	// Manual re-render of the burned-in backdrop. Picker handlers also
+	// invoke imagerender.Regenerate directly when a choice changes;
+	// this endpoint is the explicit "Re-render" affordance + a smoke
+	// test surface. 503 when the renderer is nil.
+	api.POST("/recordings/:id/regenerate-backdrop", s.handleRegenerateBackdrop)
+
 	// Scheduled-jobs API. The Mithril /jobs page polls these every
 	// 5s; the runner returns 503 when not wired (tests + no-config).
 	api.GET("/jobs/scheduled", s.handleListScheduledJobs)

@@ -58,6 +58,10 @@ Phases queued (in order):
 - `modernc.org/sqlite` (pure-Go SQLite, no CGO)
 - `pressly/goose/v3` (migrations, library mode, embedded SQL)
 - `coreos/go-oidc/v3` (JWT validation against freckle.id JWKS, planned)
+- `golang.org/x/image` (pure-Go font rendering for the burned-in
+  backdrop renderer; embeds DejaVu Serif Bold + Regular, licensed
+  under the Bitstream Vera Fonts license, see
+  `internal/imagerender/assets/LICENSE`)
 
 ## Layout
 

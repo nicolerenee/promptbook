@@ -74,10 +74,10 @@ type Server struct {
 	// so a non-nil-but-empty cache is safe.
 	imageCache *imagecache.Cache
 	// imageRenderer composites the burned-in backdrop (rendered.jpg)
-	// after a backdrop or overlay-text change. nil when image caching
-	// is disabled — the picker handlers' nil-check then 503s. The
-	// renderer is currently a stub; the call site is in place so the
-	// real renderer can drop in without churning callers.
+	// over the raw cached backdrop after a backdrop or overlay-text
+	// change. nil when image caching is disabled (imagerender.New
+	// returns nil in that mode); the picker + regenerate handlers
+	// nil-check and 503 in that case.
 	imageRenderer *imagerender.Renderer
 	// ingestEngine drives `POST /api/v1/queue/{id}/import`. nil when the
 	// server was constructed without one (tests or no-encora-key wiring);
@@ -162,10 +162,11 @@ type Options struct {
 	// the SPA shell (which renders 404s client-side).
 	ImageCache *imagecache.Cache
 	// ImageRenderer is optional. When non-nil, the recording-detail
-	// picker handlers call Regenerate after a backdrop or overlay-
-	// text change so rendered.jpg stays in sync with the user's
-	// selection. nil when image caching is disabled — the handlers
-	// 503 in that case rather than partially mutate state.
+	// picker handlers + the regenerate-backdrop endpoint call
+	// Regenerate so rendered.jpg stays in sync with the user's
+	// selection. nil when image caching is disabled — handlers 503
+	// rather than partially mutate state. Production wiring
+	// constructs it from the same imagecache.Cache; tests pass nil.
 	ImageRenderer *imagerender.Renderer
 }
 
@@ -250,9 +251,9 @@ func (s *Server) Encora() EncoraWriteClient { return s.encora }
 func (s *Server) ImageCache() *imagecache.Cache { return s.imageCache }
 
 // ImageRenderer returns the configured burned-in-backdrop renderer, or
-// nil when image caching is disabled. Picker handlers nil-check this
-// and 503 rather than mutating image_choices without a renderer to
-// honor the change.
+// nil when image caching is disabled. Picker + regenerate handlers
+// nil-check this and 503 rather than mutating image_choices without a
+// renderer to honor the change.
 func (s *Server) ImageRenderer() *imagerender.Renderer { return s.imageRenderer }
 
 // Version returns the build-time version string the sidebar footer
