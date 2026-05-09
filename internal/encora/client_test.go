@@ -222,56 +222,64 @@ func (r *recordingHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // TestClientWriteEndpoints exercises the POST endpoints. Each subcase fires
-// the call, then asserts the recorded method, path, and auth header.
+// the call, then asserts the recorded method, path, and auth header. The
+// upstream status varies per subcase so 200/201/204 are all proven to count
+// as success.
 func TestClientWriteEndpoints(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		call     func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error)
-		wantPath string
+		name       string
+		call       func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error)
+		wantPath   string
+		respStatus int
 	}{
 		{
 			name: "update_collection_format",
 			call: func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error) {
 				return c.UpdateCollectionFormat(ctx, 90100222, "MKV (1080p) - 8.74 GB")
 			},
-			wantPath: "/api/collection/90100222/format/MKV%20%281080p%29%20-%208.74%20GB",
+			wantPath:   "/api/collection/90100222/format/MKV%20%281080p%29%20-%208.74%20GB",
+			respStatus: http.StatusOK,
 		},
 		{
 			name: "update_collection_notes",
 			call: func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error) {
 				return c.UpdateCollectionNotes(ctx, 90100222, "saw it last night")
 			},
-			wantPath: "/api/collection/90100222/notes/saw%20it%20last%20night",
+			wantPath:   "/api/collection/90100222/notes/saw%20it%20last%20night",
+			respStatus: http.StatusCreated,
 		},
 		{
 			name: "remove_from_collection",
 			call: func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error) {
 				return c.RemoveFromCollection(ctx, 90100222)
 			},
-			wantPath: "/api/collection/90100222/remove",
+			wantPath:   "/api/collection/90100222/remove",
+			respStatus: http.StatusNoContent,
 		},
 		{
 			name: "add_to_wants",
 			call: func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error) {
 				return c.AddToWants(ctx, 90100222)
 			},
-			wantPath: "/api/wants/90100222/add",
+			wantPath:   "/api/wants/90100222/add",
+			respStatus: http.StatusOK,
 		},
 		{
 			name: "remove_from_wants",
 			call: func(ctx context.Context, c *encora.Client) (encora.RateLimitInfo, error) {
 				return c.RemoveFromWants(ctx, 90100222)
 			},
-			wantPath: "/api/wants/90100222/remove",
+			wantPath:   "/api/wants/90100222/remove",
+			respStatus: http.StatusNoContent,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			h := &recordingHandler{}
+			h := &recordingHandler{status: tt.respStatus}
 			srv := httptest.NewServer(h)
 			t.Cleanup(srv.Close)
 

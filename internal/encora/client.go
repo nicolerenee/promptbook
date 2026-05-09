@@ -240,8 +240,10 @@ func (c *Client) doRequest(
 	rl := parseRateLimit(resp.Header)
 
 	switch resp.StatusCode {
-	case http.StatusOK:
-		// fall through
+	case http.StatusOK, http.StatusCreated, http.StatusNoContent:
+		// 200 covers the read endpoints; POST writes (collect, format,
+		// notes, remove, wants/add, wants/remove) are observed returning
+		// 201 or 204 in production, depending on Encora's mood.
 	case http.StatusUnauthorized:
 		return rl, ErrUnauthorized
 	case http.StatusNotFound:
@@ -252,7 +254,9 @@ func (c *Client) doRequest(
 		return rl, fmt.Errorf("encora: unexpected status %d", resp.StatusCode)
 	}
 
-	if out != nil {
+	// 204 explicitly carries no body; skip the decoder so callers passing a
+	// non-nil out don't get an "unexpected EOF".
+	if out != nil && resp.StatusCode != http.StatusNoContent {
 		if decErr := json.NewDecoder(resp.Body).Decode(out); decErr != nil {
 			return rl, fmt.Errorf("decode body: %w", decErr)
 		}

@@ -22,6 +22,10 @@ import (
 )
 
 // SyncKind names a sync run for the sync_runs.kind column.
+//
+// SyncKindCollection and SyncKindWants are reserved for future kind-specific
+// sync entry points (e.g. `promptbook collection sync --only-wants`); the
+// current Sync runs both phases together and always logs SyncKindAll.
 const (
 	SyncKindAll        = "all"
 	SyncKindCollection = "collection"
@@ -41,6 +45,7 @@ type Result struct {
 // Client is the subset of *encora.Client that Sync needs. Defined as an
 // interface so tests can pass a mock without standing up an httptest server.
 type Client interface {
+	Profile(ctx context.Context) (encora.Profile, encora.RateLimitInfo, error)
 	Collection(
 		ctx context.Context, page int,
 	) (encora.Page[encora.CollectionEntry], encora.RateLimitInfo, error)
@@ -84,6 +89,13 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 	}
 	res.RunID = runID
 
+	// Profile is best-effort: a failure here logs a warning but does not
+	// block collection/wants. The cached counts surfaced in the UI may be
+	// stale until the next sync, but recordings remain importable.
+	if profErr := syncProfile(ctx, c, db, opts, res); profErr != nil {
+		opts.Logger.Warn().Err(profErr).Msg("profile sync failed; continuing")
+	}
+
 	syncErr := syncCollection(ctx, c, db, opts, res)
 	if syncErr == nil && !res.RateLimitedBailedOut {
 		syncErr = syncWants(ctx, c, db, opts, res)
@@ -108,6 +120,41 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 			Msg("failed to update sync_run row")
 	}
 	return res, syncErr
+}
+
+// syncProfile fetches the authenticated user's profile and writes it to the
+// single-row profile table. The caller treats the error as advisory — see
+// the call site in Sync for the rationale.
+func syncProfile(
+	ctx context.Context,
+	c Client,
+	db *sql.DB,
+	opts Options,
+	res *Result,
+) error {
+	p, rl, err := c.Profile(ctx)
+	if err != nil {
+		return fmt.Errorf("fetch profile: %w", err)
+	}
+	res.RateLimitRemaining = rl.Remaining
+
+	row := storage.Profile{
+		EncoraID:          p.ID,
+		Name:              p.Name,
+		Slug:              p.Slug,
+		Username:          p.Username,
+		Status:            p.Status,
+		RecordingsCount:   p.RecordingsCount,
+		WantsCount:        p.WantsCount,
+		LastSeenAt:        p.LastSeenAt,
+		ProfileVisibility: p.ProfileVisibility,
+		ColVisibility:     p.ColVisibility,
+		LastSyncedAt:      opts.Now().UTC(),
+	}
+	if upErr := storage.UpsertProfile(ctx, db, row); upErr != nil {
+		return fmt.Errorf("persist profile: %w", upErr)
+	}
+	return nil
 }
 
 // syncCollection mirrors the collection endpoint. The structural overlap

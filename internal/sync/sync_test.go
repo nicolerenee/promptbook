@@ -148,6 +148,17 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 		assert.Positive(t, n, "marigold should have cast entries")
 	})
 
+	t.Run("profile_persisted", func(t *testing.T) {
+		t.Parallel()
+		p, loadErr := storage.LoadProfile(t.Context(), db)
+		require.NoError(t, loadErr)
+		assert.Equal(t, "fixturearchive", p.Username)
+		assert.Equal(t, int64(90007787), p.EncoraID)
+		assert.Equal(t, 28, p.RecordingsCount)
+		assert.Equal(t, 14, p.WantsCount)
+		assert.Equal(t, "public", p.ProfileVisibility)
+	})
+
 	t.Run("sync_run_logged", func(t *testing.T) {
 		t.Parallel()
 		var (

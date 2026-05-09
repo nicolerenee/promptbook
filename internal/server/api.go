@@ -9,7 +9,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -37,6 +36,7 @@ type recordingsListItem struct {
 func (s *Server) routes() {
 	api := s.echo.Group("/api/v1")
 	api.GET("/health", s.handleHealth)
+	api.GET("/profile", s.handleProfile)
 	api.GET("/recordings", s.handleListRecordings)
 	api.GET("/recordings/:id", s.handleGetRecording)
 	api.GET("/wants", s.handleListWants)
@@ -50,6 +50,20 @@ func (s *Server) routes() {
 
 func (s *Server) handleHealth(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleProfile surfaces the cached /api/profile buttonshot that sync writes.
+// Responds 404 if no sync has populated the row yet so the UI can prompt
+// the user to run `promptbook collection sync`.
+func (s *Server) handleProfile(c echo.Context) error {
+	p, err := storage.LoadProfile(c.Request().Context(), s.db)
+	if errors.Is(err, storage.ErrProfileNotSynced) {
+		return echo.NewHTTPError(http.StatusNotFound, "profile not synced yet")
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, p)
 }
 
 func (s *Server) handleListRecordings(c echo.Context) error {
@@ -206,7 +220,3 @@ func paramInt(c echo.Context, name string, fallback int) int {
 	}
 	return n
 }
-
-// _ ensures the encora package is used; the import will be needed when
-// future endpoints surface profile data.
-var _ = encora.Page[encora.Recording]{}

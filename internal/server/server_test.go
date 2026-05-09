@@ -28,6 +28,7 @@ func fixtureBackedServer(t *testing.T) *server.Server {
 
 	mux := http.NewServeMux()
 	for path, file := range map[string]string{
+		"/api/profile":    "profile.json",
 		"/api/collection": "collection.json",
 		"/api/wants":      "wants.json",
 	} {
@@ -70,6 +71,42 @@ func TestAPIHealth(t *testing.T) {
 	var got map[string]string
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
 	assert.Equal(t, "ok", got["status"])
+}
+
+func TestAPIProfile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("found", func(t *testing.T) {
+		t.Parallel()
+		srv := fixtureBackedServer(t)
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/profile", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+		assert.Equal(t, "fixturearchive", got["username"])
+		assert.InEpsilon(t, float64(90007787), got["encora_id"], 0.0001)
+		assert.InEpsilon(t, float64(28), got["recordings_count"], 0.0001)
+		assert.InEpsilon(t, float64(14), got["wants_count"], 0.0001)
+	})
+
+	t.Run("not_synced", func(t *testing.T) {
+		t.Parallel()
+		// Bare DB without sync running — no profile row.
+		db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+
+		srv, err := server.New(server.Options{DB: db})
+		require.NoError(t, err)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/profile", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
 }
 
 func TestAPIRecordings(t *testing.T) {
