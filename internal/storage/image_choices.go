@@ -27,6 +27,13 @@ type ImageChoice struct {
 	BackdropIndex       *int
 	OverlayTextOverride *string
 	OverlayStyleJSON    *string
+	// OverlayDisabled, when true, tells the renderer to skip the
+	// playbill-style band entirely. The raw selected backdrop is
+	// copied through unchanged (or rendered.jpg is omitted and the
+	// NFO writer falls back to the raw file). The user picks this
+	// when their chosen backdrop already has visible label text or
+	// they prefer the unadorned art for Jellyfin/Plex.
+	OverlayDisabled bool
 }
 
 // ResolvePoster returns the poster index to use for the recording.
@@ -65,16 +72,17 @@ func (c ImageChoice) ResolveOverlayText(fallback string) string {
 func GetImageChoice(ctx context.Context, db *sql.DB, recordingID int64) (ImageChoice, error) {
 	choice := ImageChoice{RecordingID: recordingID}
 	var (
-		posterIdx   sql.NullInt64
-		backdropIdx sql.NullInt64
-		overlayText sql.NullString
-		overlayJSON sql.NullString
+		posterIdx       sql.NullInt64
+		backdropIdx     sql.NullInt64
+		overlayText     sql.NullString
+		overlayJSON     sql.NullString
+		overlayDisabled int
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT poster_index, backdrop_index, overlay_text_override, overlay_style_json
+		SELECT poster_index, backdrop_index, overlay_text_override, overlay_style_json, overlay_disabled
 		FROM recording_image_choices
 		WHERE recording_id = ?
-	`, recordingID).Scan(&posterIdx, &backdropIdx, &overlayText, &overlayJSON)
+	`, recordingID).Scan(&posterIdx, &backdropIdx, &overlayText, &overlayJSON, &overlayDisabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return choice, nil
 	}
@@ -97,7 +105,18 @@ func GetImageChoice(ctx context.Context, db *sql.DB, recordingID int64) (ImageCh
 		v := overlayJSON.String
 		choice.OverlayStyleJSON = &v
 	}
+	choice.OverlayDisabled = overlayDisabled != 0
 	return choice, nil
+}
+
+// SetOverlayDisabled toggles the burn-in opt-out flag for a recording.
+// When true the renderer copies the raw backdrop through unchanged.
+func SetOverlayDisabled(ctx context.Context, db *sql.DB, recordingID int64, disabled bool) error {
+	v := 0
+	if disabled {
+		v = 1
+	}
+	return upsertImageChoice(ctx, db, recordingID, "overlay_disabled", sql.NullInt64{Int64: int64(v), Valid: true})
 }
 
 // SetPosterIndex upserts the poster choice for a recording. The
@@ -142,7 +161,7 @@ func SetOverlayStyle(ctx context.Context, db *sql.DB, recordingID int64, styleJS
 //nolint:gosec // column is whitelisted; not user input.
 func upsertImageChoice(ctx context.Context, db *sql.DB, recordingID int64, column string, value any) error {
 	switch column {
-	case "poster_index", "backdrop_index", "overlay_text_override", "overlay_style_json":
+	case "poster_index", "backdrop_index", "overlay_text_override", "overlay_style_json", "overlay_disabled":
 	default:
 		return fmt.Errorf("upsertImageChoice: unsupported column %q", column)
 	}
