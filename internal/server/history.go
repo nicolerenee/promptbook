@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -88,76 +87,13 @@ func (s *Server) handleListHistory(c echo.Context) error {
 	})
 }
 
-// historyKindTab is a single tab entry rendered at the top of /history.
-// Active is true for the tab that matches the current ?kind= filter.
-type historyKindTab struct {
-	Key    string
-	Label  string
-	Active bool
-}
-
-// historyPageRow is the per-row view-model the history.html template
-// renders. OccurredAt is pre-formatted and DetailsJSON is pre-rendered
-// to keep the template logic-free.
-type historyPageRow struct {
-	ID          int64
-	OccurredAt  string
-	Kind        string
-	RecordingID *int64
-	Summary     string
-	HasDetails  bool
-	DetailsJSON string
-}
-
-type historyPageData struct {
-	Title      string
-	ActiveKind string
-	Tabs       []historyKindTab
-	Events     []historyPageRow
-}
-
-// handleHistoryPage renders the history log as an HTML table. Read-only;
-// no mutation paths land in this scope.
+// handleHistoryPage renders the history shell. Data comes from
+// /api/v1/history, fetched client-side by /static/history.js.
 func (s *Server) handleHistoryPage(c echo.Context) error {
-	rawKind := c.QueryParam("kind")
-	kinds := parseHistoryKindParam(rawKind)
-
-	events, err := storage.ListHistory(c.Request().Context(), s.db, storage.ListHistoryOptions{
-		Kinds: kinds,
-		Limit: historyListLimit,
-	})
-	if err != nil {
-		return err
-	}
-
-	rows := make([]historyPageRow, 0, len(events))
-	for _, e := range events {
-		rows = append(rows, toHistoryPageRow(e))
-	}
-
-	// "All" tab is the active one when no recognizable kind tokens were
-	// supplied; otherwise the first valid token wins. The single-tab UI
-	// can't represent a multi-kind filter, so a multi-token CSV falls
-	// back to "All" highlighting.
-	activeKind := ""
-	if len(kinds) == 1 {
-		activeKind = kinds[0]
-	}
-
-	tabs := make([]historyKindTab, 0, len(historyKindLabels))
-	for _, k := range historyKindLabels {
-		tabs = append(tabs, historyKindTab{
-			Key:    k.Key,
-			Label:  k.Label,
-			Active: k.Key == activeKind,
-		})
-	}
-
-	return c.Render(http.StatusOK, "history.html", historyPageData{
-		Title:      "History",
-		ActiveKind: activeKind,
-		Tabs:       tabs,
-		Events:     rows,
+	return c.Render(http.StatusOK, "history.html", shellData{
+		Title:     "History",
+		ActiveNav: "history",
+		Version:   s.version,
 	})
 }
 
@@ -199,25 +135,4 @@ func toHistoryItem(e storage.HistoryEvent) historyItem {
 		Summary:     e.Summary,
 		Details:     e.Details,
 	}
-}
-
-// toHistoryPageRow projects a storage.HistoryEvent onto the
-// page-row view-model. Renders the details map as pretty JSON so the
-// template can drop it straight into a <pre> without further fiddling.
-func toHistoryPageRow(e storage.HistoryEvent) historyPageRow {
-	row := historyPageRow{
-		ID:          e.ID,
-		OccurredAt:  e.OccurredAt.UTC().Format(time.RFC3339),
-		Kind:        e.Kind,
-		RecordingID: e.RecordingID,
-		Summary:     e.Summary,
-	}
-	if len(e.Details) > 0 {
-		b, err := json.MarshalIndent(e.Details, "", "  ")
-		if err == nil {
-			row.HasDetails = true
-			row.DetailsJSON = string(b)
-		}
-	}
-	return row
 }

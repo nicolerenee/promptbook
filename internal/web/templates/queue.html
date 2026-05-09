@@ -1,47 +1,13 @@
 {{define "queue.html"}}{{template "_layout.html" .}}{{end}}
 
-{{define "body"}}
-<header>
-  <h1>{{.Title}}</h1>
-  <p>{{len .Entries}} file(s) waiting on a human</p>
-</header>
+{{define "head"}}<script src="/static/queue.js" defer></script>{{end}}
 
-{{if .Entries}}
-<table>
-  <thead>
-    <tr>
-      <th>Discovered</th>
-      <th>Confidence</th>
-      <th>File</th>
-      <th>Size</th>
-      <th>Suggested recording</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Entries}}
-    <tr>
-      <td>{{.DiscoveredAt}}</td>
-      <td>
-        {{if .SuggestedConfidence}}
-          <span class="confidence-badge confidence-{{.SuggestedConfidence}}">{{.SuggestedConfidence}}</span>
-        {{else}}
-          <small>—</small>
-        {{end}}
-      </td>
-      <td><code>{{.FilePath}}</code></td>
-      <td>{{.FileSizeBytes}}</td>
-      <td>
-        {{if .SuggestedRecordingID}}
-          <a href="/recordings/{{.SuggestedRecordingID}}">{{.SuggestedRecordingID}}</a>
-        {{else}}
-          <small>—</small>
-        {{end}}
-      </td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}
-  <p><em>No files in the manual import queue.</em></p>
-{{end}}
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Queue<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
+  </div>
+</div>
+<div id="page-root" data-page="queue"></div>
 {{end}}

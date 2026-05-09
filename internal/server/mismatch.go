@@ -237,80 +237,12 @@ func (s *Server) handleListMismatches(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
 }
 
-// mismatchTypeTab is one tab entry rendered at the top of /mismatches.
-// Active is true for the tab matching the current ?type= filter; Count
-// is the per-type count over the unfiltered set so users can see how
-// many of each kind exist before clicking through.
-type mismatchTypeTab struct {
-	Key    string
-	Label  string
-	Count  int
-	Active bool
-}
-
-// mismatchPageData is the view-model for /mismatches.
-type mismatchPageData struct {
-	Title      string
-	ActiveType string
-	Tabs       []mismatchTypeTab
-	Items      []MismatchItem
-}
-
-// handleMismatchesPage renders the mismatches review surface. The
-// template counts each type tab from the unfiltered list so users can
-// see at a glance how much work each filter scope represents.
+// handleMismatchesPage renders the mismatches shell. Data comes from
+// /api/v1/mismatches, fetched client-side by /static/mismatches.js.
 func (s *Server) handleMismatchesPage(c echo.Context) error {
-	rawType := c.QueryParam("type")
-	types := parseMismatchTypeParam(rawType)
-
-	ctx := c.Request().Context()
-
-	// Compute counts off the unfiltered set so the tabs always show
-	// totals; the displayed list applies the user's filter.
-	all, err := loadMismatches(ctx, s.db, nil)
-	if err != nil {
-		return err
-	}
-	counts := make(map[MismatchType]int, len(mismatchTypeLabels))
-	for _, item := range all {
-		counts[item.Type]++
-	}
-
-	items := all
-	if len(types) > 0 {
-		items, err = loadMismatches(ctx, s.db, types)
-		if err != nil {
-			return err
-		}
-	}
-
-	// "All" tab is the active one when no recognizable type tokens
-	// were supplied; otherwise the first valid token wins. The
-	// single-tab UI can't represent a multi-type filter, so a
-	// multi-token CSV falls back to "All" highlighting.
-	activeType := MismatchType("")
-	if len(types) == 1 {
-		activeType = types[0]
-	}
-
-	tabs := make([]mismatchTypeTab, 0, len(mismatchTypeLabels))
-	for _, t := range mismatchTypeLabels {
-		count := counts[t.Key]
-		if t.Key == "" {
-			count = len(all)
-		}
-		tabs = append(tabs, mismatchTypeTab{
-			Key:    string(t.Key),
-			Label:  t.Label,
-			Count:  count,
-			Active: t.Key == activeType,
-		})
-	}
-
-	return c.Render(http.StatusOK, "mismatches.html", mismatchPageData{
-		Title:      "Mismatches",
-		ActiveType: string(activeType),
-		Tabs:       tabs,
-		Items:      items,
+	return c.Render(http.StatusOK, "mismatches.html", shellData{
+		Title:     "Mismatches",
+		ActiveNav: "mismatches",
+		Version:   s.version,
 	})
 }

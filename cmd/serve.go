@@ -81,6 +81,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Logger:     log.Logger,
 		Stagemedia: smClient,
 		Encora:     encOpt,
+		Version:    Version,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)

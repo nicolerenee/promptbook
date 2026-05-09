@@ -362,8 +362,13 @@ func (s *Server) handleAPIApply(c echo.Context) error {
 // renders. It pre-counts succeeded/total so the header line stays
 // logic-free, and decorates each result with the show metadata loaded by
 // loadRecordingMeta so the table reads like a sibling of /mismatches.
+// Title / ActiveNav / Version match the shellData shape so the shared
+// _layout.html sidebar + topbar render uniformly with the JS-driven
+// pages.
 type applyResultPageData struct {
 	Title     string
+	ActiveNav string
+	Version   string
 	Succeeded int
 	Total     int
 	Rows      []applyResultRow
@@ -426,6 +431,8 @@ func (s *Server) handleHTMLApply(c echo.Context) error {
 
 	return c.Render(http.StatusOK, "apply_result.html", applyResultPageData{
 		Title:     "Apply complete",
+		ActiveNav: "mismatches",
+		Version:   s.version,
 		Succeeded: succeeded,
 		Total:     len(results),
 		Rows:      rows,

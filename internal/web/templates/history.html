@@ -1,59 +1,13 @@
 {{define "history.html"}}{{template "_layout.html" .}}{{end}}
 
-{{define "body"}}
-<header>
-  <h1>{{.Title}}</h1>
-  <p>
-    {{if .ActiveKind}}Filter: {{.ActiveKind}}{{else}}All events{{end}}
-    — {{len .Events}} shown
-  </p>
-  <nav class="kind-tabs">
-    {{range .Tabs}}
-      {{if .Active}}
-        <a class="kind-tab kind-tab-active" href="{{if .Key}}/history?kind={{.Key}}{{else}}/history{{end}}">{{.Label}}</a>
-      {{else}}
-        <a class="kind-tab" href="{{if .Key}}/history?kind={{.Key}}{{else}}/history{{end}}">{{.Label}}</a>
-      {{end}}
-    {{end}}
-  </nav>
-</header>
+{{define "head"}}<script src="/static/history.js" defer></script>{{end}}
 
-{{if .Events}}
-<table>
-  <thead>
-    <tr>
-      <th>Occurred</th>
-      <th>Kind</th>
-      <th>Recording</th>
-      <th>Summary</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Events}}
-    <tr>
-      <td><small>{{.OccurredAt}}</small></td>
-      <td><span class="kind-badge kind-{{.Kind}}">{{.Kind}}</span></td>
-      <td>
-        {{if .RecordingID}}
-          <a href="/recordings/{{.RecordingID}}">{{.RecordingID}}</a>
-        {{else}}
-          <small>—</small>
-        {{end}}
-      </td>
-      <td>
-        {{if .Summary}}{{.Summary}}{{else}}<small>—</small>{{end}}
-        {{if .HasDetails}}
-          <details>
-            <summary><small>details</small></summary>
-            <pre><code>{{.DetailsJSON}}</code></pre>
-          </details>
-        {{end}}
-      </td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}
-  <p><em>No history events recorded yet.</em></p>
-{{end}}
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">History<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
+  </div>
+</div>
+<div id="page-root" data-page="history"></div>
 {{end}}
