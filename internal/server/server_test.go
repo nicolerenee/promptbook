@@ -228,20 +228,28 @@ func TestAPISyncRuns(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), `"kind":"all"`)
 }
 
+// TestPagesSmoke asserts the empty-shell page templates render
+// successfully. Inline data assertions are gone now that the pages are
+// JS-driven — the shell is the only thing the server rendering layer is
+// responsible for.
 func TestPagesSmoke(t *testing.T) {
 	t.Parallel()
 
 	srv := fixtureBackedServer(t)
 
 	tests := []struct {
-		name   string
-		path   string
-		expect string
+		name      string
+		path      string
+		dataPage  string
+		titleText string
 	}{
-		{name: "home", path: "/", expect: "Promptbook"},
-		{name: "wants", path: "/wants", expect: "wishlist"},
-		{name: "sync", path: "/sync", expect: "sync runs"},
-		{name: "recording_detail", path: "/recordings/90100222", expect: "Marigold"},
+		{name: "home", path: "/", dataPage: "library", titleText: "Library"},
+		{name: "wants", path: "/wants", dataPage: "wants", titleText: "Wants"},
+		{name: "sync", path: "/sync", dataPage: "sync", titleText: "Sync"},
+		{
+			name: "recording_detail", path: "/recordings/90100222",
+			dataPage: "recording", titleText: "Recording",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,7 +258,11 @@ func TestPagesSmoke(t *testing.T) {
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil)
 			srv.Handler().ServeHTTP(rr, req)
 			require.Equal(t, http.StatusOK, rr.Code, "page %s body=%s", tt.path, rr.Body.String())
-			assert.Contains(t, rr.Body.String(), tt.expect)
+			body := rr.Body.String()
+			assert.Contains(t, body, `data-page="`+tt.dataPage+`"`,
+				"shell must stamp data-page attribute")
+			assert.Contains(t, body, "pb-side", "sidebar must render")
+			assert.Contains(t, body, tt.titleText, "H1 page title must render")
 		})
 	}
 }
@@ -269,10 +281,7 @@ func TestServeStartCancels(t *testing.T) {
 // format_mismatch, missing, and wanted state. Orphan is omitted because
 // it requires a recording row with no FK from collection/wants, which is
 // the most awkward to seed.
-//
-// Returns the server plus the show name strings so assertions can
-// resolve recordings by their distinctive metadata.
-func fourStatusServer(t *testing.T) (*server.Server, map[storage.Status]string) {
+func fourStatusServer(t *testing.T) *server.Server {
 	t.Helper()
 	ctx := t.Context()
 	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
@@ -344,17 +353,13 @@ func fourStatusServer(t *testing.T) (*server.Server, map[storage.Status]string) 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
 
-	names := make(map[storage.Status]string, len(seeds))
-	for _, s := range seeds {
-		names[s.status] = s.showName
-	}
-	return srv, names
+	return srv
 }
 
 func TestAPIRecordingsStatusFilter(t *testing.T) {
 	t.Parallel()
 
-	srv, _ := fourStatusServer(t)
+	srv := fourStatusServer(t)
 
 	tests := []struct {
 		name      string
@@ -513,7 +518,10 @@ func TestAPIQueueLists(t *testing.T) {
 	assert.True(t, paths["/incoming/greenwich-beacon.mkv"])
 }
 
-func TestPagesQueueEmpty(t *testing.T) {
+// TestPagesQueueShell asserts the queue page renders the empty shell
+// regardless of queue contents — the table itself is now drawn by
+// /static/queue.js, which fetches /api/v1/queue.
+func TestPagesQueueShell(t *testing.T) {
 	t.Parallel()
 
 	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
@@ -527,41 +535,9 @@ func TestPagesQueueEmpty(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/queue", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "No files in the manual import queue")
-}
-
-func TestPagesQueueLists(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
-		FilePath:            "/incoming/cresthaven.mkv",
-		FileSizeBytes:       4096,
-		SuggestedConfidence: storage.ConfidenceMedium,
-	})
-	require.NoError(t, err)
-	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
-		FilePath:            "/incoming/cats.mkv",
-		FileSizeBytes:       8192,
-		SuggestedConfidence: storage.ConfidenceLow,
-	})
-	require.NoError(t, err)
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/queue", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
 	body := rr.Body.String()
-	assert.Contains(t, body, "/incoming/cresthaven.mkv")
-	assert.Contains(t, body, "/incoming/cats.mkv")
+	assert.Contains(t, body, `data-page="queue"`)
+	assert.Contains(t, body, "Queue")
 }
 
 func TestAPIPeopleList(t *testing.T) {
@@ -629,6 +605,9 @@ func TestAPIPerson(t *testing.T) {
 	})
 }
 
+// TestPagesPeople asserts the people-list and person-detail pages
+// render the empty shell — the underlying performer rows are populated
+// client-side by /static/people.js / person.js fetching the JSON API.
 func TestPagesPeople(t *testing.T) {
 	t.Parallel()
 
@@ -640,7 +619,7 @@ func TestPagesPeople(t *testing.T) {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/people", nil)
 		srv.Handler().ServeHTTP(rr, req)
 		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-		assert.Contains(t, rr.Body.String(), "Avery Morrison")
+		assert.Contains(t, rr.Body.String(), `data-page="people"`)
 	})
 
 	t.Run("detail", func(t *testing.T) {
@@ -649,7 +628,10 @@ func TestPagesPeople(t *testing.T) {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/people/90001001", nil)
 		srv.Handler().ServeHTTP(rr, req)
 		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-		assert.Contains(t, rr.Body.String(), "Marigold")
+		body := rr.Body.String()
+		assert.Contains(t, body, `data-page="person"`)
+		assert.Contains(t, body, `data-person-id="90001001"`,
+			"person detail shell must stamp the performer id")
 	})
 }
 
@@ -753,6 +735,8 @@ func TestAPIHistoryFilterByKind(t *testing.T) {
 	assert.Equal(t, "ingested foo", body.Items[0].Summary)
 }
 
+// TestPagesHistory asserts the history page renders the empty shell.
+// The actual events are populated client-side by /static/history.js.
 func TestPagesHistory(t *testing.T) {
 	t.Parallel()
 
@@ -761,12 +745,6 @@ func TestPagesHistory(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	_, err = storage.RecordEvent(ctx, db, storage.HistoryEvent{
-		Kind:    storage.HistoryKindIngest,
-		Summary: "imported showtape from disk",
-	})
-	require.NoError(t, err)
-
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
 
@@ -774,13 +752,20 @@ func TestPagesHistory(t *testing.T) {
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/history", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "imported showtape from disk")
+	body := rr.Body.String()
+	assert.Contains(t, body, `data-page="history"`)
+	assert.Contains(t, body, "History")
 }
 
-func TestPagesHomeStatusFilter(t *testing.T) {
+// TestPagesHomeShell asserts the library page renders the empty shell.
+// Status filtering is now client-side via library.js parsing the
+// ?status= URL param, so the server-side test only verifies the shell
+// markup. The data contract (filtering against the JSON API) is still
+// covered by TestAPIRecordingsStatusFilter.
+func TestPagesHomeShell(t *testing.T) {
 	t.Parallel()
 
-	srv, names := fourStatusServer(t)
+	srv := fourStatusServer(t)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/?status=missing", nil)
@@ -788,12 +773,8 @@ func TestPagesHomeStatusFilter(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	body := rr.Body.String()
-	assert.Contains(t, body, names[storage.StatusMissing],
-		"expected the missing recording's show name to render")
-	assert.NotContains(t, body, names[storage.StatusSynced],
-		"synced recording's show name should not render under ?status=missing")
-	assert.NotContains(t, body, names[storage.StatusWanted],
-		"wanted recording's show name should not render under ?status=missing")
+	assert.Contains(t, body, `data-page="library"`)
+	assert.Contains(t, body, "pb-side")
 }
 
 // seedMismatchRecording inserts a minimal recordings row plus the
@@ -954,8 +935,11 @@ func TestAPIMismatchesFilterByType(t *testing.T) {
 	assert.Equal(t, int64(92002), body.Items[0].RecordingID)
 }
 
-// TestPagesMismatches asserts the HTML page renders 200 and contains
-// the type-tab nav copy.
+// TestPagesMismatches asserts the mismatches page renders the empty
+// shell. The mismatch rows + type tabs are populated client-side by
+// /static/mismatches.js fetching /api/v1/mismatches; the data contract
+// is still covered by TestAPIMismatchesEnumerates +
+// TestAPIMismatchesFilterByType.
 func TestPagesMismatches(t *testing.T) {
 	t.Parallel()
 
@@ -967,15 +951,16 @@ func TestPagesMismatches(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	body := rr.Body.String()
-	assert.Contains(t, body, "Add to collection")
-	assert.Contains(t, body, "Format mismatch")
-	assert.Contains(t, body, "Missing file")
-	assert.Contains(t, body, "Wanted file")
+	assert.Contains(t, body, `data-page="mismatches"`)
+	assert.Contains(t, body, "Mismatches")
 }
 
-// TestRecordingPageNFTWarning seeds a recording with NFT.NFTForever set
-// and asserts the detail page renders the human-readable callout.
-func TestRecordingPageNFTWarning(t *testing.T) {
+// TestRecordingPageShell asserts the recording detail page renders
+// the empty shell with the recording id stamped into the page-root
+// data attribute. NFT-callout copy + poster fallback rendering moved
+// to the JS-driven page implementation; their behavior will be covered
+// by JS-side tests once /static/recording.js is implemented.
+func TestRecordingPageShell(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
@@ -984,12 +969,10 @@ func TestRecordingPageNFTWarning(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	rec := encora.Recording{
-		ID:    424242,
-		Show:  "Greenwich BeaconShow",
-		Tour:  "Broadway",
-		Date:  encora.Date{FullDate: "2024-09-01", MonthKnown: true, DayKnown: true},
-		NFT:   encora.NFT{NFTForever: true},
-		Notes: "private collection only",
+		ID:   424242,
+		Show: "Greenwich BeaconShow",
+		Tour: "Broadway",
+		Date: encora.Date{FullDate: "2024-09-01", MonthKnown: true, DayKnown: true},
 		Metadata: encora.RecordingMeta{
 			ShowID:        9100,
 			RecordingType: "pro-shot",
@@ -1004,48 +987,10 @@ func TestRecordingPageNFTWarning(t *testing.T) {
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/recordings/424242", nil)
 	srv.Handler().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "NFT forever",
-		"expected NFT-forever callout to render in body")
-}
-
-// TestRecordingPagePosterEmpty asserts the detail page renders cleanly
-// when the server has no stagemedia client configured. Exercises both
-// the placeholder fallback and the nil-client short-circuit in
-// handleRecordingPage.
-func TestRecordingPagePosterEmpty(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	rec := encora.Recording{
-		ID:   424243,
-		Show: "PlaceholderShow",
-		Tour: "Tour 1",
-		Date: encora.Date{FullDate: "2025-01-15", MonthKnown: true, DayKnown: true},
-		Metadata: encora.RecordingMeta{
-			ShowID:        9101,
-			RecordingType: "pro-shot",
-		},
-	}
-	seedRecording(t, db, rec)
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-	require.Nil(t, srv.Stagemedia(), "stagemedia client should be nil when not configured")
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/recordings/424243", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
 	body := rr.Body.String()
-	assert.Contains(t, body, "no poster",
-		"expected poster placeholder copy when stagemedia is disabled")
-	assert.NotContains(t, body, "<img class=\"poster\"",
-		"poster img tag should not render when no posters are loaded")
+	assert.Contains(t, body, `data-page="recording"`)
+	assert.Contains(t, body, `data-recording-id="424242"`,
+		"recording detail shell must stamp the recording id")
 }
 
 // stubEncoraClient is a minimal in-memory implementation of the
