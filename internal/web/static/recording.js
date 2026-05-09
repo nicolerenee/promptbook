@@ -12,14 +12,19 @@
 //   - LocalFormatString
 //   - Cast[].{Performer.{PerformerID,Name}, Character.{Name}, Status.{Label}}
 //
+// Server-side enrichment surfaced by /api/v1/recordings/{id}:
+//   - posters[] — StageMedia poster URLs for the show. Empty when no
+//     stagemedia client is configured or the show has none. We render
+//     the first one as <img>; otherwise fall back to the typographic
+//     mock.
+//   - nfo_content / nfo_modified_at — content of the on-disk movie.nfo
+//     next to the first version. Empty when no version exists or the
+//     file hasn't been written yet; in that case the "NFO output" card
+//     keeps its synthetic preview + PREVIEW badge.
+//
 // Things the API doesn't currently return (TODO API extensions):
-//   - Real poster URLs (Recording.Metadata.HasScreenshots is the only
-//     hint). For v1 we always render the typographic mock.
 //   - Real headshot URLs for performers. We render initials in a colored
 //     circle instead.
-//   - On-disk NFO file content / mtime. The "NFO output" card shows a
-//     static preview based on recording fields; the reconciler row is
-//     stubbed to "(check on disk)".
 //   - /api/v1/history doesn't accept a recording_id filter today, so we
 //     fetch a wider window and filter client-side.
 //
@@ -146,6 +151,21 @@
       ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
+  // relativeTime renders an ISO timestamp as a coarse "5m ago" /
+  // "3h ago" / "2d ago" string. Falls back to the YYYY-MM-DD prefix
+  // when the diff is more than 30 days. Returns '' for empty input.
+  function relativeTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if (diffSec < 60) return diffSec + 's ago';
+    if (diffSec < 3600) return Math.floor(diffSec / 60) + 'm ago';
+    if (diffSec < 86400) return Math.floor(diffSec / 3600) + 'h ago';
+    if (diffSec < 30 * 86400) return Math.floor(diffSec / 86400) + 'd ago';
+    return d.toISOString().substring(0, 10);
+  }
+
   // monogram returns up to 2 initials for the typographic headshot.
   function monogram(name) {
     if (!name) return '?';
@@ -207,12 +227,19 @@
     '</div>';
   }
 
-  // renderPoster always renders the typographic mock for v1: even when
-  // Recording.Metadata.HasScreenshots is true, the API doesn't currently
-  // return a poster URL. Once the server starts surfacing one (Phase 5b
-  // admin override or an Encora screenshot proxy) the branch above can
-  // serve the real <img>.
-  function renderPoster(r) {
+  // renderPoster prefers the first StageMedia poster URL when the API
+  // returned one; otherwise it falls back to the typographic mock. The
+  // mock is also the empty/missing-show fallback so a stagemedia outage
+  // never blanks the page.
+  function renderPoster(r, posters) {
+    var first = (Array.isArray(posters) && posters.length > 0) ? posters[0] : '';
+    if (first) {
+      return '<div class="pb-poster" style="width:220px;height:330px">' +
+        '<img class="poster" src="' + escapeHTML(first) + '" ' +
+          'alt="' + escapeHTML(r.Show || '—') + ' poster" ' +
+          'style="width:100%;height:100%;object-fit:cover;display:block">' +
+      '</div>';
+    }
     var pal = paletteFor(r.Show || 'Untitled');
     var year = '';
     if (r.Date && r.Date.FullDate) {
@@ -279,7 +306,7 @@
     var subtitle = subtitleParts.join(' · ');
 
     var html = '<div style="display:grid;grid-template-columns:220px 1fr;gap:28px;margin-bottom:22px">' +
-      renderPoster(r) +
+      renderPoster(r, loaded.posters) +
       '<div style="display:flex;flex-direction:column;gap:14px;padding-top:6px">' +
         '<div>' +
           '<div class="pb-row" style="gap:10px;margin-bottom:6px">' +
@@ -516,10 +543,25 @@
   }
 
   function renderNFOCard(loaded) {
-    // Static preview built from recording fields. We don't fetch the
-    // on-disk NFO; flag this with a PREVIEW badge so users know it isn't
-    // authoritative. TODO: an /api/v1/recordings/{id}/nfo endpoint that
-    // returns the rendered movie.nfo would let us surface the real file.
+    // When the API returns nfo_content, render the real on-disk file
+    // and label it "from disk" with the file's mtime so the user
+    // knows the page reflects what the writer last wrote. Falls back
+    // to the synthetic preview when no NFO has been written yet.
+    var nfoContent = loaded.nfo_content || '';
+    if (nfoContent) {
+      var note = 'from disk';
+      var rel = relativeTime(loaded.nfo_modified_at);
+      if (rel) note += ' · modified ' + rel;
+      return '<div class="pb-card">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+          '<h3 style="margin:0">NFO output</h3>' +
+          '<span class="pb-mono" style="font-size:10px;color:var(--ink-4)">' +
+            escapeHTML(note) +
+          '</span>' +
+        '</div>' +
+        '<pre class="pb-json" style="font-size:11px;margin:0">' + escapeHTML(nfoContent) + '</pre>' +
+      '</div>';
+    }
     var r = loaded.Recording;
     var meta = r.Metadata || {};
     var year = (r.Date && r.Date.FullDate) ? r.Date.FullDate.substring(0, 4) : '';

@@ -1560,3 +1560,225 @@ func TestAPIApplyDetachedContext(t *testing.T) {
 			"call %d: encora client should receive a non-cancelled context (detached)", i)
 	}
 }
+
+// stagemediaPostersServer returns an httptest.Server that responds to
+// /api/images?show_id=...&actor_ids=1 with the supplied poster URLs.
+// The Posters() client method only consumes the "posters" field, so
+// performers + error are stubbed empty/null.
+func stagemediaPostersServer(t *testing.T, posters []string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/images", func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]any{
+			"posters":    posters,
+			"performers": []any{},
+			"error":      nil,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+		_ = r // unused but kept for signature symmetry.
+	})
+	return httptest.NewServer(mux)
+}
+
+// TestAPIRecordingByIDIncludesPosters wires a real stagemedia.Client
+// at an httptest server that returns two poster URLs and asserts the
+// /api/v1/recordings/{id} response surfaces them under the "posters"
+// JSON key.
+func TestAPIRecordingByIDIncludesPosters(t *testing.T) {
+	t.Parallel()
+
+	upstream := stagemediaPostersServer(t, []string{"url-a", "url-b"})
+	t.Cleanup(upstream.Close)
+
+	smClient, err := stagemedia.New(stagemedia.Options{
+		BaseURL: upstream.URL,
+		APIKey:  "test",
+	})
+	require.NoError(t, err)
+
+	srv := fixtureBackedServerWithStagemedia(t, smClient)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/api/v1/recordings/90100222", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Posters []string `json:"posters"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(t, []string{"url-a", "url-b"}, body.Posters)
+}
+
+// TestAPIRecordingByIDNoPostersWhenNilClient asserts the response
+// returns an empty (but present) "posters" field when the server has
+// no stagemedia client configured.
+func TestAPIRecordingByIDNoPostersWhenNilClient(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/api/v1/recordings/90100222", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Posters []string `json:"posters"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(t, body.Posters,
+		"posters should be empty (or nil) when stagemedia is unconfigured")
+}
+
+// TestAPIRecordingByIDIncludesNFOContent seeds a recording_versions
+// row pointing at a temp directory, writes a known XML string to
+// {dir}/movie.nfo, and asserts the API returns the file content +
+// non-nil mtime.
+func TestAPIRecordingByIDIncludesNFOContent(t *testing.T) {
+	t.Parallel()
+
+	srv, db := fixtureBackedServerExposingDB(t)
+
+	tmp := t.TempDir()
+	versionPath := filepath.Join(tmp, "Marigold - 2009-12 (90100222).mkv")
+	require.NoError(t, os.WriteFile(versionPath, []byte("not a real video"), 0o600))
+	want := `<?xml version="1.0"?><movie><title>Marigold</title></movie>`
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "movie.nfo"), []byte(want), 0o600))
+
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID: 90100222,
+		FilePath:    versionPath,
+		FormatLabel: "MKV 1080p",
+	}))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/api/v1/recordings/90100222", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		NFOContent    string     `json:"nfo_content"`
+		NFOModifiedAt *time.Time `json:"nfo_modified_at"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(t, want, body.NFOContent)
+	require.NotNil(t, body.NFOModifiedAt, "nfo_modified_at must be populated when the file exists")
+	assert.WithinDuration(t, time.Now(), *body.NFOModifiedAt, 30*time.Second)
+}
+
+// TestAPIRecordingByIDNFOMissing covers the path where a version row
+// exists but no movie.nfo sits next to it on disk. nfo_content is
+// empty and nfo_modified_at is nil.
+func TestAPIRecordingByIDNFOMissing(t *testing.T) {
+	t.Parallel()
+
+	srv, db := fixtureBackedServerExposingDB(t)
+
+	tmp := t.TempDir()
+	versionPath := filepath.Join(tmp, "Marigold - 2009-12 (90100222).mkv")
+	require.NoError(t, os.WriteFile(versionPath, []byte("not a real video"), 0o600))
+	// Deliberately do NOT write a movie.nfo.
+
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID: 90100222,
+		FilePath:    versionPath,
+		FormatLabel: "MKV 1080p",
+	}))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet, "/api/v1/recordings/90100222", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		NFOContent    string     `json:"nfo_content"`
+		NFOModifiedAt *time.Time `json:"nfo_modified_at"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(t, body.NFOContent)
+	assert.Nil(t, body.NFOModifiedAt)
+}
+
+// fixtureBackedServerWithStagemedia mirrors fixtureBackedServer but
+// wires the supplied stagemedia client through Options.Stagemedia so
+// the recording-detail handler exercises its enrichment branch.
+func fixtureBackedServerWithStagemedia(t *testing.T, sm *stagemedia.Client) *server.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	for path, file := range map[string]string{
+		"/api/profile":    "profile.json",
+		"/api/collection": "collection.json",
+		"/api/wants":      "wants.json",
+	} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			b, err := os.ReadFile(filepath.Join(fixturesDir, file))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("X-Ratelimit-Remaining", "25")
+			_, _ = w.Write(b)
+		})
+	}
+	upstream := httptest.NewServer(mux)
+	t.Cleanup(upstream.Close)
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
+	require.NoError(t, err)
+	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
+	require.NoError(t, err)
+
+	srv, err := server.New(server.Options{DB: db, Stagemedia: sm})
+	require.NoError(t, err)
+	return srv
+}
+
+// fixtureBackedServerExposingDB returns the same fixture-seeded server
+// as fixtureBackedServer, plus the underlying *sql.DB so callers can
+// seed extra rows (e.g. recording_versions pointing at a temp dir).
+func fixtureBackedServerExposingDB(t *testing.T) (*server.Server, *gosql.DB) {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	for path, file := range map[string]string{
+		"/api/profile":    "profile.json",
+		"/api/collection": "collection.json",
+		"/api/wants":      "wants.json",
+	} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			b, err := os.ReadFile(filepath.Join(fixturesDir, file))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("X-Ratelimit-Remaining", "25")
+			_, _ = w.Write(b)
+		})
+	}
+	upstream := httptest.NewServer(mux)
+	t.Cleanup(upstream.Close)
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
+	require.NoError(t, err)
+	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
+	require.NoError(t, err)
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+	return srv, db
+}
