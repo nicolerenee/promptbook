@@ -33,11 +33,12 @@ const (
 
 // Server is the HTTP entry point.
 type Server struct {
-	echo       *echo.Echo
-	db         *sql.DB
-	logger     zerolog.Logger
-	stagemedia *stagemedia.Client
-	encora     EncoraWriteClient
+	echo              *echo.Echo
+	db                *sql.DB
+	logger            zerolog.Logger
+	stagemedia        *stagemedia.Client
+	encora            EncoraWriteClient
+	encoraDestructive EncoraDestructiveClient
 	// sleeper is the function the apply batch driver uses to honor a
 	// 429's Retry-After before issuing the next request. Defaults to
 	// time.Sleep; tests inject a recorder to assert the call without
@@ -61,6 +62,12 @@ type Options struct {
 	// pass a stub satisfying EncoraWriteClient; production wiring passes
 	// a real *encora.Client.
 	Encora EncoraWriteClient
+	// EncoraDestructive is optional. When nil, the destructive
+	// /api/v1/encora/* endpoints respond 503. Production wiring passes
+	// the same *encora.Client instance as Encora; the surface stays
+	// split so the apply pipeline can never reach the remove/add-wants
+	// methods by accident.
+	EncoraDestructive EncoraDestructiveClient
 	// Sleeper is optional. When nil, time.Sleep is used. Tests inject a
 	// recorder that captures the requested duration without sleeping
 	// for real, so the Retry-After honor logic stays exercisable under
@@ -100,13 +107,14 @@ func New(opts Options) (*Server, error) {
 		version = "dev"
 	}
 	srv := &Server{
-		echo:       e,
-		db:         opts.DB,
-		logger:     opts.Logger,
-		stagemedia: opts.Stagemedia,
-		encora:     opts.Encora,
-		sleeper:    sleeper,
-		version:    version,
+		echo:              e,
+		db:                opts.DB,
+		logger:            opts.Logger,
+		stagemedia:        opts.Stagemedia,
+		encora:            opts.Encora,
+		encoraDestructive: opts.EncoraDestructive,
+		sleeper:           sleeper,
+		version:           version,
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))

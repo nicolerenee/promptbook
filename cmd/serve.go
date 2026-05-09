@@ -68,20 +68,28 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		log.Info().Msg("encora disabled (no api key configured)")
 	}
 
-	// server.Options.Encora is an interface; nil *encora.Client must
-	// arrive as a true nil interface so the apply handlers' nil-check
-	// fires correctly.
-	var encOpt server.EncoraWriteClient
+	// server.Options.Encora and EncoraDestructive are interfaces; a nil
+	// *encora.Client must arrive as a true nil interface so the
+	// handlers' nil-checks fire correctly. Both fields point at the
+	// same concrete client when configured — the surface split is
+	// purely a compile-time guard against the apply pipeline calling
+	// into the remove/add-wants methods.
+	var (
+		encOpt        server.EncoraWriteClient
+		encDestrucOpt server.EncoraDestructiveClient
+	)
 	if encClient != nil {
 		encOpt = encClient
+		encDestrucOpt = encClient
 	}
 
 	srv, err := server.New(server.Options{
-		DB:         db,
-		Logger:     log.Logger,
-		Stagemedia: smClient,
-		Encora:     encOpt,
-		Version:    Version,
+		DB:                db,
+		Logger:            log.Logger,
+		Stagemedia:        smClient,
+		Encora:            encOpt,
+		EncoraDestructive: encDestrucOpt,
+		Version:           Version,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
