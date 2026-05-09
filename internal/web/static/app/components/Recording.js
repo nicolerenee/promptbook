@@ -106,18 +106,26 @@ function dangerActionFor(loaded) {
 }
 
 // errorMessage extracts a human-readable string from a thrown api
-// error. Mirrors the helper in legacy recording.js so 409 responses
-// surface their {error: "..."} payload, with a fallback chain back to
-// err.message. Used by the danger-zone POST handler.
+// error. Mithril's m.request rejects with the parsed JSON body
+// already deserialized (api.js stashes it on err.body as an object
+// when the response was JSON, or as a string when it was plain text).
+// Try the object path first, then the string-parse path, then fall
+// back to err.message. Otherwise we'd render `[object Object]`
+// straight to the user.
 function errorMessage(err) {
   if (!err) return 'unknown error';
-  if (err.body) {
+  const body = err.body;
+  if (body && typeof body === 'object') {
+    if (body.error) return String(body.error);
+    if (body.message) return String(body.message);
+  }
+  if (typeof body === 'string') {
     try {
-      const parsed = JSON.parse(err.body);
+      const parsed = JSON.parse(body);
       if (parsed && parsed.error) return String(parsed.error);
       if (parsed && parsed.message) return String(parsed.message);
     } catch (_) { /* not JSON; fall through. */ }
-    if (typeof err.body === 'string' && err.body.length < 240) return err.body;
+    if (body.length < 240) return body;
   }
   return err.message || String(err);
 }

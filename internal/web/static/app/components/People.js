@@ -166,14 +166,21 @@ function filterItems(items, q) {
   return items.filter((it) => (it.name || '').toLowerCase().includes(needle));
 }
 
-// AvatarPlaceholder renders DaisyUI's avatar-placeholder with the
-// performer's initials. Used for every row on the list page since the
-// list endpoint doesn't ship headshot URLs — see comment at top.
-function AvatarPlaceholder(name, sizeClass) {
-  return m('div', { class: 'avatar avatar-placeholder' },
+// Avatar renders the performer's headshot from the canonical
+// /images/actors/<id>.jpg path. The server's /images/* route falls
+// through to a generated SVG placeholder (initials in a colored
+// circle) on cache miss, so this always produces a valid image —
+// no client-side monogram fallback needed.
+function Avatar(performerID, name, sizeClass) {
+  return m('div', { class: 'avatar' },
     m('div', {
-      class: 'bg-neutral text-neutral-content rounded-full ' + sizeClass,
-    }, m('span', { class: 'text-sm' }, monogram(name))),
+      class: 'rounded-full overflow-hidden bg-base-200 ' + sizeClass,
+    }, m('img', {
+      src: '/images/actors/' + encodeURIComponent(String(performerID)) + '.jpg',
+      alt: name || '',
+      class: 'w-full h-full object-cover',
+      loading: 'lazy',
+    })),
   );
 }
 
@@ -225,7 +232,7 @@ function Row(it) {
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/people/' + it.performer_id),
   }, [
-    m('td', { class: 'w-12' }, AvatarPlaceholder(it.name, 'w-10')),
+    m('td', { class: 'w-12' }, Avatar(it.performer_id, it.name, 'w-10')),
     m('td', [
       m('div', { class: 'font-medium' }, it.name || 'Unknown'),
       m('div', { class: 'text-xs opacity-60' }, 'p-' + it.performer_id),

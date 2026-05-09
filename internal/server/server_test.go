@@ -657,9 +657,12 @@ func (f *fakeStagemediaImageClient) Images(
 	// recording-poster-options endpoints (which call Images with no
 	// performer ids) get the scripted strip.
 	posters := f.postersByShow[showID]
-	// Track this as a poster fan-out when no performer ids were
-	// requested — that's the calling pattern picker-options uses.
-	if len(performerIDs) == 0 {
+	// Track this as a poster fan-out when the caller passed no
+	// performer ids OR the [1] sentinel — that's the calling pattern
+	// picker-options uses (StageMedia rejects truly-empty actor_ids).
+	isPosterFanOut := len(performerIDs) == 0 ||
+		(len(performerIDs) == 1 && performerIDs[0] == 1)
+	if isPosterFanOut {
 		f.posterCalls = append(f.posterCalls, showID)
 	}
 	return stagemedia.Images{Performers: f.performers, Posters: posters}, nil

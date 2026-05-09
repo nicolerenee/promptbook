@@ -84,8 +84,14 @@ func (s *Server) requireEncoraScreenshots() error {
 
 // fetchShowPosterOptions calls stagemedia /api/images for a given
 // show_id and returns its Posters array mapped to pickerOptions. The
-// performer-id list is empty because the picker UI only cares about
-// posters here; headshots come from a separate endpoint.
+// picker UI only cares about posters here; headshots come from a
+// separate endpoint.
+//
+// StageMedia rejects /api/images calls without at least one
+// actor_ids — its handler returns 400 "at least one performer id is
+// required" on an empty list. Pass [1] as a sentinel (matching what
+// the sync image fetcher does) so the call still returns the show's
+// posters; the headshot half of the response is ignored here.
 func (s *Server) fetchShowPosterOptions(
 	ctx context.Context, showID int64,
 ) ([]pickerOption, error) {
@@ -94,7 +100,7 @@ func (s *Server) fetchShowPosterOptions(
 	}
 	upstreamCtx, cancel := context.WithTimeout(ctx, pickerUpstreamTimeout)
 	defer cancel()
-	imgs, err := s.Stagemedia().Images(upstreamCtx, showID, nil)
+	imgs, err := s.Stagemedia().Images(upstreamCtx, showID, []int64{1})
 	if err != nil {
 		return nil, err
 	}
