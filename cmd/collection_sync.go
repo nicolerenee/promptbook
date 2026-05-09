@@ -12,25 +12,22 @@ import (
 	"github.com/nicolerenee/promptbook/internal/sync"
 )
 
-// errNotImplemented is returned by stub subcommands.
-var errNotImplemented = errors.New("not implemented yet")
-
 //nolint:gochecknoglobals // cobra requires package-level command variable
-var syncCmd = &cobra.Command{
+var collectionSyncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Pull collection and wants from Encora into the local cache",
 	Long: `Fetches the user's collection and wants list from Encora and stores them
 in the local SQLite cache. Honors Encora's 30-req/min rate limit and preserves
 last-good data on transient failures.`,
-	RunE: runSync,
+	RunE: runCollectionSync,
 }
 
 //nolint:gochecknoinits // cobra requires init for command registration
 func init() {
-	rootCmd.AddCommand(syncCmd)
+	collectionCmd.AddCommand(collectionSyncCmd)
 }
 
-func runSync(cmd *cobra.Command, _ []string) error {
+func runCollectionSync(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
 	if appConfig.Encora.APIKey == "" {
