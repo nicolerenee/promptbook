@@ -2,11 +2,14 @@ package storage_test
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,6 +92,148 @@ func TestLoadRecording(t *testing.T) {
 		require.Error(t, lerr)
 		assert.ErrorIs(t, lerr, storage.ErrRecordingNotFound)
 	})
+}
+
+func TestLoadRecordingPopulatesVersions(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	const (
+		showID      int64 = 90001
+		recordingID int64 = 90002
+	)
+	seedShow(ctx, t, db, showID, "Greenwich Beacon")
+	seedRecordingWithRawJSON(ctx, t, db, recordingID, showID, encora.Recording{ID: recordingID})
+
+	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+		RecordingID:   recordingID,
+		FilePath:      "/store/greenwich-beacon/2160p.mkv",
+		FileSizeBytes: 40 * 1024 * 1024 * 1024,
+		FormatLabel:   "MKV 2160p hevc",
+	}))
+	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+		RecordingID:   recordingID,
+		FilePath:      "/store/greenwich-beacon/1080p.mkv",
+		FileSizeBytes: 5 * 1024 * 1024 * 1024,
+		FormatLabel:   "MKV 1080p h264",
+	}))
+
+	loaded, err := storage.LoadRecording(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.NotNil(t, loaded.Versions)
+	assert.Len(t, loaded.Versions, 2)
+	assert.Equal(t, storage.ComputeFormatString(loaded.Versions), loaded.LocalFormatString)
+	assert.Equal(t, "MKV 2160p hevc"+storage.FormatSeparator+"MKV 1080p h264", loaded.LocalFormatString)
+}
+
+func TestLoadRecordingPopulatesCast(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	const (
+		showID        int64 = 90101
+		recordingID   int64 = 90102
+		performerID   int64 = 90103
+		characterID   int64 = 90104
+		characterRank int   = 3
+	)
+	seedShow(ctx, t, db, showID, "Halcyon Crossing")
+
+	status := &encora.CastStatus{Label: "Understudy", Abbreviation: "u/s"}
+	rec := encora.Recording{
+		ID: recordingID,
+		Cast: []encora.CastEntry{{
+			Performer: encora.Performer{ID: performerID, Name: "Casper Bly"},
+			Character: encora.Character{ID: characterID, Name: "Old Mariner", Order: characterRank},
+			Status:    status,
+		}},
+	}
+	seedRecordingWithRawJSON(ctx, t, db, recordingID, showID, rec)
+
+	now := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, storage.UpsertPerformer(ctx, db, storage.Performer{
+		PerformerID: performerID,
+		Name:        "Casper Bly",
+		Slug:        "casper-bly",
+		URL:         "https://encora.example/p/casper-bly",
+		LastSeenAt:  now,
+	}))
+	require.NoError(t, storage.UpsertCharacter(ctx, db, storage.Character{
+		CharacterID: characterID,
+		Name:        "Old Mariner",
+		Slug:        "old-mariner",
+		URL:         "https://encora.example/c/old-mariner",
+		LastSeenAt:  now,
+	}))
+
+	loaded, err := storage.LoadRecording(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, loaded.Cast, 1)
+
+	got := loaded.Cast[0]
+	assert.Equal(t, performerID, got.Performer.PerformerID)
+	assert.Equal(t, "Casper Bly", got.Performer.Name)
+	assert.Equal(t, "casper-bly", got.Performer.Slug)
+	assert.Equal(t, characterID, got.Character.CharacterID)
+	assert.Equal(t, "Old Mariner", got.Character.Name)
+	assert.Equal(t, characterRank, got.Order)
+	require.NotNil(t, got.Status)
+	assert.Equal(t, "u/s", got.Status.Abbreviation)
+}
+
+func TestLoadRecordingMissingPerformerSilent(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	const (
+		showID      int64 = 90201
+		recordingID int64 = 90202
+		performerID int64 = 90203
+		characterID int64 = 90204
+	)
+	seedShow(ctx, t, db, showID, "Six")
+
+	rec := encora.Recording{
+		ID: recordingID,
+		Cast: []encora.CastEntry{{
+			Performer: encora.Performer{ID: performerID, Name: "Legacy Actor"},
+			Character: encora.Character{ID: characterID, Name: "The Heiress"},
+		}},
+	}
+	seedRecordingWithRawJSON(ctx, t, db, recordingID, showID, rec)
+
+	// Deliberately do not seed performers/characters — simulating legacy
+	// rows that haven't been promoted to the people tables yet.
+
+	loaded, err := storage.LoadRecording(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, loaded.Cast, 1)
+
+	got := loaded.Cast[0]
+	assert.Equal(t, storage.Performer{}, got.Performer, "missing performer leaves zero value")
+	assert.Equal(t, storage.Character{}, got.Character, "missing character leaves zero value")
+}
+
+// seedRecordingWithRawJSON inserts a recording row whose raw_json column
+// contains the marshaled encora.Recording. Use this when a test needs
+// LoadRecording to decode a non-trivial Recording (e.g. with cast
+// entries) — seedRecording writes '{}' and won't satisfy that.
+func seedRecordingWithRawJSON(
+	ctx context.Context,
+	t *testing.T,
+	db *sql.DB,
+	recordingID, showID int64,
+	rec encora.Recording,
+) {
+	t.Helper()
+	raw, err := json.Marshal(rec)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO recordings (
+			recording_id, show_id, tour, date_full, raw_json
+		) VALUES (?, ?, '', '', ?)
+	`, recordingID, showID, string(raw))
+	require.NoError(t, err)
 }
 
 // newFixtureServer is a duplicate of the sync test's fixtureServer but
