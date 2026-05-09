@@ -17,6 +17,8 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import Layout from './components/Layout.js';
 import Library from './components/Library.js';
+import Wants from './components/Wants.js';
+import Sync from './components/Sync.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -56,8 +58,8 @@ if (!root) {
   m.route(root, '/', {
     '/':                wrap(Library),
     '/recordings/:id':  wrap(stubPage('Recording detail')),
-    '/wants':           wrap(stubPage('Wants')),
-    '/sync':            wrap(stubPage('Sync')),
+    '/wants':           wrap(Wants),
+    '/sync':            wrap(Sync),
     '/queue':           wrap(stubPage('Manual import queue')),
     '/people':          wrap(stubPage('People')),
     '/people/:id':      wrap(stubPage('Person detail')),
