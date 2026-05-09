@@ -22,14 +22,17 @@ const (
 	DefaultFolderTemplate      = "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
 	DefaultFileTemplate        = "{Show} - {Tour} - {Date} [{Master}]"
 	DefaultWatchInterval       = 1 * time.Minute
+	DefaultStagemediaBaseURL   = "https://stagemedia.me"
+	DefaultStagemediaUserAgent = "promptbook/0.0.1"
 )
 
 // Config is the top-level application configuration.
 type Config struct {
-	Encora  EncoraConfig  `mapstructure:"encora"`
-	Storage StorageConfig `mapstructure:"storage"`
-	Library LibraryConfig `mapstructure:"library"`
-	Server  ServerConfig  `mapstructure:"server"`
+	Encora     EncoraConfig     `mapstructure:"encora"`
+	Storage    StorageConfig    `mapstructure:"storage"`
+	Library    LibraryConfig    `mapstructure:"library"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Stagemedia StagemediaConfig `mapstructure:"stagemedia"`
 }
 
 // EncoraConfig holds Encora API client configuration.
@@ -71,6 +74,14 @@ type OIDCConfig struct {
 	Issuer      string        `mapstructure:"issuer"`
 	Audience    string        `mapstructure:"audience"`
 	JWKSRefresh time.Duration `mapstructure:"jwksRefresh"`
+}
+
+// StagemediaConfig holds StageMedia.me API client configuration. Optional —
+// leave APIKey blank to disable poster + headshot fetching.
+type StagemediaConfig struct {
+	BaseURL   string `mapstructure:"baseUrl"`
+	APIKey    string `mapstructure:"apiKey"`
+	UserAgent string `mapstructure:"userAgent"`
 }
 
 // LoadOptions configures how configuration is loaded.
@@ -138,6 +149,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("library.watchInterval", DefaultWatchInterval)
 	v.SetDefault("server.listen", DefaultListenAddr)
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
+	v.SetDefault("stagemedia.baseUrl", DefaultStagemediaBaseURL)
+	v.SetDefault("stagemedia.userAgent", DefaultStagemediaUserAgent)
 }
 
 // asConfigNotFound reports whether err is viper.ConfigFileNotFoundError.

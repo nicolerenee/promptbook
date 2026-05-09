@@ -14,6 +14,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/server"
+	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	syncpkg "github.com/nicolerenee/promptbook/internal/sync"
 )
@@ -391,6 +392,31 @@ func TestAPIRecordingsStatusFilter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServerStagemediaAccessor(t *testing.T) {
+	t.Parallel()
+
+	db, openErr := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, openErr)
+	t.Cleanup(func() { _ = db.Close() })
+
+	t.Run("nil when not configured", func(t *testing.T) {
+		t.Parallel()
+		srv, err := server.New(server.Options{DB: db})
+		require.NoError(t, err)
+		assert.Nil(t, srv.Stagemedia())
+	})
+
+	t.Run("returns the configured client", func(t *testing.T) {
+		t.Parallel()
+		// Sentinel: empty Client value is enough since the test only
+		// verifies pointer-equality plumbing — no methods are invoked.
+		sentinel := &stagemedia.Client{}
+		srv, err := server.New(server.Options{DB: db, Stagemedia: sentinel})
+		require.NoError(t, err)
+		assert.Same(t, sentinel, srv.Stagemedia())
+	})
 }
 
 func TestPagesHomeStatusFilter(t *testing.T) {

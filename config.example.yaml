@@ -37,3 +37,9 @@ server:
     issuer: ""           # e.g. https://id.freckle.family
     audience: ""
     jwksRefresh: 1h
+
+# StageMedia API for posters + headshots. Optional — leave apiKey blank to disable.
+stagemedia:
+  baseUrl: https://stagemedia.me
+  apiKey: ""           # PROMPTBOOK_STAGEMEDIA_APIKEY env var works too
+  userAgent: promptbook/0.0.1
