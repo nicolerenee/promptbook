@@ -155,6 +155,8 @@ function loadRecording(id) {
         state.recording.overlayOverride != null
           ? state.recording.overlayOverride
           : autoOverlayText(body);
+      state.recording.overlayDisabled =
+        !!(body && body.overlay_disabled);
     })
     .catch((err) => {
       state.recording.loaded = null;
@@ -698,6 +700,13 @@ function renderBackdropPicker(loaded) {
 // changing from. Save persists the typed value (even if it matches
 // the fallback — explicit empty string allowed); Reset nulls the
 // override and the renderer falls back to its computed string.
+//
+// Above the text editor sits a "Skip burn-in" toggle. When checked
+// the renderer copies the raw selected backdrop verbatim to
+// rendered.jpg (no compositing) and the text editor / Save / Reset
+// affordances render disabled — they're irrelevant when no overlay
+// is being baked. The two surfaces are independent persisted fields
+// so flipping the toggle doesn't clobber the saved text override.
 function renderOverlayEditor(loaded) {
   const id = loaded.Recording.id;
   const fallback = autoOverlayText(loaded);
@@ -705,12 +714,34 @@ function renderOverlayEditor(loaded) {
   const draft = state.recording.overlayDraft != null
     ? state.recording.overlayDraft : '';
   const busy = state.recording.imageBusy;
+  const disabled = !!state.recording.overlayDisabled;
+  const editorDisabled = busy || disabled;
   return m('section', { class: 'space-y-2' }, [
     m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
       m('h3', { class: 'text-sm font-semibold' }, 'Overlay text'),
-      isOverride
-        ? m('span', { class: 'badge badge-warning badge-sm' }, 'override')
-        : m('span', { class: 'badge badge-ghost badge-sm' }, 'auto'),
+      disabled
+        ? m('span', { class: 'badge badge-info badge-sm' }, 'burn-in off')
+        : (isOverride
+            ? m('span', { class: 'badge badge-warning badge-sm' }, 'override')
+            : m('span', { class: 'badge badge-ghost badge-sm' }, 'auto')),
+    ]),
+    m('label', { class: 'label cursor-pointer justify-start gap-2 py-1' }, [
+      m('input', {
+        type: 'checkbox',
+        class: 'toggle toggle-sm',
+        checked: disabled,
+        disabled: busy,
+        onchange: (ev) => {
+          const next = !!ev.target.checked;
+          postPickerChoice(
+            '/recordings/' + id + '/overlay-disabled',
+            { disabled: next },
+            () => { state.recording.overlayDisabled = next; },
+          );
+        },
+      }),
+      m('span', { class: 'label-text text-sm' },
+        'Skip burn-in (use raw backdrop)'),
     ]),
     m('label', { class: 'input w-full' }, [
       m('input', {
@@ -721,16 +752,18 @@ function renderOverlayEditor(loaded) {
         oninput: (ev) => {
           state.recording.overlayDraft = ev.target.value;
         },
-        disabled: busy,
+        disabled: editorDisabled,
       }),
     ]),
     m('p', { class: 'text-xs opacity-60' },
-      'Burned into the backdrop · Jellyfin/Plex see this label.'),
+      disabled
+        ? 'Burn-in disabled · rendered.jpg is the raw backdrop, no label.'
+        : 'Burned into the backdrop · Jellyfin/Plex see this label.'),
     m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
       m('button', {
         type: 'button',
         class: 'btn btn-sm btn-primary',
-        disabled: busy,
+        disabled: editorDisabled,
         onclick: () => postPickerChoice(
           '/recordings/' + id + '/overlay',
           { text: draft, clear: false },
@@ -740,7 +773,7 @@ function renderOverlayEditor(loaded) {
       m('button', {
         type: 'button',
         class: 'btn btn-sm btn-ghost',
-        disabled: busy || !isOverride,
+        disabled: editorDisabled || !isOverride,
         onclick: () => postPickerChoice(
           '/recordings/' + id + '/overlay',
           { clear: true },
@@ -750,7 +783,7 @@ function renderOverlayEditor(loaded) {
           },
         ),
       }, 'Reset to default'),
-      isOverride
+      isOverride || disabled
         ? null
         : m('span', { class: 'text-xs opacity-60' },
             'Default: ' + (fallback || '—')),

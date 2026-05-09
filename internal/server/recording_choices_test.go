@@ -180,6 +180,49 @@ func TestAPISetOverlayTextOverrideAndClear(t *testing.T) {
 		"clear=true must null the override column")
 }
 
+func TestAPISetOverlayDisabledFlipsAndSurfacesInDetail(t *testing.T) {
+	t.Parallel()
+
+	const recordingID int64 = 8230
+	const showID int64 = 4720
+	srv, db, cache := pickerTestServer(t, recordingID, showID)
+
+	// Stage one backdrop so the cache has something to render against.
+	stageImage(t, cache.BackdropPath(recordingID, 0))
+
+	// Step 1: flip the flag on.
+	status, body := postChoiceJSON(t, srv,
+		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/overlay-disabled",
+		map[string]bool{"disabled": true})
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Contains(t, body, `"ok":true`)
+
+	choice := loadChoice(t, db, recordingID)
+	assert.True(t, choice.OverlayDisabled,
+		"overlay-disabled should be persisted true")
+
+	// GET /recordings/:id should reflect the flag.
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(),
+		http.MethodGet,
+		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10), nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &detail))
+	assert.Equal(t, true, detail["overlay_disabled"],
+		"recording detail GET should expose overlay_disabled=true")
+
+	// Step 2: flip back off.
+	status, body = postChoiceJSON(t, srv,
+		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/overlay-disabled",
+		map[string]bool{"disabled": false})
+	require.Equal(t, http.StatusOK, status, body)
+	choice = loadChoice(t, db, recordingID)
+	assert.False(t, choice.OverlayDisabled,
+		"overlay-disabled should flip back to false")
+}
+
 func TestAPISetPosterBoundsCheck(t *testing.T) {
 	t.Parallel()
 
@@ -246,6 +289,11 @@ func TestAPIPickerRequiresImageCache(t *testing.T) {
 		{name: "poster", path: "/api/v1/recordings/1/poster", body: map[string]int{"index": 0}},
 		{name: "backdrop", path: "/api/v1/recordings/1/backdrop", body: map[string]int{"index": 0}},
 		{name: "overlay", path: "/api/v1/recordings/1/overlay", body: map[string]any{"clear": true}},
+		{
+			name: "overlay_disabled",
+			path: "/api/v1/recordings/1/overlay-disabled",
+			body: map[string]bool{"disabled": true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

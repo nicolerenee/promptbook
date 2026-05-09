@@ -89,6 +89,7 @@ func (s *Server) routes() {
 	api.POST("/recordings/:id/poster", s.handleSetPoster)
 	api.POST("/recordings/:id/backdrop", s.handleSetBackdrop)
 	api.POST("/recordings/:id/overlay", s.handleSetOverlay)
+	api.POST("/recordings/:id/overlay-disabled", s.handleSetOverlayDisabled)
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
 	api.GET("/queue", s.handleListQueue)
@@ -217,6 +218,11 @@ type recordingDetailResponse struct {
 	// nil when no override has been saved (the renderer uses its own
 	// auto-derived "show · tour · date" string in that case).
 	OverlayTextOverride *string `json:"overlay_text_override"`
+	// OverlayDisabled, when true, tells the renderer to skip the
+	// playbill-style band and copy the raw selected backdrop through
+	// to rendered.jpg unchanged. Mirrors the column on
+	// recording_image_choices.
+	OverlayDisabled bool `json:"overlay_disabled"`
 }
 
 // castEntryWithHeadshot mirrors storage.ResolvedCastEntry but adds a
@@ -276,6 +282,7 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 		SelectedPosterIndex:   choice.PosterIndex,
 		SelectedBackdropIndex: choice.BackdropIndex,
 		OverlayTextOverride:   choice.OverlayTextOverride,
+		OverlayDisabled:       choice.OverlayDisabled,
 	})
 }
 

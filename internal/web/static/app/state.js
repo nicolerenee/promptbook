@@ -65,6 +65,11 @@ export const state = {
     selectedBackdropIndex: null,
     overlayOverride: null,
     overlayDraft: '',
+    // overlayDisabled mirrors the API field of the same name. When
+    // true the renderer skips the playbill-style band and writes the
+    // raw selected backdrop verbatim to rendered.jpg; the overlay
+    // text editor renders disabled in that mode.
+    overlayDisabled: false,
     imageBusy: false,
     imageError: null,
   },

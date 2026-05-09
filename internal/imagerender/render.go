@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -78,6 +79,23 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 		return nil
 	}
 	srcPath := r.Cache.BackdropPath(recordingID, backdropIdx)
+	destPath := filepath.Join(filepath.Dir(srcPath), "rendered.jpg")
+
+	// Burn-in opt-out: copy the raw selected backdrop verbatim to
+	// rendered.jpg so the NFO writer's <fanart> still resolves but the
+	// resulting file carries no compositing. We stream bytes (no decode/
+	// re-encode) so the user's chosen image lands on disk lossless.
+	if choice.OverlayDisabled {
+		if copyErr := copyFileAtomic(srcPath, destPath); copyErr != nil {
+			return fmt.Errorf("imagerender: copy raw %s -> %s: %w", srcPath, destPath, copyErr)
+		}
+		r.Logger.Debug().
+			Int64("recording_id", recordingID).
+			Int("backdrop_index", backdropIdx).
+			Str("dest", destPath).
+			Msg("imagerender: overlay disabled; rendered.jpg is raw copy")
+		return nil
+	}
 
 	loaded, err := storage.LoadRecording(ctx, r.DB, recordingID)
 	if err != nil && !errors.Is(err, storage.ErrRecordingNotFound) {
@@ -107,7 +125,6 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 
 	dst := r.compose(src, title, subtitle, style)
 
-	destPath := filepath.Join(filepath.Dir(srcPath), "rendered.jpg")
 	if writeErr := writeJPEGAtomic(destPath, dst); writeErr != nil {
 		return fmt.Errorf("imagerender: write %s: %w", destPath, writeErr)
 	}
@@ -231,6 +248,45 @@ func writeJPEGAtomic(dest string, img image.Image) error {
 		return fmt.Errorf("encode: %w", encErr)
 	}
 	if closeErr := f.Close(); closeErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close tmp: %w", closeErr)
+	}
+	if renameErr := os.Rename(tmp, dest); renameErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename: %w", renameErr)
+	}
+	return nil
+}
+
+// copyFileAtomic streams src to a sibling .tmp file and renames it
+// over dest on success. Used by the overlay-disabled path so the raw
+// JPEG bytes flow through unchanged — no decode/re-encode, no quality
+// loss. Mirrors writeJPEGAtomic's tmp-then-rename contract so callers
+// never observe a torn file.
+func copyFileAtomic(src, dest string) error {
+	if mkErr := os.MkdirAll(filepath.Dir(dest), dirMode); mkErr != nil {
+		return fmt.Errorf("mkdir: %w", mkErr)
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open src: %w", err)
+	}
+	defer func() { _ = in.Close() }()
+
+	tmp := dest + ".tmp"
+	if _, statErr := os.Stat(tmp); statErr == nil {
+		_ = os.Remove(tmp)
+	}
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileMode)
+	if err != nil {
+		return fmt.Errorf("create tmp: %w", err)
+	}
+	if _, copyErr := io.Copy(out, in); copyErr != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("copy: %w", copyErr)
+	}
+	if closeErr := out.Close(); closeErr != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("close tmp: %w", closeErr)
 	}

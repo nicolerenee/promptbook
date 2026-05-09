@@ -199,6 +199,40 @@ func TestRegenerate_AtomicWrite(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, "0"+".jpg"))
 }
 
+func TestRegenerate_OverlayDisabled(t *testing.T) {
+	t.Parallel()
+	ctx, db, cache, r, rid := setup(t, true)
+	writeSyntheticBackdrop(t, cache, rid)
+	require.NoError(t, storage.SetBackdropIndex(ctx, db, rid, 0))
+	// Even with an override text saved, the disabled flag wins and the
+	// raw bytes flow through verbatim.
+	require.NoError(t, storage.SetOverlayTextOverride(ctx, db, rid,
+		"Greenwich Beacon\nBroadway · 2017-04-21 · SampleMaster"))
+	require.NoError(t, storage.SetOverlayDisabled(ctx, db, rid, true))
+
+	require.NoError(t, r.Regenerate(ctx, rid))
+
+	srcPath := cache.BackdropPath(rid, 0)
+	rendered := filepath.Join(filepath.Dir(srcPath), "rendered.jpg")
+
+	srcBytes, err := os.ReadFile(srcPath)
+	require.NoError(t, err)
+	renderedBytes, err := os.ReadFile(rendered)
+	require.NoError(t, err)
+	assert.Equal(t, srcBytes, renderedBytes,
+		"overlay-disabled rendered.jpg must be a byte-identical copy of the raw source")
+
+	// Flipping the flag back off rebuilds the burned-in composite —
+	// verify by checking the rendered bytes diverge from the source
+	// after a follow-up Regenerate.
+	require.NoError(t, storage.SetOverlayDisabled(ctx, db, rid, false))
+	require.NoError(t, r.Regenerate(ctx, rid))
+	renderedBytes, err = os.ReadFile(rendered)
+	require.NoError(t, err)
+	assert.NotEqual(t, srcBytes, renderedBytes,
+		"after disabling overlay opt-out, rendered.jpg should be the composite again")
+}
+
 func TestRegenerate_LongShowNameFits(t *testing.T) {
 	t.Parallel()
 	ctx, db, cache, r, rid := setup(t, true)

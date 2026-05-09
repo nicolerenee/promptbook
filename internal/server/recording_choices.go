@@ -41,6 +41,15 @@ type overlayChoiceRequest struct {
 	Clear bool   `json:"clear"`
 }
 
+// overlayDisabledRequest is the JSON body for
+// POST /recordings/:id/overlay-disabled. Disabled=true asks the
+// renderer to skip the playbill-style band and instead copy the raw
+// selected backdrop verbatim to rendered.jpg. Disabled=false (the
+// default) restores the normal composite path on the next render.
+type overlayDisabledRequest struct {
+	Disabled bool `json:"disabled"`
+}
+
 // requireImageCache returns a 503 echo error when the image cache
 // wasn't configured (or is in disabled mode). The picker endpoints
 // can't bounds-check or trigger a re-render without it, so the call
@@ -195,6 +204,44 @@ func (s *Server) handleSetOverlay(c echo.Context) error {
 				Err(rerr).
 				Int64("recording_id", id).
 				Msg("overlay regenerate failed; choice was persisted")
+		}
+	}
+	return c.JSON(http.StatusOK, imageChoiceResponse{OK: true})
+}
+
+// handleSetOverlayDisabled handles POST
+// /api/v1/recordings/:id/overlay-disabled. Persists the burn-in opt-out
+// flag and asks the renderer to refresh rendered.jpg so the on-disk
+// file flips between burned-in composite and raw copy immediately on
+// toggle. Standard 503/400/404 patterns mirror the sibling picker
+// endpoints.
+func (s *Server) handleSetOverlayDisabled(c echo.Context) error {
+	id, err := parseRecordingIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.recordingExists(c, id); existsErr != nil {
+		return existsErr
+	}
+
+	var req overlayDisabledRequest
+	if bindErr := c.Bind(&req); bindErr != nil {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("decode body: %s", bindErr.Error()))
+	}
+
+	if setErr := storage.SetOverlayDisabled(c.Request().Context(), s.db, id, req.Disabled); setErr != nil {
+		return fmt.Errorf("set overlay disabled: %w", setErr)
+	}
+	if r := s.ImageRenderer(); r != nil {
+		if rerr := r.Regenerate(c.Request().Context(), id); rerr != nil {
+			s.logger.Warn().
+				Err(rerr).
+				Int64("recording_id", id).
+				Msg("overlay-disabled regenerate failed; choice was persisted")
 		}
 	}
 	return c.JSON(http.StatusOK, imageChoiceResponse{OK: true})
