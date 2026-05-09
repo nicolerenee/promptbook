@@ -85,6 +85,16 @@ func (s *stubFetcher) Fetch(
 type stubClient struct {
 	subs            []encora.Subtitle
 	addCalledForIDs []int64
+	// recordingByID returns synthetic detail for ids the test wants
+	// auto-add to find. Missing ids return encora.ErrNotFound.
+	recordingByID map[int64]encora.Recording
+}
+
+func (s *stubClient) Recording(_ context.Context, id int64) (encora.Recording, encora.RateLimitInfo, error) {
+	if r, ok := s.recordingByID[id]; ok {
+		return r, encora.RateLimitInfo{Remaining: 30}, nil
+	}
+	return encora.Recording{}, encora.RateLimitInfo{Remaining: 30}, encora.ErrNotFound
 }
 
 func (s *stubClient) Subtitles(_ context.Context, _ int64) ([]encora.Subtitle, encora.RateLimitInfo, error) {
@@ -231,6 +241,27 @@ func TestEngineIngestSkipsUnknownID(t *testing.T) {
 	assert.NotEmpty(t, res.Items[0].SkippedReason)
 }
 
+// syntheticRecording is a minimum-viable Recording for ingest tests that
+// auto-add unknown ids — enough fields populated for rename.BuildPlan to
+// produce non-empty folder/file names.
+func syntheticRecording(id int64) encora.Recording {
+	return encora.Recording{
+		ID:     id,
+		Show:   "Test Show",
+		Tour:   "Broadway",
+		Master: "pro-shot",
+		Date: encora.Date{
+			FullDate:   "2024-01-15T00:00:00Z",
+			MonthKnown: true,
+			DayKnown:   true,
+			Time:       "evening",
+		},
+		Metadata: encora.RecordingMeta{
+			ShowID: 1,
+		},
+	}
+}
+
 func TestEngineAddToCollectionMockOnly(t *testing.T) {
 	t.Parallel()
 
@@ -242,22 +273,119 @@ func TestEngineAddToCollectionMockOnly(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "Show [encora-99999].mp4")
 	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
 
-	stub := &stubClient{}
+	stub := &stubClient{
+		recordingByID: map[int64]encora.Recording{
+			99999: syntheticRecording(99999),
+		},
+	}
 	engine := &ingest.Engine{
 		DB:             db,
 		Client:         stub,
 		LibraryRoot:    t.TempDir(),
-		FolderTemplate: "x",
-		FileTemplate:   "y",
+		FolderTemplate: "{Show} [encora-{EncoraID}]",
+		FileTemplate:   "{Show}",
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{AddToCollection: true})
 	require.NoError(t, err)
 	require.Len(t, res.Items, 1)
 	item := res.Items[0]
-	assert.Equal(t, "skipped", item.Action)
+	require.NoError(t, item.Err)
+	assert.Equal(t, "moved", item.Action)
 	require.Len(t, stub.addCalledForIDs, 1, "should have invoked AddToCollection on the mock client")
 	assert.Equal(t, int64(99999), stub.addCalledForIDs[0])
+
+	// Recording was persisted to the local DB as part of the auto-add.
+	loaded, err := storage.LoadRecording(t.Context(), db, 99999)
+	require.NoError(t, err)
+	assert.Equal(t, "Test Show", loaded.Recording.Show)
+	assert.False(t, loaded.InCollection, "auto-added orphan recordings have no collection row")
+}
+
+func TestEngineIngestAutoAddsUnknownID(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	db, err := storage.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	src := filepath.Join(t.TempDir(), "Test Show [encora-77777].mp4")
+	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
+
+	stub := &stubClient{
+		recordingByID: map[int64]encora.Recording{
+			77777: syntheticRecording(77777),
+		},
+	}
+	engine := &ingest.Engine{
+		DB:             db,
+		Client:         stub,
+		LibraryRoot:    t.TempDir(),
+		FolderTemplate: "{Show} [encora-{EncoraID}]",
+		FileTemplate:   "{Show}",
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	item := res.Items[0]
+	require.NoError(t, item.Err)
+	assert.Equal(t, ingest.ActionMoved, item.Action)
+
+	// File landed at canonical path.
+	_, err = os.Stat(item.Plan.AbsoluteFile())
+	require.NoError(t, err)
+
+	// Recording is now in the local DB.
+	loaded, err := storage.LoadRecording(t.Context(), db, 77777)
+	require.NoError(t, err)
+	assert.Equal(t, int64(77777), loaded.Recording.ID)
+	assert.Equal(t, "Test Show", loaded.Recording.Show)
+
+	// AddToCollection was NOT called (default false).
+	assert.Empty(t, stub.addCalledForIDs)
+}
+
+func TestEngineIngestAutoAddsUnknownIDWithCollection(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	db, err := storage.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	src := filepath.Join(t.TempDir(), "Test Show [encora-77777].mp4")
+	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
+
+	stub := &stubClient{
+		recordingByID: map[int64]encora.Recording{
+			77777: syntheticRecording(77777),
+		},
+	}
+	engine := &ingest.Engine{
+		DB:             db,
+		Client:         stub,
+		LibraryRoot:    t.TempDir(),
+		FolderTemplate: "{Show} [encora-{EncoraID}]",
+		FileTemplate:   "{Show}",
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{AddToCollection: true})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	item := res.Items[0]
+	require.NoError(t, item.Err)
+	assert.Equal(t, ingest.ActionMoved, item.Action)
+
+	// Local persist happened first — verify the recording is present.
+	loaded, err := storage.LoadRecording(t.Context(), db, 77777)
+	require.NoError(t, err)
+	assert.Equal(t, int64(77777), loaded.Recording.ID)
+
+	// And the AddToCollection mock got the call after persistence.
+	require.Len(t, stub.addCalledForIDs, 1)
+	assert.Equal(t, int64(77777), stub.addCalledForIDs[0])
 }
 
 func TestEngineIngestDirectoryWalk(t *testing.T) {

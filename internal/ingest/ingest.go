@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/nfo"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
+	syncpkg "github.com/nicolerenee/promptbook/internal/sync"
 )
 
 // videoExtensions are recognized as ingestable. Lower-case, includes
@@ -40,6 +42,7 @@ var videoExtensions = map[string]struct{}{
 // Client is the encora subset ingest needs. Defined as an interface so
 // tests can pass a stub that doesn't open a real network socket.
 type Client interface {
+	Recording(ctx context.Context, id int64) (encora.Recording, encora.RateLimitInfo, error)
 	Subtitles(ctx context.Context, id int64) ([]encora.Subtitle, encora.RateLimitInfo, error)
 	AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
 }
@@ -63,9 +66,10 @@ type Options struct {
 	FlagEncoraID int
 	DryRun       bool
 	Interactive  bool
-	// AddToCollection: if a recording is missing from the local DB, POST
-	// to /collection/{id}/collect (via the encora client) and re-sync
-	// via a follow-up Recording fetch. Mock-only during the overnight run.
+	// AddToCollection: after a recording lands locally, also POST to
+	// /collection/{id}/collect so the upstream collection picks it up.
+	// Auto-fetch of unknown ids into the local DB happens regardless of
+	// this flag — this only governs the optional Encora WRITE.
 	AddToCollection bool
 }
 
@@ -244,10 +248,14 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 	item.NFOPath = nfoPath
 }
 
-// lookupOrAdd reads from the local DB; if missing and AddToCollection is
-// set, posts /collection/{id}/collect and refetches /recording/{id}.
-// During the overnight run the AddToCollection path is exercised only by
-// mock-backed tests — there's no real encora key in scope.
+// lookupOrAdd reads from the local DB; if missing it auto-fetches the
+// recording via /recording/{id} from Encora and persists it as an orphan
+// (no collection / wants membership). If opts.AddToCollection is set, it
+// then POSTs /collection/{id}/collect so the upstream collection picks it up
+// — that flag now ONLY governs the optional Encora write, not whether the
+// auto-fetch runs.
+//
+// Returns a clear error when Encora itself doesn't know the id (404).
 func (e *Engine) lookupOrAdd(
 	ctx context.Context,
 	id int64,
@@ -260,16 +268,25 @@ func (e *Engine) lookupOrAdd(
 	if !errors.Is(err, storage.ErrRecordingNotFound) {
 		return nil, fmt.Errorf("load recording: %w", err)
 	}
-	if !opts.AddToCollection {
-		return nil, fmt.Errorf("recording %d not in cache (use --add-to-collection)", id)
+
+	recording, _, fetchErr := e.Client.Recording(ctx, id)
+	if errors.Is(fetchErr, encora.ErrNotFound) {
+		return nil, fmt.Errorf("recording %d doesn't exist in Encora", id)
 	}
-	if _, addErr := e.Client.AddToCollection(ctx, id); addErr != nil {
-		return nil, fmt.Errorf("add to collection: %w", addErr)
+	if fetchErr != nil {
+		return nil, fmt.Errorf("fetch recording %d: %w", id, fetchErr)
 	}
-	// Caller is expected to re-sync after this. For the overnight run
-	// we skip the re-fetch and surface a clear error so the user can
-	// run `collection sync` manually.
-	return nil, fmt.Errorf("recording %d added to collection — run `promptbook collection sync` and re-ingest", id)
+
+	if perr := syncpkg.PersistRecording(ctx, e.DB, recording, time.Now); perr != nil {
+		return nil, fmt.Errorf("persist recording %d: %w", id, perr)
+	}
+
+	if opts.AddToCollection {
+		if _, addErr := e.Client.AddToCollection(ctx, id); addErr != nil {
+			return nil, fmt.Errorf("add to collection: %w", addErr)
+		}
+	}
+	return &recording, nil
 }
 
 // plannedSubtitlePaths is what *would* be written without actually
