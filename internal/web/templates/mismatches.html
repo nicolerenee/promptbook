@@ -1,0 +1,51 @@
+{{define "mismatches.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<header>
+  <h1>{{.Title}}</h1>
+  <p>
+    {{if .ActiveType}}Filter: {{.ActiveType}}{{else}}All mismatches{{end}}
+    — {{len .Items}} shown
+  </p>
+  <nav class="mismatch-tabs">
+    {{range .Tabs}}
+      {{if .Active}}
+        <a class="mismatch-tab mismatch-tab-active" href="{{if .Key}}/mismatches?type={{.Key}}{{else}}/mismatches{{end}}">{{.Label}} <small>({{.Count}})</small></a>
+      {{else}}
+        <a class="mismatch-tab" href="{{if .Key}}/mismatches?type={{.Key}}{{else}}/mismatches{{end}}">{{.Label}} <small>({{.Count}})</small></a>
+      {{end}}
+    {{end}}
+  </nav>
+</header>
+
+{{if .Items}}
+<table>
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Show</th>
+      <th>Tour</th>
+      <th>Date</th>
+      <th>Recording</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Items}}
+    <tr>
+      <td><span class="mismatch-badge mismatch-{{.Type}}">{{.Type}}</span></td>
+      <td>{{if .Show}}{{.Show}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if .Tour}}{{.Tour}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if .DateFull}}{{.DateFull}}{{else}}<small>—</small>{{end}}</td>
+      <td><a href="/recordings/{{.RecordingID}}">{{.RecordingID}}</a></td>
+      <td>{{.Description}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  <p><em>Everything synced.</em></p>
+{{end}}
+
+<p><small>Use <code>promptbook</code> CLI or the future Apply page to push these changes to Encora.</small></p>
+{{end}}

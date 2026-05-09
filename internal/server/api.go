@@ -21,6 +21,12 @@ const (
 	itemsKey         = "items"
 	limitKey         = "limit"
 	offsetKey        = "offset"
+
+	// allTabLabel is the display label for the "no filter" entry in
+	// every tab-style nav (status / kind / mismatch type). Lifted into
+	// a shared constant because goconst flags the duplication once
+	// three or more sibling tab tables exist.
+	allTabLabel = "All"
 )
 
 // RecordingListItem is the shape returned by /api/v1/recordings and
@@ -71,6 +77,7 @@ func (s *Server) routes() {
 	api.GET("/people", s.handleListPeople)
 	api.GET("/people/:id", s.handleGetPerson)
 	api.GET("/history", s.handleListHistory)
+	api.GET("/mismatches", s.handleListMismatches)
 
 	s.echo.GET("/", s.handleHomePage)
 	s.echo.GET("/recordings/:id", s.handleRecordingPage)
@@ -80,6 +87,7 @@ func (s *Server) routes() {
 	s.echo.GET("/people", s.handlePeoplePage)
 	s.echo.GET("/people/:id", s.handlePersonPage)
 	s.echo.GET("/history", s.handleHistoryPage)
+	s.echo.GET("/mismatches", s.handleMismatchesPage)
 }
 
 func (s *Server) handleHealth(c echo.Context) error {

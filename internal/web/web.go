@@ -22,6 +22,7 @@ var staticFS embed.FS
 var pageNames = []string{ //nolint:gochecknoglobals // immutable lookup table
 	"history.html",
 	"home.html",
+	"mismatches.html",
 	"people.html",
 	"person.html",
 	"queue.html",
