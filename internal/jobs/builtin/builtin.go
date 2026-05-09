@@ -171,23 +171,44 @@ func (j *RefreshEncoraJob) fanOutActors(
 // iterateRows runs query (which must select a single int64 column)
 // and invokes onID for each row. Errors propagate; an empty result
 // set is fine.
+//
+// The IDs are drained into a slice and the cursor is closed BEFORE
+// onID is called. The single-connection pool (storage.Open caps at 1)
+// means a live cursor pins the only connection; if onID issues any DB
+// write — like Enqueuer.EnqueueFromJob inserting a job_runs row — the
+// write would block waiting for the connection forever, deadlocking
+// the entire server. Draining first costs one slice allocation but
+// keeps the connection free.
 func iterateRows(ctx context.Context, db *sql.DB, query string, onID func(int64)) error {
+	ids, err := scanIDs(ctx, db, query)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		onID(id)
+	}
+	return nil
+}
+
+// scanIDs runs query and returns every row's first column as int64.
+func scanIDs(ctx context.Context, db *sql.DB, query string) ([]int64, error) {
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("query: %w", err)
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+	var ids []int64
 	for rows.Next() {
 		var id int64
 		if scanErr := rows.Scan(&id); scanErr != nil {
-			return fmt.Errorf("scan: %w", scanErr)
+			return nil, fmt.Errorf("scan: %w", scanErr)
 		}
-		onID(id)
+		ids = append(ids, id)
 	}
 	if rerr := rows.Err(); rerr != nil {
-		return fmt.Errorf("iterate: %w", rerr)
+		return nil, fmt.Errorf("iterate: %w", rerr)
 	}
-	return nil
+	return ids, nil
 }
 
 // ScanIncomingJob wraps a single scanner.Engine.Scan pass. The
