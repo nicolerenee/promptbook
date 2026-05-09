@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/spf13/cobra"
+
 	"github.com/nicolerenee/promptbook/internal/config"
 )
 
@@ -12,6 +14,12 @@ import (
 // parallel use — root cmd state is global.
 func RunForTest(ctx context.Context, args []string, out io.Writer) error {
 	resetGlobalsForTest()
+	// Cobra only propagates the parent's ctx to a subcommand when the
+	// subcommand's ctx is nil (see cobra's command.go ExecuteC). Across
+	// successive test invocations the previous test's canceled context
+	// would otherwise stick to each subcommand. Clear them all so the new
+	// ctx propagates cleanly.
+	clearSubcommandContexts(rootCmd)
 	rootCmd.SetContext(ctx)
 	rootCmd.SetArgs(args)
 	if out != nil {
@@ -19,6 +27,16 @@ func RunForTest(ctx context.Context, args []string, out io.Writer) error {
 		rootCmd.SetErr(out)
 	}
 	return rootCmd.Execute()
+}
+
+// clearSubcommandContexts walks the cobra tree under root and resets
+// each subcommand's context to nil. See RunForTest for why this is
+// necessary between test invocations.
+func clearSubcommandContexts(root *cobra.Command) {
+	for _, sub := range root.Commands() {
+		sub.SetContext(nil) //nolint:staticcheck // intentionally nil to re-enable cobra's parent-ctx fallback
+		clearSubcommandContexts(sub)
+	}
 }
 
 // resetGlobalsForTest zeroes flag/config globals so a previous run

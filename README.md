@@ -21,6 +21,8 @@ promptbook library ingest SRC      # full pipeline: resolve → rename → subs 
 promptbook library scan PATH       # dry-run report; matches/unmatched/destinations
 promptbook library rename PATH     # rename only (no move/subs/NFO)
 promptbook library nfo PATH        # walk a tree and rewrite movie.nfo from cache
+promptbook library watch           # poll incomingDirs and enqueue files for review
+promptbook library queue           # list files waiting for manual import
 
 promptbook serve                   # HTTP UI + JSON API on 127.0.0.1:8080
 ```

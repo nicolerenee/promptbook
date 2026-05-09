@@ -71,6 +71,8 @@ cmd/                     cobra subcommands
   library_scan.go        `promptbook library scan PATH`
   library_rename.go      `promptbook library rename PATH`
   library_nfo.go         `promptbook library nfo PATH`
+  library_watch.go       `promptbook library watch`
+  library_queue.go       `promptbook library queue`
   serve.go               `promptbook serve`
   testing.go             RunForTest helper (not for production code)
 internal/
