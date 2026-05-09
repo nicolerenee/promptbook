@@ -18,6 +18,10 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
 import { smartDate } from '../utils/format.js';
+import ImagePickerModal, {
+  renderEditImagesButton,
+  renderImageErrorToast,
+} from './ImagePickerModal.js';
 
 // STATUS_META mirrors Library.js / Recording.js so badges stay
 // consistent across the SPA.
@@ -171,7 +175,9 @@ function sortRows(rows, sort) {
 }
 
 // renderHeader is the show header card: selected poster on the left
-// (or a placeholder), name + meta on the right.
+// (or a placeholder), name + meta on the right, and a small
+// right-aligned "Edit images" action that opens the poster picker
+// modal.
 function renderHeader(detail) {
   const urls = detail.local_poster_urls || [];
   const idx = posterIndexHighlight();
@@ -200,14 +206,22 @@ function renderHeader(detail) {
                  'text-sm font-mono',
         }, 'no poster'),
     m('div', { class: 'card-body' }, [
-      m('div', {
-        class: 'text-xs uppercase tracking-wider opacity-60',
-      }, 'Show · s-' + detail.id),
-      m('h1', { class: 'text-3xl font-semibold' }, detail.name || '—'),
-      m('p', { class: 'text-sm opacity-70 font-mono' },
-        (span ? span + ' · ' : '') +
-        detail.recording_count + ' recording' +
-        (detail.recording_count === 1 ? '' : 's')),
+      m('div', { class: 'flex items-start justify-between gap-3 flex-wrap' }, [
+        m('div', { class: 'min-w-0' }, [
+          m('div', {
+            class: 'text-xs uppercase tracking-wider opacity-60',
+          }, 'Show · s-' + detail.id),
+          m('h1', { class: 'text-3xl font-semibold' }, detail.name || '—'),
+          m('p', { class: 'text-sm opacity-70 font-mono' },
+            (span ? span + ' · ' : '') +
+            detail.recording_count + ' recording' +
+            (detail.recording_count === 1 ? '' : 's')),
+        ]),
+        m('div', { class: 'shrink-0' },
+          renderEditImagesButton({
+            onclick: () => { state.show.pickerOpen = true; },
+          })),
+      ]),
       detail.description
         ? m('p', { class: 'text-sm opacity-80 max-w-2xl whitespace-pre-line' },
             detail.description)
@@ -256,36 +270,42 @@ function renderImageThumb({ url, alt, selected, busy, onclick }) {
 // renderPosterPicker lays out one thumbnail per cached poster with
 // the active one highlighted by the green ring. Shows are
 // poster-only — no backdrop / overlay sections like Recording.js.
+// Rendered inside the picker modal opened by the header's
+// "Edit images" button; image errors surface via the toast outside
+// the modal so a failed POST still reaches the user mid-close.
 function renderPosterPicker(detail) {
   const urls = detail.local_poster_urls || [];
   const highlight = posterIndexHighlight();
   const busy = state.show.imageBusy;
-  const error = state.show.imageError;
-  return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body gap-3' }, [
-      m('div', { class: 'flex items-center justify-between' }, [
-        m('h2', { class: 'card-title text-base' },
-          'Poster · ' + urls.length + ' available'),
-        busy
-          ? m('span', { class: 'loading loading-spinner loading-sm' })
-          : null,
-      ]),
-      error
-        ? m('div', { role: 'alert', class: 'alert alert-error alert-soft py-2' },
-            m('span', { class: 'text-sm' }, error))
-        : null,
-      urls.length === 0
-        ? m('div', { class: 'opacity-60 text-sm' },
-            'No posters cached yet — sync to fetch.')
-        : m('div', { class: 'flex flex-wrap gap-3' },
-            urls.map((url, i) => renderImageThumb({
-              url,
-              alt: 'poster ' + (i + 1),
-              selected: i === highlight,
-              busy,
-              onclick: () => pickPoster(i),
-            }))),
-    ]));
+  return m('section', { class: 'space-y-2' }, [
+    m('h3', { class: 'text-sm font-semibold' },
+      'Posters · ' + urls.length + ' available'),
+    urls.length === 0
+      ? m('div', { class: 'opacity-60 text-sm' },
+          'No posters cached yet — sync to fetch.')
+      : m('div', { class: 'flex flex-wrap gap-3' },
+          urls.map((url, i) => renderImageThumb({
+            url,
+            alt: 'poster ' + (i + 1),
+            selected: i === highlight,
+            busy,
+            onclick: () => pickPoster(i),
+          }))),
+  ]);
+}
+
+// renderImagePickerModal mounts the <dialog>-based modal that hosts
+// the poster picker. Toggled by state.show.pickerOpen via the
+// "Edit images" header button. Single-section variant (no tabs) since
+// shows don't get burned-in backdrops or overlay text.
+function renderImagePickerModal(detail) {
+  return m(ImagePickerModal, {
+    open: !!state.show.pickerOpen,
+    onClose: () => { state.show.pickerOpen = false; },
+    title: 'Edit images',
+    busy: !!state.show.imageBusy,
+    render: () => renderPosterPicker(detail),
+  });
 }
 
 // Row renders one in-show recording. Click navigates to the
@@ -328,6 +348,7 @@ const Show = {
   oninit(vnode) {
     state.show.imageBusy = false;
     state.show.imageError = null;
+    state.show.pickerOpen = false;
     state.show.sortKey = DEFAULT_SORT.key;
     state.show.sortDir = DEFAULT_SORT.dir;
     const id = vnode.attrs && vnode.attrs.id;
@@ -344,6 +365,7 @@ const Show = {
     if (id && state.show.id !== id) {
       state.show.imageBusy = false;
       state.show.imageError = null;
+      state.show.pickerOpen = false;
       loadShow(id);
     }
   },
@@ -371,8 +393,12 @@ const Show = {
     }
     return m('div', { class: 'space-y-6' }, [
       renderHeader(detail),
-      renderPosterPicker(detail),
       renderRecordingsTable(detail),
+      renderImagePickerModal(detail),
+      renderImageErrorToast({
+        error: state.show.imageError,
+        onDismiss: () => { state.show.imageError = null; },
+      }),
     ]);
   },
 };

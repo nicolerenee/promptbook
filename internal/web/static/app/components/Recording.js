@@ -35,6 +35,10 @@ import {
   errorMessageFromUpload,
   renderUploadButton,
 } from '../utils/uploadPicker.js';
+import ImagePickerModal, {
+  renderEditImagesButton,
+  renderImageErrorToast,
+} from './ImagePickerModal.js';
 
 // STATUS_META keys on the lowercase status tokens, matching Library.js.
 // Same DaisyUI badge color modifiers so the visual language stays
@@ -418,7 +422,9 @@ function renderNFTCallout(loaded) {
 }
 
 // renderHeader is the top page section: status badge, optional NFT
-// badge, show title, and the Tour · date · master subtitle.
+// badge, show title, the Tour · date · master subtitle, and a small
+// right-aligned action bar carrying the "Edit images" button that
+// opens the picker modal.
 function renderHeader(loaded) {
   const r = loaded.Recording;
   const status = statusForRecording(loaded);
@@ -434,28 +440,48 @@ function renderHeader(loaded) {
   if (r.master) subParts.push('master ' + r.master);
   const nft = nftBadge(loaded);
   return m('header', { class: 'space-y-2' }, [
-    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-      m('span', { class: 'badge ' + meta.badge }, meta.label),
-      nft,
-      m('span', { class: 'text-sm font-mono opacity-60' },
-        'enc-' + String(r.id)),
+    m('div', { class: 'flex items-start justify-between gap-3 flex-wrap' }, [
+      m('div', { class: 'space-y-2 min-w-0' }, [
+        m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+          m('span', { class: 'badge ' + meta.badge }, meta.label),
+          nft,
+          m('span', { class: 'text-sm font-mono opacity-60' },
+            'enc-' + String(r.id)),
+        ]),
+        m('h1', { class: 'text-3xl font-semibold' }, r.show || '—'),
+        subParts.length
+          ? m('p', { class: 'text-sm opacity-70 font-mono' },
+              subParts.join(' · '))
+          : null,
+      ]),
+      m('div', { class: 'flex items-center gap-2 shrink-0' }, [
+        renderEditImagesButton({
+          onclick: () => {
+            state.recording.pickerOpen = true;
+            state.recording.pickerTab = 'poster';
+          },
+        }),
+      ]),
     ]),
-    m('h1', { class: 'text-3xl font-semibold' }, r.show || '—'),
-    subParts.length
-      ? m('p', { class: 'text-sm opacity-70 font-mono' }, subParts.join(' · '))
-      : null,
   ]);
 }
 
-// renderPosterCard shows the first stagemedia poster as an <img>, or a
-// neutral placeholder when none is available. The image-picker UI is
-// out of scope for this port — that's a future task.
+// renderPosterCard shows the active poster (the one the user has
+// selected, or the default at index 0) as an <img>, or a neutral
+// placeholder when none is available. The image-picker UI lives in
+// the modal opened from the header's "Edit images" button.
 function renderPosterCard(loaded) {
-  const posters = (loaded && loaded.posters) || [];
-  const first = posters.length > 0 ? posters[0] : '';
-  const figure = first
+  // Prefer the local cached posters since those are what the renderer
+  // actually uses; fall back to the upstream stagemedia URLs when the
+  // cache hasn't populated yet.
+  const local = (loaded && loaded.local_poster_urls) || [];
+  const upstream = (loaded && loaded.posters) || [];
+  const urls = local.length > 0 ? local : upstream;
+  const idx = posterIndexHighlight();
+  const chosen = urls[idx] || urls[0] || '';
+  const figure = chosen
     ? m('figure', m('img', {
-        src: first,
+        src: chosen,
         alt: (loaded.Recording.show || 'recording') + ' poster',
         class: 'w-full h-auto object-cover',
         loading: 'lazy',
@@ -888,57 +914,55 @@ function renderOverlayEditor(loaded) {
   ]);
 }
 
-// renderImagePickerCard wraps the three subsections in a single
-// DaisyUI card with dividers between them. Sits between the page
-// header and the two-column body so power users can curate poster /
-// backdrop / overlay text without scrolling past the metadata. When
-// neither posters nor backdrops are cached AND no override is saved,
-// the card still renders so the user can save an override against the
-// recording in advance.
-function renderImagePickerCard(loaded) {
-  const error = state.recording.imageError;
-  return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body gap-3' }, [
-      m('div', { class: 'flex items-center justify-between' }, [
-        m('h2', { class: 'card-title text-base' }, 'Images'),
-        state.recording.imageBusy
-          ? m('span', { class: 'loading loading-spinner loading-sm' })
-          : null,
-      ]),
-      error
-        ? m('div', { role: 'alert', class: 'alert alert-error alert-soft py-2' },
-            m('span', { class: 'text-sm' }, error))
-        : null,
-      renderPosterPicker(loaded),
-      m('div', { class: 'divider my-1' }),
-      renderBackdropPicker(loaded),
-      m('div', { class: 'divider my-1' }),
-      renderOverlayEditor(loaded),
-    ]));
+// renderImagePickerModal mounts the <dialog>-based modal that hosts
+// the three picker subsections. The "Edit images" button in the page
+// header toggles state.recording.pickerOpen; this component's
+// onupdate hook syncs that flag to dialog.showModal()/close().
+//
+// After a successful POST inside the modal the page re-renders behind
+// the dialog (state.recording.* mutates, m.redraw() fires) so the
+// user sees the change immediately without us having to close the
+// dialog or re-fetch.
+function renderImagePickerModal(loaded) {
+  const tabs = [
+    { key: 'poster',   label: 'Poster',
+      render: () => renderPosterPicker(loaded) },
+    { key: 'backdrop', label: 'Backdrop',
+      render: () => renderBackdropPicker(loaded) },
+    { key: 'overlay',  label: 'Overlay text',
+      render: () => renderOverlayEditor(loaded) },
+  ];
+  return m(ImagePickerModal, {
+    open: !!state.recording.pickerOpen,
+    onClose: () => { state.recording.pickerOpen = false; },
+    title: 'Edit images',
+    busy: !!state.recording.imageBusy,
+    tabs,
+    activeTab: state.recording.pickerTab || 'poster',
+    onTabChange: (key) => { state.recording.pickerTab = key; },
+  });
 }
 
 // renderBody composes the two-column main grid. Left column gathers
 // the visual + reference cards (poster, metadata, NFT callout, NFO);
 // right column carries the bigger informational surfaces (cast,
 // versions). Falls back to a single column on small screens. The
-// image picker card sits ABOVE the grid so it spans full width —
-// the thumbnail strips need horizontal room.
+// image-picker UI is no longer inline — it lives behind the
+// "Edit images" button in the header and renders as a modal mounted
+// at the page root from view().
 function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
   const nfoCard = renderNFOCard(loaded);
-  return m('div', { class: 'space-y-6' }, [
-    renderImagePickerCard(loaded),
-    m('div', { class: 'grid gap-6 lg:grid-cols-3' }, [
-      m('div', { class: 'lg:col-span-1 space-y-6' }, [
-        renderPosterCard(loaded),
-        callout,
-        renderMetadataCard(loaded),
-      ]),
-      m('div', { class: 'lg:col-span-2 space-y-6' }, [
-        renderCastCard(loaded),
-        renderVersionsCard(loaded),
-        nfoCard,
-      ]),
+  return m('div', { class: 'grid gap-6 lg:grid-cols-3' }, [
+    m('div', { class: 'lg:col-span-1 space-y-6' }, [
+      renderPosterCard(loaded),
+      callout,
+      renderMetadataCard(loaded),
+    ]),
+    m('div', { class: 'lg:col-span-2 space-y-6' }, [
+      renderCastCard(loaded),
+      renderVersionsCard(loaded),
+      nfoCard,
     ]),
   ]);
 }
@@ -953,6 +977,8 @@ const Recording = {
     state.recording.dangerError = '';
     state.recording.imageBusy = false;
     state.recording.imageError = null;
+    state.recording.pickerOpen = false;
+    state.recording.pickerTab = 'poster';
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.recording.loading = false;
@@ -973,6 +999,8 @@ const Recording = {
       state.recording.dangerError = '';
       state.recording.imageBusy = false;
       state.recording.imageError = null;
+      state.recording.pickerOpen = false;
+      state.recording.pickerTab = 'poster';
       loadRecording(id);
     }
   },
@@ -1002,6 +1030,11 @@ const Recording = {
       renderHeader(loaded),
       renderBody(loaded),
       renderDangerZone(loaded),
+      renderImagePickerModal(loaded),
+      renderImageErrorToast({
+        error: state.recording.imageError,
+        onDismiss: () => { state.recording.imageError = null; },
+      }),
     ]);
   },
 };

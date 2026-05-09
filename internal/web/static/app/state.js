@@ -91,6 +91,13 @@ export const state = {
     overlayDisabled: false,
     imageBusy: false,
     imageError: null,
+    // pickerOpen flips true when the "Edit images" header button opens
+    // the image-picker modal. The modal owns a <dialog> ref and syncs
+    // showModal()/close() to this flag via Mithril's onupdate hook.
+    // pickerTab tracks which of the three subsections (poster /
+    // backdrop / overlay) is rendered inside the modal body.
+    pickerOpen: false,
+    pickerTab: 'poster',
   },
   // show is the /shows/:id detail page view-model. detail holds the
   // ShowDetailResponse payload (lower-case JSON keys per the
@@ -107,6 +114,10 @@ export const state = {
     imageError: null,
     sortKey: 'date',
     sortDir: 'asc',
+    // pickerOpen flips true when the "Edit images" header button opens
+    // the show poster picker modal. Same lifecycle pattern as the
+    // recording picker — onupdate syncs <dialog>.showModal()/close().
+    pickerOpen: false,
   },
   // queue mirrors the legacy /static/queue.js view-model. items holds
   // the current /api/v1/queue rows; importing tracks per-row buttons
