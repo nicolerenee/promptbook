@@ -64,7 +64,7 @@ function statusForRecording(loaded) {
 // get the constructive "Add to wants" branch — there is no null case
 // in practice).
 function dangerActionFor(loaded) {
-  const id = loaded.Recording.ID;
+  const id = loaded.Recording.id;
   if (loaded.InCollection) {
     return {
       kind:        'remove_collection',
@@ -173,12 +173,12 @@ function autoOverlayText(loaded) {
   if (!loaded || !loaded.Recording) return '';
   const r = loaded.Recording;
   const parts = [];
-  if (r.Show) parts.push(r.Show);
-  if (r.Tour) parts.push(r.Tour);
+  if (r.show) parts.push(r.show);
+  if (r.tour) parts.push(r.tour);
   const date = smartDate(
-    r.Date && r.Date.FullDate,
-    r.Date && r.Date.MonthKnown,
-    r.Date && r.Date.DayKnown,
+    r.date && r.date.full_date,
+    r.date && r.date.month_known,
+    r.date && r.date.day_known,
   );
   if (date && date !== '—') parts.push(date);
   return parts.join(' · ');
@@ -302,8 +302,8 @@ function WarnIcon() {
 // title when the recording is gated. Returns null when the recording
 // isn't NFT so the caller can drop it into a list directly.
 function nftBadge(loaded) {
-  const nft = (loaded.Recording && loaded.Recording.NFT) || {};
-  if (nft.NFTForever || nft.NFTDate) {
+  const nft = (loaded.Recording && loaded.Recording.nft) || {};
+  if (nft.nft_forever || nft.nft_date) {
     return m('span', { class: 'badge badge-warning badge-sm' }, 'NFT');
   }
   return null;
@@ -320,8 +320,8 @@ function nftBadge(loaded) {
 // used in the legacy page; we keep that to avoid drifting from the
 // previously approved copy.
 function renderNFTCallout(loaded) {
-  const nft = (loaded.Recording && loaded.Recording.NFT) || {};
-  if (nft.NFTForever) {
+  const nft = (loaded.Recording && loaded.Recording.nft) || {};
+  if (nft.nft_forever) {
     return m('div', { role: 'alert', class: 'alert alert-warning' }, [
       WarnIcon(),
       m('div', [
@@ -331,10 +331,10 @@ function renderNFTCallout(loaded) {
       ]),
     ]);
   }
-  if (nft.NFTDate) {
-    const when = new Date(nft.NFTDate);
+  if (nft.nft_date) {
+    const when = new Date(nft.nft_date);
     if (!Number.isNaN(when.getTime()) && when.getTime() > Date.now()) {
-      const stamp = formatNFTDate(nft.NFTDate);
+      const stamp = formatNFTDate(nft.nft_date);
       return m('div', { role: 'alert', class: 'alert alert-warning' }, [
         WarnIcon(),
         m('div', [
@@ -356,23 +356,23 @@ function renderHeader(loaded) {
   const status = statusForRecording(loaded);
   const meta = STATUS_META[status] || STATUS_META.orphan;
   const date = smartDate(
-    r.Date && r.Date.FullDate,
-    r.Date && r.Date.MonthKnown,
-    r.Date && r.Date.DayKnown,
+    r.date && r.date.full_date,
+    r.date && r.date.month_known,
+    r.date && r.date.day_known,
   );
   const subParts = [];
-  if (r.Tour) subParts.push(r.Tour);
+  if (r.tour) subParts.push(r.tour);
   if (date && date !== '—') subParts.push(date);
-  if (r.Master) subParts.push('master ' + r.Master);
+  if (r.master) subParts.push('master ' + r.master);
   const nft = nftBadge(loaded);
   return m('header', { class: 'space-y-2' }, [
     m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
       m('span', { class: 'badge ' + meta.badge }, meta.label),
       nft,
       m('span', { class: 'text-sm font-mono opacity-60' },
-        'enc-' + String(r.ID)),
+        'enc-' + String(r.id)),
     ]),
-    m('h1', { class: 'text-3xl font-semibold' }, r.Show || '—'),
+    m('h1', { class: 'text-3xl font-semibold' }, r.show || '—'),
     subParts.length
       ? m('p', { class: 'text-sm opacity-70 font-mono' }, subParts.join(' · '))
       : null,
@@ -388,7 +388,7 @@ function renderPosterCard(loaded) {
   const figure = first
     ? m('figure', m('img', {
         src: first,
-        alt: (loaded.Recording.Show || 'recording') + ' poster',
+        alt: (loaded.Recording.show || 'recording') + ' poster',
         class: 'w-full h-auto object-cover',
         loading: 'lazy',
       }))
@@ -413,11 +413,11 @@ function metaRow(label, value) {
 // recognisable parent directory.
 function renderMetadataCard(loaded) {
   const r = loaded.Recording;
-  const meta = r.Metadata || {};
+  const meta = r.metadata || {};
   const date = smartDate(
-    r.Date && r.Date.FullDate,
-    r.Date && r.Date.MonthKnown,
-    r.Date && r.Date.DayKnown,
+    r.date && r.date.full_date,
+    r.date && r.date.month_known,
+    r.date && r.date.day_known,
   );
   const formatStr = loaded.InCollection ? (loaded.Format || '—') : '—';
   const cataloged = loaded.InCollection && loaded.CollectedAt
@@ -427,19 +427,19 @@ function renderMetadataCard(loaded) {
     ? (dirname(loaded.Versions[0].FilePath) || '—')
     : '—';
   const encoraURL = 'https://encora.it/recordings/' +
-    encodeURIComponent(String(r.ID));
+    encodeURIComponent(String(r.id));
   return m('div', { class: 'card bg-base-100 shadow-sm' },
     m('div', { class: 'card-body' }, [
       m('h2', { class: 'card-title text-base' }, 'Metadata'),
       m('div', { class: 'divide-y divide-base-200' }, [
-        metaRow('Show', r.Show),
-        metaRow('Tour', r.Tour),
+        metaRow('Show', r.show),
+        metaRow('Tour', r.tour),
         metaRow('Date', date),
-        metaRow('Master', r.Master),
+        metaRow('Master', r.master),
         metaRow('Format', formatStr),
-        metaRow('Gifting', meta.GiftingStatus),
-        metaRow('Owners', meta.OwnersCount != null ? String(meta.OwnersCount) : '—'),
-        metaRow('Wanters', meta.WantersCount != null ? String(meta.WantersCount) : '—'),
+        metaRow('Gifting', meta.gifting_status),
+        metaRow('Owners', meta.owners_count != null ? String(meta.owners_count) : '—'),
+        metaRow('Wanters', meta.wanters_count != null ? String(meta.wanters_count) : '—'),
         metaRow('Cataloged', cataloged),
         metaRow('Folder', folder),
       ]),
@@ -580,7 +580,7 @@ function renderNFOCard(loaded) {
 function renderDangerZone(loaded) {
   const action = dangerActionFor(loaded);
   if (!action) return null;
-  const id = loaded.Recording.ID;
+  const id = loaded.Recording.id;
   const busy = state.recording.dangerBusy;
   const error = state.recording.dangerError;
   const btnClass = action.destructive
@@ -638,7 +638,7 @@ function renderImageThumb({ url, alt, selected, busy, onclick, aspect }) {
 // cached poster with the selected one highlighted.
 function renderPosterPicker(loaded) {
   const urls = (loaded.local_poster_urls || []).filter((u) => !!u);
-  const id = loaded.Recording.ID;
+  const id = loaded.Recording.id;
   const highlight = posterIndexHighlight();
   const busy = state.recording.imageBusy;
   return m('section', { class: 'space-y-2' }, [
@@ -667,7 +667,7 @@ function renderPosterPicker(loaded) {
 // Visually wider than the poster strip because backdrops are 16:9.
 function renderBackdropPicker(loaded) {
   const urls = loaded.local_backdrop_urls || [];
-  const id = loaded.Recording.ID;
+  const id = loaded.Recording.id;
   const highlight = backdropIndexHighlight();
   const busy = state.recording.imageBusy;
   return m('section', { class: 'space-y-2' }, [
@@ -699,7 +699,7 @@ function renderBackdropPicker(loaded) {
 // the fallback — explicit empty string allowed); Reset nulls the
 // override and the renderer falls back to its computed string.
 function renderOverlayEditor(loaded) {
-  const id = loaded.Recording.ID;
+  const id = loaded.Recording.id;
   const fallback = autoOverlayText(loaded);
   const isOverride = state.recording.overlayOverride != null;
   const draft = state.recording.overlayDraft != null
