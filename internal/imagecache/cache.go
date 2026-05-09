@@ -221,6 +221,19 @@ func (c *Cache) FetchHeadshot(
 	return c.fetchTo(ctx, c.HeadshotPath(actorID), url)
 }
 
+// CountBackdrops returns the number of cached backdrop files on disk
+// for a single recording. Walks <Root>/backdrops/<recording_id>/ —
+// missing directory returns 0, and a disabled cache returns 0 without
+// touching the filesystem. Useful for the recording-detail API which
+// needs to enumerate every cached backdrop, not just the first one.
+func (c *Cache) CountBackdrops(recordingID int64) int {
+	if c.Disabled() {
+		return 0
+	}
+	return c.countTree(filepath.Join(c.Root, backdropsDir,
+		strconv.FormatInt(recordingID, 10)))
+}
+
 // Counts walks the cache root and tallies files per kind. Returns the
 // zero Counts when disabled or when the root doesn't exist yet (empty
 // cache, no failures).

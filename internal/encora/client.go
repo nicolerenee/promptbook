@@ -152,6 +152,15 @@ func (c *Client) Subtitles(ctx context.Context, id int64) ([]Subtitle, RateLimit
 	return subs, rl, err
 }
 
+// Screenshots fetches the screen-grab URLs for a recording. Empty array
+// if none. Only call when RecordingMetadata.HasScreenshots is true to
+// avoid burning rate-limit budget on guaranteed-empty responses.
+func (c *Client) Screenshots(ctx context.Context, id int64) ([]string, RateLimitInfo, error) {
+	var urls []string
+	rl, err := c.do(ctx, http.MethodGet, fmt.Sprintf("recording/%d/screenshots", id), &urls)
+	return urls, rl, err
+}
+
 // AddToCollection POSTs to /collection/{id}/collect. The plan run defers
 // real exercise of this endpoint; it exists so library ingest can wire
 // --add-to-collection against a mock client.

@@ -13,21 +13,30 @@ import (
 )
 
 // imageFetcher is the per-Sync helper that opportunistically downloads
-// posters + headshots from StageMedia into the local image cache. It
-// owns a dedup set of show IDs scoped to the run so the sync loop only
-// calls /api/images once per unique show — without this the worst case
-// is one StageMedia round-trip per recording, which would burn the
-// upstream's (undocumented but real) rate budget on a fresh sync.
+// posters + headshots from StageMedia (and screen-grab backdrops from
+// Encora) into the local image cache. It owns dedup sets scoped to the
+// run so the sync loop only calls each upstream once per unique key —
+// without this the worst case is one round-trip per recording, which
+// would burn the upstream rate budgets on a fresh sync.
 //
 // Fetch failures never bubble up. Image caching is best-effort; an
 // unreachable CDN must not abort an Encora sync.
 type imageFetcher struct {
-	cache  *imagecache.Cache
-	client StagemediaImageClient
-	logger zerolog.Logger
-
-	mu          sync.Mutex
+	cache   *imagecache.Cache
+	client  StagemediaImageClient
+	encora  EncoraScreenshotClient
+	logger  zerolog.Logger
+	visitMu sync.Mutex
+	// visitedShow dedups StageMedia /api/images calls per run.
 	visitedShow map[int64]bool
+	// visitedRecording dedups Encora /screenshots calls per run.
+	// Backdrops are recording-keyed so this set is independent of the
+	// show-keyed posters dedup above.
+	visitedRecording map[int64]bool
+	// screenshotRecordings counts recordings for which a /screenshots
+	// fetch was issued (a successful or failed call both count) so the
+	// post-sync summary log can report progress visibility.
+	screenshotRecordings int
 }
 
 // newImageFetcher returns a no-op fetcher (Disabled() == true) when
@@ -36,19 +45,21 @@ type imageFetcher struct {
 func newImageFetcher(
 	cache *imagecache.Cache,
 	client StagemediaImageClient,
+	enc EncoraScreenshotClient,
 	logger zerolog.Logger,
 ) *imageFetcher {
 	return &imageFetcher{
-		cache:       cache,
-		client:      client,
-		logger:      logger,
-		visitedShow: map[int64]bool{},
+		cache:            cache,
+		client:           client,
+		encora:           enc,
+		logger:           logger,
+		visitedShow:      map[int64]bool{},
+		visitedRecording: map[int64]bool{},
 	}
 }
 
-// disabled reports whether the fetcher is in no-op mode. The image
-// cache being nil/disabled or the StageMedia client being nil both
-// short-circuit the StageMedia call.
+// disabled reports whether the StageMedia poster/headshot path is in
+// no-op mode. Backdrops are gated independently — see backdropDisabled.
 func (f *imageFetcher) disabled() bool {
 	if f == nil {
 		return true
@@ -62,11 +73,36 @@ func (f *imageFetcher) disabled() bool {
 	return false
 }
 
+// backdropDisabled reports whether the Encora screen-grab path is in
+// no-op mode. Independent of disabled() so an unconfigured StageMedia
+// key doesn't disable backdrops, and vice versa.
+func (f *imageFetcher) backdropDisabled() bool {
+	if f == nil {
+		return true
+	}
+	if f.cache == nil || f.cache.Disabled() {
+		return true
+	}
+	if f.encora == nil {
+		return true
+	}
+	return false
+}
+
 // forRecording fetches posters for the recording's show + headshots
-// for every credited performer, skipping anything already on disk and
-// deduping show IDs across the whole sync run. Errors are logged and
-// swallowed — image caching is never load-bearing for the sync.
+// for every credited performer + screen-grab backdrops for the
+// recording itself, skipping anything already on disk and deduping
+// keys across the whole sync run. Errors are logged and swallowed —
+// image caching is never load-bearing for the sync.
 func (f *imageFetcher) forRecording(ctx context.Context, r encora.Recording) {
+	f.fetchPostersAndHeadshots(ctx, r)
+	f.fetchBackdrops(ctx, r)
+}
+
+// fetchPostersAndHeadshots is the StageMedia half of forRecording.
+// Split out so the backdrop path can run independently when StageMedia
+// isn't configured.
+func (f *imageFetcher) fetchPostersAndHeadshots(ctx context.Context, r encora.Recording) {
 	if f.disabled() {
 		return
 	}
@@ -81,13 +117,13 @@ func (f *imageFetcher) forRecording(ctx context.Context, r encora.Recording) {
 	// headshots are performer-keyed, but the dedup set is intentionally
 	// coarse — if a performer is credited on a show the user has
 	// multiple recordings of, the first call already filled their slot.
-	f.mu.Lock()
+	f.visitMu.Lock()
 	if f.visitedShow[showID] {
-		f.mu.Unlock()
+		f.visitMu.Unlock()
 		return
 	}
 	f.visitedShow[showID] = true
-	f.mu.Unlock()
+	f.visitMu.Unlock()
 
 	performerIDs := uniquePerformerIDs(r.Cast)
 	if len(performerIDs) == 0 {
@@ -109,6 +145,40 @@ func (f *imageFetcher) forRecording(ctx context.Context, r encora.Recording) {
 
 	f.persistPosters(ctx, showID, imgs.Posters)
 	f.persistHeadshots(ctx, imgs.Performers)
+}
+
+// fetchBackdrops is the Encora-screenshots half of forRecording. Gated
+// on RecordingMetadata.HasScreenshots so we don't spend rate-limit
+// budget on calls guaranteed to return [].
+func (f *imageFetcher) fetchBackdrops(ctx context.Context, r encora.Recording) {
+	if f.backdropDisabled() {
+		return
+	}
+	if !r.Metadata.HasScreenshots || r.ID == 0 {
+		return
+	}
+
+	// Per-recording dedup: a recording can show up in both /collection
+	// and /wants pagination, and we'd fetch screenshots once per page.
+	// One call per recording per run is enough.
+	f.visitMu.Lock()
+	if f.visitedRecording[r.ID] {
+		f.visitMu.Unlock()
+		return
+	}
+	f.visitedRecording[r.ID] = true
+	f.screenshotRecordings++
+	f.visitMu.Unlock()
+
+	urls, _, err := f.encora.Screenshots(ctx, r.ID)
+	if err != nil {
+		f.logger.Debug().
+			Err(err).
+			Int64("recording_id", r.ID).
+			Msg("imagecache: encora screenshots fetch failed")
+		return
+	}
+	f.persistBackdrops(ctx, r.ID, urls)
 }
 
 // persistPosters writes each poster URL to the cache under the show's
@@ -161,6 +231,53 @@ func (f *imageFetcher) persistHeadshots(ctx context.Context, performers []stagem
 				Msg("imagecache: headshot fetch failed")
 		}
 	}
+}
+
+// persistBackdrops writes each screen-grab URL to the cache under the
+// recording's backdrop slot. Already-cached slots short-circuit inside
+// FetchBackdrop without a network call.
+func (f *imageFetcher) persistBackdrops(ctx context.Context, recordingID int64, urls []string) {
+	for i, url := range urls {
+		if url == "" {
+			continue
+		}
+		if f.cache.HasBackdrop(recordingID, i) {
+			continue
+		}
+		if _, err := f.cache.FetchBackdrop(ctx, recordingID, i, url); err != nil {
+			if errors.Is(err, imagecache.ErrDisabled) {
+				return
+			}
+			f.logger.Debug().
+				Err(err).
+				Int64("recording_id", recordingID).
+				Int("index", i).
+				Str("url", url).
+				Msg("imagecache: backdrop fetch failed")
+		}
+	}
+}
+
+// logScreenshotSummary emits a single info-level line counting how
+// many recordings had a screenshots fetch issued during this sync.
+// Always logged (zero included) so the operator can distinguish "no
+// recordings eligible" from "feature wired but silent".
+func (f *imageFetcher) logScreenshotSummary() {
+	if f == nil {
+		return
+	}
+	if f.backdropDisabled() {
+		// Don't spam an info line every sync when the feature is
+		// off. Debug is enough to confirm the path was reached.
+		f.logger.Debug().Msg("imagecache: backdrop fetch disabled")
+		return
+	}
+	f.visitMu.Lock()
+	count := f.screenshotRecordings
+	f.visitMu.Unlock()
+	f.logger.Info().
+		Int("recordings", count).
+		Msg("imagecache: encora screenshots fetch complete")
 }
 
 // uniquePerformerIDs returns the sorted, deduped performer IDs from

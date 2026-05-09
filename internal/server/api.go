@@ -174,17 +174,24 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 // when non-empty so the user doesn't hot-link StageMedia for content
 // that's already on the server's filesystem.
 //
+// LocalBackdropURLs lists the cached screen-grab backdrops for the
+// recording, in index order. Empty slice when caching is off or
+// nothing's downloaded yet — the frontend falls back to no backdrop in
+// that case rather than reaching for an upstream URL we don't trust to
+// stay reachable.
+//
 // Cast performers grow a parallel local_headshot_url field on
 // LoadedRecording.Cast at JSON marshal time via castWithLocalHeadshots.
 // The legacy fields stay for callers that haven't migrated.
 type recordingDetailResponse struct {
 	*storage.LoadedRecording
 
-	Posters         []string                `json:"posters"`
-	LocalPosterURLs []string                `json:"local_poster_urls"`
-	Cast            []castEntryWithHeadshot `json:"cast"`
-	NFOContent      string                  `json:"nfo_content"`
-	NFOModifiedAt   *time.Time              `json:"nfo_modified_at"`
+	Posters           []string                `json:"posters"`
+	LocalPosterURLs   []string                `json:"local_poster_urls"`
+	LocalBackdropURLs []string                `json:"local_backdrop_urls"`
+	Cast              []castEntryWithHeadshot `json:"cast"`
+	NFOContent        string                  `json:"nfo_content"`
+	NFOModifiedAt     *time.Time              `json:"nfo_modified_at"`
 }
 
 // castEntryWithHeadshot mirrors storage.ResolvedCastEntry but adds a
@@ -214,17 +221,19 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 
 	posters := s.fetchPostersForRecording(ctx, loaded)
 	localPosterURLs := s.localPosterURLs(loaded.Recording.Metadata.ShowID, posters)
+	localBackdropURLs := s.localBackdropURLs(loaded.Recording.ID)
 	castWithHeadshots := s.castWithLocalHeadshots(loaded.Cast)
 
 	nfoContent, nfoModifiedAt := s.readNFOForRecording(loaded)
 
 	return c.JSON(http.StatusOK, recordingDetailResponse{
-		LoadedRecording: loaded,
-		Posters:         posters,
-		LocalPosterURLs: localPosterURLs,
-		Cast:            castWithHeadshots,
-		NFOContent:      nfoContent,
-		NFOModifiedAt:   nfoModifiedAt,
+		LoadedRecording:   loaded,
+		Posters:           posters,
+		LocalPosterURLs:   localPosterURLs,
+		LocalBackdropURLs: localBackdropURLs,
+		Cast:              castWithHeadshots,
+		NFOContent:        nfoContent,
+		NFOModifiedAt:     nfoModifiedAt,
 	})
 }
 
@@ -240,6 +249,30 @@ func (s *Server) localPosterURLs(showID int64, posters []string) []string {
 	}
 	for i := range posters {
 		out[i] = cache.PosterURL(showID, i)
+	}
+	return out
+}
+
+// localBackdropURLs enumerates every cached backdrop for the recording
+// in index order. Returns a non-nil empty slice (so the JSON renders
+// [] rather than null) when caching is disabled, the recording has no
+// id, or nothing's been cached for this recording yet.
+func (s *Server) localBackdropURLs(recordingID int64) []string {
+	cache := s.ImageCache()
+	if cache == nil || cache.Disabled() || recordingID == 0 {
+		return []string{}
+	}
+	count := cache.CountBackdrops(recordingID)
+	out := make([]string, 0, count)
+	for i := range count {
+		// CountBackdrops counts files in the directory but doesn't
+		// guarantee they're contiguously numbered (a manual delete
+		// could leave a gap). BackdropURL returns "" when the
+		// specific index isn't present, which we filter out so the
+		// returned slice is a list of usable URLs only.
+		if u := cache.BackdropURL(recordingID, i); u != "" {
+			out = append(out, u)
+		}
 	}
 	return out
 }

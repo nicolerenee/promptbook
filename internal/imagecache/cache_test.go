@@ -245,6 +245,39 @@ func TestCounts(t *testing.T) {
 	}, counts)
 }
 
+func TestCountBackdrops(t *testing.T) {
+	t.Parallel()
+	srv, _ := imageServer(t, "image/jpeg")
+
+	root := t.TempDir()
+	c := imagecache.New(root, srv.Client(), zerologTest(t))
+
+	const recA int64 = 90100222
+	const recB int64 = 8223
+
+	// Empty directory tree → zero count even before any fetches.
+	assert.Equal(t, 0, c.CountBackdrops(recA))
+
+	// Populate two backdrops for recA, one for recB; they must
+	// be counted separately so the per-recording surface in the
+	// API doesn't bleed across recordings.
+	_, err := c.FetchBackdrop(t.Context(), recA, 0, srv.URL+"/a0.jpg")
+	require.NoError(t, err)
+	_, err = c.FetchBackdrop(t.Context(), recA, 1, srv.URL+"/a1.jpg")
+	require.NoError(t, err)
+	_, err = c.FetchBackdrop(t.Context(), recB, 0, srv.URL+"/b0.jpg")
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, c.CountBackdrops(recA))
+	assert.Equal(t, 1, c.CountBackdrops(recB))
+	assert.Equal(t, 0, c.CountBackdrops(int64(99999)),
+		"a recording with no cached backdrops returns 0")
+
+	// Disabled cache returns 0 without touching the filesystem.
+	disabled := imagecache.New("", nil, zerologTest(t))
+	assert.Equal(t, 0, disabled.CountBackdrops(recA))
+}
+
 func TestPathLayoutMatchesURL(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

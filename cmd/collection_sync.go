@@ -95,11 +95,21 @@ func runCollectionSync(cmd *cobra.Command, _ []string) error {
 		smOpt = smClient
 	}
 
+	// Pipe the same encora client into the image fetcher so it can
+	// pull /recording/{id}/screenshots when has_screenshots == true.
+	// Coerce to a true nil interface when image caching is off so the
+	// downstream nil-check fires correctly.
+	var encScreenshots sync.EncoraScreenshotClient
+	if imgCache != nil && !imgCache.Disabled() {
+		encScreenshots = client
+	}
+
 	res, err := sync.Sync(ctx, client, db, sync.Options{
-		BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
-		Logger:       log.Logger,
-		ImageCache:   imgCache,
-		Stagemedia:   smOpt,
+		BurstReserve:      appConfig.Encora.RateLimit.BurstReserve,
+		Logger:            log.Logger,
+		ImageCache:        imgCache,
+		Stagemedia:        smOpt,
+		EncoraScreenshots: encScreenshots,
 	})
 	if err != nil {
 		return fmt.Errorf("sync: %w", err)

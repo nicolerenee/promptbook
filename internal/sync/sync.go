@@ -87,6 +87,18 @@ type StagemediaImageClient interface {
 	Images(ctx context.Context, showID int64, performerIDs []int64) (stagemedia.Images, error)
 }
 
+// EncoraScreenshotClient is the slice of *encora.Client the sync loop
+// needs to fetch per-recording screen-grab URLs into the local backdrop
+// cache. Surfaced as a separate interface (rather than rolled into the
+// existing Client interface above) so tests can opt in to backdrop
+// fetching without overriding the broader collection/wants surface, and
+// so a nil pointer disables backdrop caching cleanly.
+//
+// The real *encora.Client satisfies this via its Screenshots method.
+type EncoraScreenshotClient interface {
+	Screenshots(ctx context.Context, id int64) ([]string, encora.RateLimitInfo, error)
+}
+
 // Options tunes Sync. Zero values are sane defaults.
 type Options struct {
 	BurstReserve      int
@@ -104,6 +116,13 @@ type Options struct {
 	// the ImageCache field. The real *stagemedia.Client satisfies
 	// this; a nil interface is the disabled case.
 	Stagemedia StagemediaImageClient
+	// EncoraScreenshots is optional and only used in tandem with
+	// ImageCache. When non-nil and the recording's metadata has
+	// has_screenshots == true, the fetcher calls /recording/{id}/
+	// screenshots and writes each returned URL into the backdrop
+	// slot. nil disables backdrop caching independently of poster
+	// caching. The real *encora.Client satisfies this.
+	EncoraScreenshots EncoraScreenshotClient
 }
 
 // Sync runs a full collection + wants sync into db. The sync_runs row is
@@ -136,8 +155,11 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 	// imageFetcher lifecycle is per-Sync so the show-id dedup map
 	// resets between runs. The fetcher is a no-op when ImageCache or
 	// Stagemedia is missing — callers can leave both nil to keep
-	// classic sync semantics untouched.
-	images := newImageFetcher(opts.ImageCache, opts.Stagemedia, opts.Logger)
+	// classic sync semantics untouched. The encora screenshot client
+	// is independent: if it's set the fetcher will call /screenshots
+	// for every recording with has_screenshots=true, otherwise
+	// backdrop caching is skipped.
+	images := newImageFetcher(opts.ImageCache, opts.Stagemedia, opts.EncoraScreenshots, opts.Logger)
 
 	syncErr := syncCollection(ctx, c, db, opts, res, images)
 	if syncErr == nil && !res.RateLimitedBailedOut {
@@ -146,6 +168,13 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 		opts.Logger.Warn().Int("remaining", res.RateLimitRemaining).
 			Msg("bailing before /wants — rate-limit floor reached")
 	}
+
+	// Surface the screenshot fetch tally before the sync_runs row
+	// closes so operators can see how many recordings the run
+	// touched in the backdrop cache. Zero is logged too — silence
+	// would be ambiguous between "nothing eligible" and "feature
+	// disabled".
+	images.logScreenshotSummary()
 
 	finished := opts.Now().UTC()
 	errText := ""

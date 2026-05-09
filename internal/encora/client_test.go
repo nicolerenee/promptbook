@@ -23,12 +23,13 @@ func fixtureServer(t *testing.T, remaining int) *httptest.Server {
 	t.Helper()
 
 	routes := map[string]string{
-		"/api/profile":                  "profile.json",
-		"/api/collection":               "collection.json",
-		"/api/wants":                    "wants.json",
-		"/api/recording/90100222":           "recording_8222.json",
-		"/api/recording/90100222/subtitles": "recording_8222_subtitles.json",
-		"/api/recording/90100312":        "probe_2008312.json",
+		"/api/profile":                    "profile.json",
+		"/api/collection":                 "collection.json",
+		"/api/wants":                      "wants.json",
+		"/api/recording/90100222":             "recording_8222.json",
+		"/api/recording/90100222/subtitles":   "recording_8222_subtitles.json",
+		"/api/recording/90100222/screenshots": "recording_8222_screenshots.json",
+		"/api/recording/90100312":          "probe_2008312.json",
 	}
 
 	mux := http.NewServeMux()
@@ -135,6 +136,19 @@ func TestClientFixtureRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, subs, 3)
 		assert.Equal(t, "English", subs[0].Language)
+	})
+
+	t.Run("screenshots", func(t *testing.T) {
+		t.Parallel()
+		urls, rl, err := c.Screenshots(ctx, 90100222)
+		require.NoError(t, err)
+		require.Len(t, urls, 1)
+		assert.Equal(t,
+			"https://fixture.invalid/storage/0099/marigold-junction-screenshot.png",
+			urls[0])
+		// fixtureServer stamps the synthetic remaining header on every
+		// response — same shape we cover in the subtitles assertion.
+		assert.Equal(t, 28, rl.Remaining)
 	})
 
 	t.Run("recording_2008312_not_in_collection", func(t *testing.T) {
