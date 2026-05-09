@@ -5,7 +5,7 @@
 //
 // Notes for future API enrichment (informs a follow-up work unit):
 //   - The /api/v1/people/{id} payload doesn't include per-recording state
-//     (Synced / Wanted / Missing / FormatMismatch). To compute the "On
+//     (synced / wanted / missing / format_mismatch). To compute the "On
 //     disk" and "Wants & missing" stats and render correct status pills
 //     we cross-reference /api/v1/recordings?limit=200 once. When the
 //     people endpoint grows a `state` field per credit we should drop
@@ -17,16 +17,16 @@
 (function () {
   'use strict';
 
+  // STATUS_META keys mirror the lowercase tokens the /api/v1 endpoints
+  // return ("synced", "format_mismatch", ...) so STATUS_META[item.status]
+  // resolves directly without a re-mapping shim.
   var STATUS_META = {
-    Synced:         { label: 'Synced',          cls: 'pb-status-synced',   color: 'var(--status-synced)' },
-    FormatMismatch: { label: 'Format mismatch', cls: 'pb-status-mismatch', color: 'var(--status-mismatch)' },
-    Missing:        { label: 'Missing',         cls: 'pb-status-missing',  color: 'var(--status-missing)' },
-    Wanted:         { label: 'Wanted',          cls: 'pb-status-wanted',   color: 'var(--status-wanted)' },
-    Orphan:         { label: 'Orphan',          cls: 'pb-status-orphan',   color: 'var(--status-orphan)' },
+    synced:          { label: 'Synced',          cls: 'pb-status-synced',   color: 'var(--status-synced)' },
+    format_mismatch: { label: 'Format mismatch', cls: 'pb-status-mismatch', color: 'var(--status-mismatch)' },
+    missing:         { label: 'Missing',         cls: 'pb-status-missing',  color: 'var(--status-missing)' },
+    wanted:          { label: 'Wanted',          cls: 'pb-status-wanted',   color: 'var(--status-wanted)' },
+    orphan:          { label: 'Orphan',          cls: 'pb-status-orphan',   color: 'var(--status-orphan)' },
   };
-
-  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   // PALETTES mirrors the design-system monogram palettes (oklch ink/cream
   // pairs) so the typographic headshot fallback matches the people-list
@@ -63,17 +63,17 @@
     return out || '?';
   }
 
-  // smartDate mirrors the server-side smartDate template helper so the
-  // table reads consistently with the rename engine's {Date} token.
+  // smartDate renders an ISO date with the precision the catalog
+  // recorded:
+  //   full date known           → YYYY-MM-DD
+  //   day unknown, month known  → YYYY-MM
+  //   month unknown             → YYYY
+  //   no date at all            → —
   function smartDate(full, monthKnown, dayKnown) {
     if (!full) return '—';
     if (!monthKnown) return full.substring(0, 4);
-    if (!dayKnown) {
-      var mm = parseInt(full.substring(5, 7), 10);
-      if (!isFinite(mm) || mm < 1 || mm > 12) return full;
-      return MONTHS[mm - 1] + ' ' + full.substring(0, 4);
-    }
-    return full;
+    if (!dayKnown) return full.substring(0, 7);
+    return full.substring(0, 10);
   }
 
   function escapeHTML(s) {
@@ -170,8 +170,8 @@
       var wmN = 0;
       (detail.recordings || []).forEach(function (r) {
         var s = statusFor(stateMap, r.id);
-        if (s === 'Synced' || s === 'FormatMismatch') diskN++;
-        if (s === 'Wanted' || s === 'Missing') wmN++;
+        if (s === 'synced' || s === 'format_mismatch') diskN++;
+        if (s === 'wanted' || s === 'missing') wmN++;
       });
       onDisk = String(diskN);
       wantsMissing = String(wmN);

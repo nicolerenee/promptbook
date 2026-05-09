@@ -36,8 +36,9 @@
 
   // ─── Constants ────────────────────────────────────────────────────────
 
-  var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // MONTHS_LONG drives formatNFTDate's locale-independent "Month D, YYYY"
+  // rendering for the NFT callout. smartDate uses pure ISO substrings so
+  // it doesn't need a names array.
   var MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
                      'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -92,15 +93,17 @@
       .replace(/'/g, '&#39;');
   }
 
+  // smartDate renders an ISO date with the precision the catalog
+  // recorded:
+  //   full date known           → YYYY-MM-DD
+  //   day unknown, month known  → YYYY-MM
+  //   month unknown             → YYYY
+  //   no date at all            → —
   function smartDate(full, monthKnown, dayKnown) {
     if (!full) return '—';
     if (!monthKnown) return full.substring(0, 4);
-    if (!dayKnown) {
-      var mm = parseInt(full.substring(5, 7), 10);
-      if (!isFinite(mm) || mm < 1 || mm > 12) return full;
-      return MONTHS_SHORT[mm - 1] + ' ' + full.substring(0, 4);
-    }
-    return full;
+    if (!dayKnown) return full.substring(0, 7);
+    return full.substring(0, 10);
   }
 
   // humanSize renders bytes as a binary-prefixed string (1 GB = 2^30).
@@ -175,33 +178,35 @@
   }
 
   // statusForRecording mirrors storage.ResolveStatus on the recording-
-  // detail data we have. Used to colour the hero status pill.
+  // detail data we have. Used to colour the hero status pill. Returns
+  // the lowercase API token so STATUS_LABEL/STATUS_CLASS lookups stay
+  // consistent with library.js + person.js.
   function statusForRecording(loaded) {
     var hasFile = (loaded.Versions && loaded.Versions.length > 0);
     if (loaded.InCollection) {
-      if (!hasFile) return 'Missing';
+      if (!hasFile) return 'missing';
       var local = loaded.LocalFormatString || '';
       var encora = loaded.Format || '';
-      if (local && encora && local !== encora) return 'FormatMismatch';
-      return 'Synced';
+      if (local && encora && local !== encora) return 'format_mismatch';
+      return 'synced';
     }
-    if (loaded.InWants) return 'Wanted';
-    return 'Orphan';
+    if (loaded.InWants) return 'wanted';
+    return 'orphan';
   }
 
   var STATUS_LABEL = {
-    Synced:         'Synced',
-    FormatMismatch: 'Format mismatch',
-    Missing:        'Missing',
-    Wanted:         'Wanted',
-    Orphan:         'Orphan',
+    synced:          'Synced',
+    format_mismatch: 'Format mismatch',
+    missing:         'Missing',
+    wanted:          'Wanted',
+    orphan:          'Orphan',
   };
   var STATUS_CLASS = {
-    Synced:         'pb-status-synced',
-    FormatMismatch: 'pb-status-mismatch',
-    Missing:        'pb-status-missing',
-    Wanted:         'pb-status-wanted',
-    Orphan:         'pb-status-orphan',
+    synced:          'pb-status-synced',
+    format_mismatch: 'pb-status-mismatch',
+    missing:         'pb-status-missing',
+    wanted:          'pb-status-wanted',
+    orphan:          'pb-status-orphan',
   };
 
   // qualityLabel collapses the per-version Quality + Codec into a single
