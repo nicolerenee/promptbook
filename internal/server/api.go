@@ -101,18 +101,13 @@ func (s *Server) routes() {
 	api.POST("/encora/wants/:id/remove", s.handleRemoveFromWants)
 	api.POST("/encora/wants/:id/add", s.handleAddToWants)
 
-	s.echo.GET("/", s.handleHomePage)
-	s.echo.GET("/recordings/:id", s.handleRecordingPage)
-	s.echo.GET("/wants", s.handleWantsPage)
-	s.echo.GET("/sync", s.handleSyncPage)
-	s.echo.GET("/queue", s.handleQueuePage)
-	s.echo.GET("/people", s.handlePeoplePage)
-	s.echo.GET("/people/:id", s.handlePersonPage)
-	s.echo.GET("/history", s.handleHistoryPage)
-	s.echo.GET("/mismatches", s.handleMismatchesPage)
-	s.echo.GET("/settings", s.handleSettingsPage)
-	s.echo.GET("/apply", s.handleApplyGet)
-	s.echo.POST("/apply", s.handleHTMLApply)
+	// SPA catch-all. Echo prefers more-specific matches, so /api/v1/*
+	// (registered above) and /static/* (registered in server.New) win
+	// over this for their respective prefixes. Every other GET — `/`,
+	// `/recordings/:id`, `/wants`, `/queue`, …, `/settings`, plus any
+	// future client-rendered route — lands on the SPA shell and the
+	// Mithril router resolves the path client-side.
+	s.echo.GET("/*", s.handleSPA)
 }
 
 func (s *Server) handleHealth(c echo.Context) error {

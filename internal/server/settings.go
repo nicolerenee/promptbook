@@ -113,13 +113,3 @@ func (s *Server) handleSettings(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, resp)
 }
-
-// handleSettingsPage renders the read-only settings shell. The body
-// fetches /api/v1/settings and renders into #page-root.
-func (s *Server) handleSettingsPage(c echo.Context) error {
-	return c.Render(http.StatusOK, "settings.html", shellData{
-		Title:     "Settings",
-		ActiveNav: "settings",
-		Version:   s.version,
-	})
-}

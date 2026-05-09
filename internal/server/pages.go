@@ -1,61 +1,40 @@
 package server
 
+// pages.go contains the HTML page handler for the SPA shell. As of the
+// SPA migration the server no longer renders per-page shells with
+// embedded body templates — every browser-facing route resolves to the
+// same `index.html` shell that boots the Mithril SPA at
+// /static/app/main.js. The router lives entirely client-side; the
+// catch-all `GET /*` registered in routes() lands here for any path
+// that didn't match `/api/v1/*` or `/static/*`.
+//
+// The legacy per-page templates (home.html, recording.html, etc.) and
+// per-page JS files (library.js, recording.js, etc.) stay on disk
+// under internal/web/ as porting reference for the agents wiring the
+// remaining routes; they are not registered in PageSet and are not
+// reachable via HTTP.
+
 import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
-
-	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// shellData is the unified view-model the empty-shell page templates
-// render. Per the Wave 9 architectural shift, server-rendered pages are
-// just shells — the JS at /static/{page}.js fetches data from the
-// JSON API and populates the DOM client-side. Title is the <title>
-// tag value, ActiveNav is the sidebar item to highlight, Version is
-// stamped into the sidebar footer, and RecordingID / PersonID are
-// stamped into the page-root data attribute when relevant.
-type shellData struct {
-	Title       string
-	ActiveNav   string
-	Version     string
-	RecordingID int64
-	PersonID    int64
+// spaShellData is the (deliberately small) view-model the index.html
+// template renders. Title is the document <title>; everything else the
+// SPA needs lives in the JS bundle, so this struct stays minimal on
+// purpose.
+type spaShellData struct {
+	Title string
 }
 
-func (s *Server) handleHomePage(c echo.Context) error {
-	return c.Render(http.StatusOK, "home.html", shellData{
-		Title:     "Library",
-		ActiveNav: "library",
-		Version:   s.version,
-	})
-}
-
-func (s *Server) handleRecordingPage(c echo.Context) error {
-	id, err := storage.ParseRecordingID(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-	return c.Render(http.StatusOK, "recording.html", shellData{
-		Title:       "Recording",
-		ActiveNav:   "library",
-		Version:     s.version,
-		RecordingID: id,
-	})
-}
-
-func (s *Server) handleWantsPage(c echo.Context) error {
-	return c.Render(http.StatusOK, "wants.html", shellData{
-		Title:     "Wants",
-		ActiveNav: "wants",
-		Version:   s.version,
-	})
-}
-
-func (s *Server) handleSyncPage(c echo.Context) error {
-	return c.Render(http.StatusOK, "sync.html", shellData{
-		Title:     "Sync",
-		ActiveNav: "sync",
-		Version:   s.version,
+// handleSPA renders the SPA shell for any browser-facing route. The
+// echo router serves /api/v1/* and /static/* via more-specific
+// handlers, so this catch-all only fires for actual page navigations.
+// Mithril takes over from there and resolves the path against its own
+// route table.
+func (s *Server) handleSPA(c echo.Context) error {
+	return c.Render(http.StatusOK, "index.html", spaShellData{
+		Title: "promptbook",
 	})
 }

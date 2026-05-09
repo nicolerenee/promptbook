@@ -236,13 +236,3 @@ func (s *Server) handleListMismatches(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
 }
-
-// handleMismatchesPage renders the mismatches shell. Data comes from
-// /api/v1/mismatches, fetched client-side by /static/mismatches.js.
-func (s *Server) handleMismatchesPage(c echo.Context) error {
-	return c.Render(http.StatusOK, "mismatches.html", shellData{
-		Title:     "Mismatches",
-		ActiveNav: "mismatches",
-		Version:   s.version,
-	})
-}

@@ -99,16 +99,6 @@ func (s *Server) handleListHistory(c echo.Context) error {
 	})
 }
 
-// handleHistoryPage renders the history shell. Data comes from
-// /api/v1/history, fetched client-side by /static/history.js.
-func (s *Server) handleHistoryPage(c echo.Context) error {
-	return c.Render(http.StatusOK, "history.html", shellData{
-		Title:     "History",
-		ActiveNav: "history",
-		Version:   s.version,
-	})
-}
-
 // parseHistoryKindParam splits a comma-separated kind value into the
 // slice of recognized HistoryKind* constants. Unknown tokens are
 // dropped silently so the UI is forgiving of stale links and typos.

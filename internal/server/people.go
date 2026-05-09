@@ -107,32 +107,6 @@ func (s *Server) handleGetPerson(c echo.Context) error {
 	return c.JSON(http.StatusOK, detail)
 }
 
-// handlePeoplePage renders the people-list shell. Data comes from
-// /api/v1/people, fetched client-side by /static/people.js.
-func (s *Server) handlePeoplePage(c echo.Context) error {
-	return c.Render(http.StatusOK, "people.html", shellData{
-		Title:     "People",
-		ActiveNav: "people",
-		Version:   s.version,
-	})
-}
-
-// handlePersonPage renders the person-detail shell. The performer id is
-// stamped into the page-root data attribute so /static/person.js can
-// fetch /api/v1/people/{id} on load.
-func (s *Server) handlePersonPage(c echo.Context) error {
-	id, err := parsePerformerID(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-	return c.Render(http.StatusOK, "person.html", shellData{
-		Title:     "Person",
-		ActiveNav: "people",
-		Version:   s.version,
-		PersonID:  id,
-	})
-}
-
 // parsePerformerID validates a CLI-style positive int id from the path.
 func parsePerformerID(s string) (int64, error) {
 	id, err := strconv.ParseInt(s, 10, 64)

@@ -42,16 +42,6 @@ func (s *Server) handleListQueue(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
 }
 
-// handleQueuePage renders the queue shell. Data comes from
-// /api/v1/queue, fetched client-side by /static/queue.js.
-func (s *Server) handleQueuePage(c echo.Context) error {
-	return c.Render(http.StatusOK, "queue.html", shellData{
-		Title:     "Queue",
-		ActiveNav: "queue",
-		Version:   s.version,
-	})
-}
-
 // importQueueRequest is the JSON body for POST /api/v1/queue/{id}/import.
 // recording_id is optional; when omitted the handler falls back to the
 // queue entry's suggested_recording_id (which must be non-nil).

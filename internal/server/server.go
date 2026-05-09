@@ -244,17 +244,20 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 }
 
 // templateRenderer adapts html/template to echo's Renderer interface.
-// Each page name maps to its own parsed tree so per-page body blocks
-// don't collide.
+// Post-SPA migration the registry only carries `index.html`; the
+// legacy `_layout.html`-composed pages no longer exist as live
+// templates.
 type templateRenderer struct {
 	pages web.PageSet
 }
 
-// Render implements echo.Renderer.
+// Render implements echo.Renderer. The named template is executed
+// directly (no shared layout wrapper), since the SPA shell is a single
+// self-contained file and the legacy per-page bodies have been retired.
 func (r *templateRenderer) Render(w io.Writer, name string, data any, _ echo.Context) error {
 	t, ok := r.pages[name]
 	if !ok {
 		return fmt.Errorf("server: no template registered for %q", name)
 	}
-	return t.ExecuteTemplate(w, "_layout.html", data)
+	return t.Execute(w, data)
 }

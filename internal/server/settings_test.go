@@ -147,27 +147,8 @@ func TestAPISettingsEmptyConfig(t *testing.T) {
 	assert.Equal(t, "<not exposed>", got["config_source"])
 }
 
-// TestSettingsPageRenders ensures the /settings shell renders without
-// errors and includes the page-root sentinel the JS hooks onto.
-func TestSettingsPageRenders(t *testing.T) {
-	t.Parallel()
-
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/settings", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	body := rr.Body.String()
-	assert.Contains(t, body, `id="page-root"`)
-	assert.Contains(t, body, `data-page="settings"`)
-	assert.Contains(t, body, `/static/settings.js`)
-	// Sidebar item should be highlighted on the settings page.
-	assert.Contains(t, body, `href="/settings"`)
-}
+// (TestSettingsPageRenders was retired with the SPA migration. The
+// /settings route now resolves to the same Mithril shell as every
+// other browser-facing path; coverage moved to TestSPAShell. The
+// /api/v1/settings JSON contract — which the SPA actually consumes —
+// is still exercised by TestSettingsAPI above.)

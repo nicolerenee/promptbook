@@ -25,26 +25,6 @@ import (
 	syncpkg "github.com/nicolerenee/promptbook/internal/sync"
 )
 
-// seedRecording inserts a minimal recordings row with the given encora
-// payload as raw_json so LoadRecording round-trips it back. Used by the
-// detail-page tests that need to control the NFT block / cast directly
-// instead of going through the fixture sync path.
-func seedRecording(t *testing.T, db *gosql.DB, r encora.Recording) {
-	t.Helper()
-	_, err := db.ExecContext(t.Context(),
-		`INSERT OR IGNORE INTO shows (show_id, name) VALUES (?, ?)`,
-		r.Metadata.ShowID, r.Show)
-	require.NoError(t, err)
-	rawJSON, err := json.Marshal(r)
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		) VALUES (?, ?, ?, ?, ?)
-	`, r.ID, r.Metadata.ShowID, r.Tour, r.Date.FullDate, string(rawJSON))
-	require.NoError(t, err)
-}
-
 const fixturesDir = "../encora/testdata"
 
 // fixtureBackedServer returns a fully-wired *server.Server with a
@@ -234,39 +214,53 @@ func TestAPISyncRuns(t *testing.T) {
 // successfully. Inline data assertions are gone now that the pages are
 // JS-driven — the shell is the only thing the server rendering layer is
 // responsible for.
-func TestPagesSmoke(t *testing.T) {
+// TestSPAShell asserts the SPA migration's catch-all route serves the
+// same Mithril shell for every browser-facing path, that the shell
+// embeds the DaisyUI CDN link + the #app mount point Mithril needs,
+// and that more-specific /api/v1/* routes still win over the catch-
+// all (i.e. the JSON API is not shadowed by the SPA handler). A
+// single test covers all three claims because they're tightly coupled
+// — if the catch-all is registered wrong, all three break together.
+func TestSPAShell(t *testing.T) {
 	t.Parallel()
 
 	srv := fixtureBackedServer(t)
 
-	tests := []struct {
-		name      string
-		path      string
-		dataPage  string
-		titleText string
-	}{
-		{name: "home", path: "/", dataPage: "library", titleText: "Library"},
-		{name: "wants", path: "/wants", dataPage: "wants", titleText: "Wants"},
-		{name: "sync", path: "/sync", dataPage: "sync", titleText: "Sync"},
-		{
-			name: "recording_detail", path: "/recordings/90100222",
-			dataPage: "recording", titleText: "Recording",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			rr := httptest.NewRecorder()
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tt.path, nil)
-			srv.Handler().ServeHTTP(rr, req)
-			require.Equal(t, http.StatusOK, rr.Code, "page %s body=%s", tt.path, rr.Body.String())
-			body := rr.Body.String()
-			assert.Contains(t, body, `data-page="`+tt.dataPage+`"`,
-				"shell must stamp data-page attribute")
-			assert.Contains(t, body, "pb-side", "sidebar must render")
-			assert.Contains(t, body, tt.titleText, "H1 page title must render")
-		})
-	}
+	t.Run("root_serves_shell", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		body := rr.Body.String()
+		assert.Contains(t, body, `<div id="app"></div>`,
+			"SPA shell must include the Mithril mount point")
+		assert.Contains(t, body, "cdn.jsdelivr.net/npm/daisyui@5",
+			"SPA shell must load DaisyUI from the CDN")
+	})
+
+	t.Run("recording_detail_serves_shell", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(
+			t.Context(), http.MethodGet, "/recordings/123", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		body := rr.Body.String()
+		assert.Contains(t, body, `<div id="app"></div>`,
+			"deep links must hit the same SPA shell — Mithril routes client-side")
+	})
+
+	t.Run("api_route_not_shadowed", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(
+			t.Context(), http.MethodGet, "/api/v1/recordings", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		assert.Contains(t, rr.Header().Get("Content-Type"), "application/json",
+			"API routes must beat the SPA catch-all on more-specific match")
+	})
 }
 
 func TestServeStartCancels(t *testing.T) {
@@ -523,25 +517,6 @@ func TestAPIQueueLists(t *testing.T) {
 // TestPagesQueueShell asserts the queue page renders the empty shell
 // regardless of queue contents — the table itself is now drawn by
 // /static/queue.js, which fetches /api/v1/queue.
-func TestPagesQueueShell(t *testing.T) {
-	t.Parallel()
-
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/queue", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	body := rr.Body.String()
-	assert.Contains(t, body, `data-page="queue"`)
-	assert.Contains(t, body, "Queue")
-}
-
 func TestAPIPeopleList(t *testing.T) {
 	t.Parallel()
 
@@ -791,33 +766,6 @@ func TestAPIPersonHeadshotMissingClient(t *testing.T) {
 // TestPagesPeople asserts the people-list and person-detail pages
 // render the empty shell — the underlying performer rows are populated
 // client-side by /static/people.js / person.js fetching the JSON API.
-func TestPagesPeople(t *testing.T) {
-	t.Parallel()
-
-	srv := fixtureBackedServer(t)
-
-	t.Run("list", func(t *testing.T) {
-		t.Parallel()
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/people", nil)
-		srv.Handler().ServeHTTP(rr, req)
-		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-		assert.Contains(t, rr.Body.String(), `data-page="people"`)
-	})
-
-	t.Run("detail", func(t *testing.T) {
-		t.Parallel()
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/people/90001001", nil)
-		srv.Handler().ServeHTTP(rr, req)
-		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-		body := rr.Body.String()
-		assert.Contains(t, body, `data-page="person"`)
-		assert.Contains(t, body, `data-person-id="90001001"`,
-			"person detail shell must stamp the performer id")
-	})
-}
-
 func TestAPIHistoryEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -1044,48 +992,6 @@ func TestAPIWantsIncludesAddedTimestamp(t *testing.T) {
 	assert.NoError(t, parseErr, "wants_added (%q) should parse as a timestamp", *first.WantsAdded)
 }
 
-// TestPagesHistory asserts the history page renders the empty shell.
-// The actual events are populated client-side by /static/history.js.
-func TestPagesHistory(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/history", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	body := rr.Body.String()
-	assert.Contains(t, body, `data-page="history"`)
-	assert.Contains(t, body, "History")
-}
-
-// TestPagesHomeShell asserts the library page renders the empty shell.
-// Status filtering is now client-side via library.js parsing the
-// ?status= URL param, so the server-side test only verifies the shell
-// markup. The data contract (filtering against the JSON API) is still
-// covered by TestAPIRecordingsStatusFilter.
-func TestPagesHomeShell(t *testing.T) {
-	t.Parallel()
-
-	srv := fourStatusServer(t)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/?status=missing", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	body := rr.Body.String()
-	assert.Contains(t, body, `data-page="library"`)
-	assert.Contains(t, body, "pb-side")
-}
-
 // seedMismatchRecording inserts a minimal recordings row plus the
 // optional collection/wants/version rows the four-cases mismatch
 // fixture exercises. It mirrors fourStatusServer's local seed helper
@@ -1244,63 +1150,11 @@ func TestAPIMismatchesFilterByType(t *testing.T) {
 	assert.Equal(t, int64(92002), body.Items[0].RecordingID)
 }
 
-// TestPagesMismatches asserts the mismatches page renders the empty
-// shell. The mismatch rows + type tabs are populated client-side by
-// /static/mismatches.js fetching /api/v1/mismatches; the data contract
-// is still covered by TestAPIMismatchesEnumerates +
-// TestAPIMismatchesFilterByType.
-func TestPagesMismatches(t *testing.T) {
-	t.Parallel()
-
-	srv := fixtureBackedServer(t)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/mismatches", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	body := rr.Body.String()
-	assert.Contains(t, body, `data-page="mismatches"`)
-	assert.Contains(t, body, "Mismatches")
-}
-
-// TestRecordingPageShell asserts the recording detail page renders
-// the empty shell with the recording id stamped into the page-root
-// data attribute. NFT-callout copy + poster fallback rendering moved
-// to the JS-driven page implementation; their behavior will be covered
-// by JS-side tests once /static/recording.js is implemented.
-func TestRecordingPageShell(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	rec := encora.Recording{
-		ID:   424242,
-		Show: "Greenwich BeaconShow",
-		Tour: "Broadway",
-		Date: encora.Date{FullDate: "2024-09-01", MonthKnown: true, DayKnown: true},
-		Metadata: encora.RecordingMeta{
-			ShowID:        9100,
-			RecordingType: "pro-shot",
-		},
-	}
-	seedRecording(t, db, rec)
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/recordings/424242", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	body := rr.Body.String()
-	assert.Contains(t, body, `data-page="recording"`)
-	assert.Contains(t, body, `data-recording-id="424242"`,
-		"recording detail shell must stamp the recording id")
-}
+// (Per-page shell tests for mismatches / recording detail were retired
+// when the SPA migration replaced server-rendered shells with the
+// single Mithril shell. The new TestSPAShell covers the catch-all
+// behavior; data contracts still live in the API tests
+// TestAPIMismatchesEnumerates / TestAPIRecordingByID etc.)
 
 // stubEncoraClient is a minimal in-memory implementation of the
 // EncoraWriteClient interface used by the apply tests. It records each
