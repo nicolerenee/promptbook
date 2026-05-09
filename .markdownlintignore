@@ -1,0 +1,4 @@
+# Ignore generated files
+# Note: markdownlint-cli2 uses glob patterns, not standard ignore format
+# For better reliability, use .markdownlint-cli2.yaml with ignores array instead
+CHANGELOG.md

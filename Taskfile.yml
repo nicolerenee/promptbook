@@ -1,0 +1,133 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  BINARY_NAME: promptbook
+  BUILD_DIR: ./build
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # Build tasks
+  build:
+    desc: Build the binary
+    cmds:
+      - go build -v -o {{.BUILD_DIR}}/{{.BINARY_NAME}} .
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  build:clean:
+    desc: Build from clean state
+    cmds:
+      - task: clean
+      - task: build
+
+  # Test tasks
+  test:
+    desc: Run tests
+    cmds:
+      - go test -v -race ./...
+
+  test:short:
+    desc: Run tests (short mode)
+    cmds:
+      - go test -v -race -short ./...
+
+  test:coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+
+  test:coverage:html:
+    desc: Run tests and open coverage in browser
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out
+
+  # Lint tasks
+  lint:
+    desc: Run all linters
+    cmds:
+      - task: lint:go
+      - task: lint:md
+
+  lint:go:
+    desc: Run Go linter
+    cmds:
+      - golangci-lint run ./...
+
+  lint:go:fix:
+    desc: Run Go linter with auto-fix
+    cmds:
+      - golangci-lint run --fix ./...
+
+  lint:md:
+    desc: Run markdown linter
+    cmds:
+      - markdownlint-cli2 "**/*.md"
+
+  # Format tasks
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -s -w .
+      - goimports -w .
+
+  # Run tasks
+  run:
+    desc: Run the application (serve mode)
+    deps: [build]
+    cmds:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}} serve {{.CLI_ARGS}}"
+
+  # Dependency tasks
+  deps:
+    desc: Download dependencies
+    cmds:
+      - go mod download
+
+  deps:tidy:
+    desc: Tidy go.mod
+    cmds:
+      - go mod tidy
+
+  deps:verify:
+    desc: Verify dependencies
+    cmds:
+      - go mod verify
+
+  deps:update:
+    desc: Update all dependencies
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  # Clean tasks
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+      - rm -f coverage.out
+
+  # CI/Check tasks
+  check:
+    desc: Run all checks (lint, test, build)
+    cmds:
+      - task: lint
+      - task: test
+      - task: build
+
+  ci:
+    desc: Run CI pipeline locally
+    cmds:
+      - task: deps
+      - task: check

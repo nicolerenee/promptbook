@@ -1,0 +1,52 @@
+# markdownlint configuration
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+default: true
+
+# Use specific styles, to be consistent accross all documents.
+# Default is to accept any as long as it is consistent within the same document.
+heading-style: # MD003
+  style: atx
+ul-style: # MD004
+  style: dash
+hr-style: # MD035
+  style: ---
+code-block-style: # MD046
+  style: fenced
+code-fence-style: # MD048
+  style: backtick
+emphasis-style: # MD049
+  style: asterisk
+strong-style: # MD050
+  style: asterisk
+
+no-inline-html: # MD033
+  allowed_elements:
+    - br
+    - details
+    - summary
+    - sup
+    - sub
+    - p
+    - img
+    - em
+    - a
+    - h1
+
+# Disable - common pattern for sub-sections in API docs (*Response*, *Parameters*)
+no-emphasis-as-heading: false # MD036
+
+# Allow multiple headers with same text as long as they are not siblings.
+no-duplicate-heading: # MD024
+  siblings_only: true
+
+# Allow long lines in code blocks and tables and use a default of 120 for others.
+line-length: # MD013
+  line_length: 120
+  code_blocks: false
+  tables: false
+
+first-line-heading:
+  allow_preamble: true
+  front_matter_title: ^\s*title\s*[:=]
+  level: 1

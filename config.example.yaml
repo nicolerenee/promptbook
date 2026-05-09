@@ -1,0 +1,33 @@
+# Promptbook configuration example.
+#
+# Loaded from $HOME, current directory, or /config in that order.
+# Looks for files named config.yaml, promptbook.yaml, or .promptbook.yaml.
+# Override any value via env var with prefix PROMPTBOOK_ (dots become underscores).
+# E.g. PROMPTBOOK_ENCORA_APIKEY=... overrides encora.apiKey.
+
+# Encora API access. Required for sync.
+encora:
+  baseUrl: https://encora.it
+  apiKey: ""           # Bearer token. Prefer PROMPTBOOK_ENCORA_APIKEY env var.
+  userAgent: promptbook/0.0.1
+  rateLimit:
+    requestsPerMinute: 30   # encora's published cap
+    burstReserve: 2         # leave headroom; bail if remaining hits this
+
+# Local SQLite cache.
+storage:
+  databasePath: ./promptbook.db
+
+# Library on disk where canonical-named recordings live.
+library:
+  root: /store01/Performances/Broadway
+  folderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
+  fileTemplate: "{Show} - {Tour} - {Date} [{Master}]"
+
+# HTTP server (used by `promptbook serve` only).
+server:
+  listen: "[::]:8080"
+  oidc:
+    issuer: ""           # e.g. https://id.freckle.family
+    audience: ""
+    jwksRefresh: 1h
