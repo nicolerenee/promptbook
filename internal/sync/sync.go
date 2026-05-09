@@ -12,6 +12,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -30,6 +31,20 @@ const (
 	SyncKindAll        = "all"
 	SyncKindCollection = "collection"
 	SyncKindWants      = "wants"
+)
+
+// Retry-after policy applied when a paginated fetch returns
+// encora.ErrRateLimited mid-batch. The retry happens at most once per call
+// site; a second 429 propagates the error.
+const (
+	// MaxRetryAfter caps the sleep duration honored from a Retry-After
+	// header — protects against pathological values that would stall the
+	// sync for minutes.
+	MaxRetryAfter = 90 * time.Second
+	// DefaultRetryAfter is used when the 429 response does not carry a
+	// usable Retry-After header. One full Encora rate-limit window is a
+	// safe default.
+	DefaultRetryAfter = 30 * time.Second
 )
 
 // Result summarizes one Sync invocation.
@@ -157,6 +172,53 @@ func syncProfile(
 	return nil
 }
 
+// retryOnRateLimit runs op once. If op returns encora.ErrRateLimited, it
+// sleeps for the Retry-After duration carried on the returned RateLimitInfo
+// (capped at MaxRetryAfter, defaulting to DefaultRetryAfter when zero) and
+// invokes op exactly one more time. Any other error or a successful call
+// returns immediately. A cancelled context during the sleep returns
+// ctx.Err() rather than continuing into the retry.
+func retryOnRateLimit[T any](
+	ctx context.Context,
+	opts Options,
+	op func() (T, encora.RateLimitInfo, error),
+) (T, encora.RateLimitInfo, error) {
+	val, rl, err := op()
+	if !errors.Is(err, encora.ErrRateLimited) {
+		return val, rl, err
+	}
+
+	wait := rl.RetryAfter
+	if wait <= 0 {
+		wait = DefaultRetryAfter
+	}
+	if wait > MaxRetryAfter {
+		wait = MaxRetryAfter
+	}
+
+	opts.Logger.Warn().
+		Dur("retry_after", wait).
+		Int("remaining", rl.Remaining).
+		Msg("encora 429: sleeping then retrying once")
+
+	// Honor context cancellation by racing the sleep against ctx.Done().
+	// opts.Sleep is the injected sleeper; tests record the duration even
+	// when the context fires first by invoking the sleeper in a goroutine.
+	done := make(chan struct{})
+	go func() {
+		opts.Sleep(wait)
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+		var zero T
+		return zero, rl, ctx.Err()
+	case <-done:
+	}
+
+	return op()
+}
+
 // syncCollection mirrors the collection endpoint. The structural overlap
 // with syncWants is intentional — the two pagination loops carry different
 // generic types and feed different writers, so a shared helper would have
@@ -170,7 +232,11 @@ func syncCollection(
 	opts Options,
 	res *Result,
 ) error {
-	page, rl, err := c.Collection(ctx, 1)
+	page, rl, err := retryOnRateLimit(ctx, opts,
+		func() (encora.Page[encora.CollectionEntry], encora.RateLimitInfo, error) {
+			return c.Collection(ctx, 1)
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("fetch collection page 1: %w", err)
 	}
@@ -193,7 +259,12 @@ func syncCollection(
 		if opts.PauseBetweenPages > 0 {
 			opts.Sleep(opts.PauseBetweenPages)
 		}
-		nextPage, nextRL, fetchErr := c.CollectionURL(ctx, *page.NextPageURL)
+		nextURL := *page.NextPageURL
+		nextPage, nextRL, fetchErr := retryOnRateLimit(ctx, opts,
+			func() (encora.Page[encora.CollectionEntry], encora.RateLimitInfo, error) {
+				return c.CollectionURL(ctx, nextURL)
+			},
+		)
 		if fetchErr != nil {
 			return fmt.Errorf("fetch collection page %d: %w", page.CurrentPage+1, fetchErr)
 		}
@@ -211,7 +282,11 @@ func syncWants(
 	opts Options,
 	res *Result,
 ) error {
-	page, rl, err := c.Wants(ctx, 1)
+	page, rl, err := retryOnRateLimit(ctx, opts,
+		func() (encora.Page[encora.WantEntry], encora.RateLimitInfo, error) {
+			return c.Wants(ctx, 1)
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("fetch wants page 1: %w", err)
 	}
@@ -234,7 +309,12 @@ func syncWants(
 		if opts.PauseBetweenPages > 0 {
 			opts.Sleep(opts.PauseBetweenPages)
 		}
-		nextPage, nextRL, fetchErr := c.WantsURL(ctx, *page.NextPageURL)
+		nextURL := *page.NextPageURL
+		nextPage, nextRL, fetchErr := retryOnRateLimit(ctx, opts,
+			func() (encora.Page[encora.WantEntry], encora.RateLimitInfo, error) {
+				return c.WantsURL(ctx, nextURL)
+			},
+		)
 		if fetchErr != nil {
 			return fmt.Errorf("fetch wants page %d: %w", page.CurrentPage+1, fetchErr)
 		}

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,7 +18,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/storage"
-	"github.com/nicolerenee/promptbook/internal/sync"
+	promptbookSync "github.com/nicolerenee/promptbook/internal/sync"
 )
 
 // fixturesDir locates the encora testdata so this test can stand its own
@@ -75,7 +77,7 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 	c := newTestClient(t, srv.URL)
 
 	velvet-antlersNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
-	res, err := sync.Sync(context.Background(), c, db, sync.Options{
+	res, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{
 		BurstReserve: 2,
 		Now:          func() time.Time { return velvet-antlersNow },
 	})
@@ -173,7 +175,7 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 		require.NoError(t, row.Scan(
 			&kind, &startedAt, &finishedAt, &okCount, &errorCount, &rateRemaining,
 		))
-		assert.Equal(t, sync.SyncKindAll, kind)
+		assert.Equal(t, promptbookSync.SyncKindAll, kind)
 		assert.True(t, startedAt.Valid)
 		assert.True(t, finishedAt.Valid)
 		assert.Equal(t, 28+14, okCount)
@@ -191,7 +193,7 @@ func TestSyncIsIdempotent(t *testing.T) {
 	c := newTestClient(t, srv.URL)
 
 	for i := range 2 {
-		_, err := sync.Sync(context.Background(), c, db, sync.Options{BurstReserve: 2})
+		_, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{BurstReserve: 2})
 		require.NoError(t, err, "sync iteration %d", i)
 	}
 
@@ -259,7 +261,7 @@ func TestSyncBailsOnRateLimitFloor(t *testing.T) {
 			db := newTestDB(t)
 			c := newTestClient(t, srv.URL)
 
-			res, err := sync.Sync(context.Background(), c, db, sync.Options{BurstReserve: 2})
+			res, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{BurstReserve: 2})
 			require.NoError(t, err)
 			require.NotNil(t, res)
 
@@ -291,7 +293,7 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 	c := newTestClient(t, srv.URL)
 
 	velvet-antlersNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
-	_, err := sync.Sync(context.Background(), c, db, sync.Options{
+	_, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{
 		BurstReserve: 2,
 		Now:          func() time.Time { return velvet-antlersNow },
 	})
@@ -340,6 +342,192 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 	})
 }
 
+// rateLimitFixtureServer serves the fixture JSON for /api/profile and
+// /api/wants but lets the caller control /api/collection: the first N
+// requests return 429 with the given Retry-After header; subsequent
+// requests serve the collection fixture. The hit counter is observable
+// through the returned *atomic.Int32 so tests can assert call counts.
+func rateLimitFixtureServer(
+	t *testing.T,
+	failFirstN int32,
+	retryAfterSeconds int,
+) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+
+	collectionHits := &atomic.Int32{}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/profile", func(w http.ResponseWriter, _ *http.Request) {
+		b, err := os.ReadFile(filepath.Join(fixturesDir, "profile.json"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "30")
+		w.Header().Set("X-RateLimit-Remaining", "25")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("/api/wants", func(w http.ResponseWriter, _ *http.Request) {
+		b, err := os.ReadFile(filepath.Join(fixturesDir, "wants.json"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "30")
+		w.Header().Set("X-RateLimit-Remaining", "25")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("/api/collection", func(w http.ResponseWriter, _ *http.Request) {
+		hit := collectionHits.Add(1)
+		if hit <= failFirstN {
+			w.Header().Set("X-RateLimit-Limit", "30")
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			if retryAfterSeconds > 0 {
+				w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
+			}
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		b, err := os.ReadFile(filepath.Join(fixturesDir, "collection.json"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Limit", "30")
+		w.Header().Set("X-RateLimit-Remaining", "25")
+		_, _ = w.Write(b)
+	})
+	return httptest.NewServer(mux), collectionHits
+}
+
+// TestSyncSleepsOnRateLimitRetryAfter verifies that a 429 with Retry-After
+// triggers a single sleep-then-retry, and the eventual success populates
+// both collection and wants tables.
+func TestSyncSleepsOnRateLimitRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	srv, collectionHits := rateLimitFixtureServer(t, 1, 5)
+	t.Cleanup(srv.Close)
+
+	db := newTestDB(t)
+	c := newTestClient(t, srv.URL)
+
+	var sleeps []time.Duration
+	var sleepMu sync.Mutex
+	recordSleep := func(d time.Duration) {
+		sleepMu.Lock()
+		defer sleepMu.Unlock()
+		sleeps = append(sleeps, d)
+	}
+
+	res, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{
+		BurstReserve: 2,
+		Sleep:        recordSleep,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	assert.Equal(t, int32(2), collectionHits.Load(),
+		"collection should be hit twice: first 429, second 200")
+
+	sleepMu.Lock()
+	defer sleepMu.Unlock()
+	require.Len(t, sleeps, 1, "exactly one sleep call (the retry-after wait)")
+	assert.Equal(t, 5*time.Second, sleeps[0])
+
+	assert.Equal(t, 28, res.CollectionCount)
+	assert.Equal(t, 14, res.WantsCount)
+
+	var collectionRows, wantsRows int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM collection`).Scan(&collectionRows))
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM wants`).Scan(&wantsRows))
+	assert.Equal(t, 28, collectionRows)
+	assert.Equal(t, 14, wantsRows)
+}
+
+// TestSyncGivesUpAfterSecondRateLimit verifies that when the retry also
+// returns 429 the sync surfaces the error. RateLimitedBailedOut stays
+// false because that flag tracks the burst-reserve floor bail-out, which
+// is distinct from a 429 mid-batch.
+func TestSyncGivesUpAfterSecondRateLimit(t *testing.T) {
+	t.Parallel()
+
+	srv, collectionHits := rateLimitFixtureServer(t, 5, 5)
+	t.Cleanup(srv.Close)
+
+	db := newTestDB(t)
+	c := newTestClient(t, srv.URL)
+
+	var sleeps []time.Duration
+	var sleepMu sync.Mutex
+	recordSleep := func(d time.Duration) {
+		sleepMu.Lock()
+		defer sleepMu.Unlock()
+		sleeps = append(sleeps, d)
+	}
+
+	res, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{
+		BurstReserve: 2,
+		Sleep:        recordSleep,
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, encora.ErrRateLimited)
+	require.NotNil(t, res)
+
+	assert.Equal(t, int32(2), collectionHits.Load(),
+		"exactly one retry: first 429, second 429, then give up")
+
+	sleepMu.Lock()
+	defer sleepMu.Unlock()
+	require.Len(t, sleeps, 1, "exactly one sleep call before giving up")
+	assert.Equal(t, 5*time.Second, sleeps[0])
+
+	assert.False(t, res.RateLimitedBailedOut,
+		"the burst-reserve bail flag is unrelated to mid-batch 429s")
+}
+
+// TestSyncRespectsContextDuringRetrySleep verifies that a cancelled
+// context short-circuits the retry-after wait. The server returns 429
+// with a 60-second Retry-After; with a pre-cancelled context the function
+// must return ctx.Err() promptly rather than blocking on the full sleep.
+func TestSyncRespectsContextDuringRetrySleep(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := rateLimitFixtureServer(t, 5, 60)
+	t.Cleanup(srv.Close)
+
+	db := newTestDB(t)
+	c := newTestClient(t, srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel; the retry-after sleep must observe this.
+
+	// Sleep stub: spin until ctx is done so the helper's select sees the
+	// context cancellation and returns ctx.Err() before this returns.
+	// In a real run with time.Sleep the leaked goroutine would still
+	// finish; the test only cares that Sync returns promptly.
+	sleepDone := make(chan time.Duration, 4)
+	stubSleep := func(d time.Duration) {
+		<-ctx.Done()
+		sleepDone <- d
+	}
+
+	start := time.Now()
+	_, err := promptbookSync.Sync(ctx, c, db, promptbookSync.Options{
+		BurstReserve: 2,
+		Sleep:        stubSleep,
+	})
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Less(t, elapsed, 5*time.Second,
+		"sync must abandon the retry sleep when ctx is cancelled")
+}
+
 // TestSyncSurfaces500 verifies upstream errors abort sync and the run row
 // captures the failure text.
 func TestSyncSurfaces500(t *testing.T) {
@@ -356,7 +544,7 @@ func TestSyncSurfaces500(t *testing.T) {
 	db := newTestDB(t)
 	c := newTestClient(t, srv.URL)
 
-	_, err := sync.Sync(context.Background(), c, db, sync.Options{})
+	_, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{})
 	require.Error(t, err)
 
 	var errText string
