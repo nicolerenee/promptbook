@@ -1062,6 +1062,28 @@ type stubEncoraClient struct {
 	addRateLimit      encora.RateLimitInfo
 	formatRateLimit   encora.RateLimitInfo
 	updateCallCounter int
+	// addResponses, when non-empty, supplies per-call (rate-limit,
+	// error) responses in FIFO order; once drained, the stub falls back
+	// to the addErr/addRateLimit defaults. Used by the retry-after test
+	// to script a 429 followed by a success on the next call.
+	addResponses []stubResponse
+	// observedAddCtxCancelled captures whether the context handed to
+	// AddToCollection was already cancelled at call time. Lets the
+	// detached-context test verify pushCtx survives a request-context
+	// cancel.
+	observedAddCtxCancelled []bool
+	// onAdd, when non-nil, is invoked at the start of every
+	// AddToCollection call before the response is returned. Lets a
+	// test cancel the request context mid-batch so the next iteration
+	// of the apply loop can be observed receiving a detached context.
+	onAdd func()
+}
+
+// stubResponse is one scripted (rate-limit, error) reply consumed in
+// FIFO order from stubEncoraClient.addResponses.
+type stubResponse struct {
+	rl  encora.RateLimitInfo
+	err error
 }
 
 type stubFormatCall struct {
@@ -1069,10 +1091,25 @@ type stubFormatCall struct {
 	Format string
 }
 
-func (s *stubEncoraClient) AddToCollection(_ context.Context, id int64) (encora.RateLimitInfo, error) {
+func (s *stubEncoraClient) AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	hook := s.onAdd
 	s.addCalls = append(s.addCalls, id)
+	s.observedAddCtxCancelled = append(s.observedAddCtxCancelled, ctx.Err() != nil)
+	var resp stubResponse
+	used := false
+	if len(s.addResponses) > 0 {
+		resp = s.addResponses[0]
+		s.addResponses = s.addResponses[1:]
+		used = true
+	}
+	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	if used {
+		return resp.rl, resp.err
+	}
 	return s.addRateLimit, s.addErr
 }
 
@@ -1104,6 +1141,13 @@ func applyTestServer(t *testing.T) (*server.Server, *gosql.DB, *stubEncoraClient
 func TestAPIApplyHandlesAddToCollection(t *testing.T) {
 	t.Parallel()
 	srv, db, stub := applyTestServer(t)
+
+	// Seed an orphan: file present, not in collection or wants. The new
+	// validation pass requires the action to match the live mismatch
+	// oracle, so without this seed loadMismatches returns an empty set
+	// and the action would be rejected before ever reaching the stub.
+	seedMismatchRecording(t, db, 99001, 12345, "OrphanShow",
+		false, false, true, "", "MKV 1080p")
 
 	body, err := json.Marshal(map[string]any{
 		"actions": []map[string]any{
@@ -1152,6 +1196,14 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 	t.Parallel()
 	srv, db, stub := applyTestServer(t)
 
+	// Seed a format mismatch: in collection with encoraFormat differing
+	// from the local file's FormatLabel. The validation pass also
+	// requires the submitted NewFormat to match the local oracle, so we
+	// make local FormatLabel == "MKV 1080p" (the value the test pushes)
+	// and Encora's recorded format something different.
+	seedMismatchRecording(t, db, 99002, 90100222, "FormatShow",
+		true, false, true, "MKV 720p", "MKV 1080p")
+
 	body, err := json.Marshal(map[string]any{
 		"actions": []map[string]any{
 			{
@@ -1187,6 +1239,11 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 func TestAPIApplyMissingFileShortCircuits(t *testing.T) {
 	t.Parallel()
 	srv, db, stub := applyTestServer(t)
+
+	// Seed a missing-file mismatch: in collection but no local version
+	// row. The validation pass needs the action to match the live state.
+	seedMismatchRecording(t, db, 99003, 99, "MissingShow",
+		true, false, false, "MKV 1080p", "")
 
 	body, err := json.Marshal(map[string]any{
 		"actions": []map[string]any{
@@ -1258,6 +1315,11 @@ func TestAPIApplySurfacesEncoraError(t *testing.T) {
 	stub.addErr = encora.ErrRateLimited
 	stub.addRateLimit = encora.RateLimitInfo{RetryAfter: 60 * time.Second}
 
+	// Seed an orphan so the validation pass lets the action through to
+	// applyOne where the rate-limit error surfaces.
+	seedMismatchRecording(t, db, 99004, 7, "ErrShow",
+		false, false, true, "", "MKV 1080p")
+
 	body, err := json.Marshal(map[string]any{
 		"actions": []map[string]any{
 			{"type": "add_to_collection", "recording_id": 7},
@@ -1294,4 +1356,262 @@ func TestAPIApplySurfacesEncoraError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, events,
 		"failed pushes must not produce HistoryKindEncoraPush events")
+}
+
+// applyTestServerWithSleeper is applyTestServer's sibling that lets a
+// test inject a recording sleeper so the Retry-After honor logic stays
+// asserrtable without spending wall-clock time. Returns the recorded
+// durations slice (locked behind a mutex) the caller can read after
+// the request returns.
+func applyTestServerWithSleeper(
+	t *testing.T,
+) (*server.Server, *gosql.DB, *stubEncoraClient, *sleepRecorder) {
+	t.Helper()
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	stub := &stubEncoraClient{}
+	rec := &sleepRecorder{}
+	srv, err := server.New(server.Options{DB: db, Encora: stub, Sleeper: rec.Sleep})
+	require.NoError(t, err)
+	return srv, db, stub, rec
+}
+
+// sleepRecorder captures every duration handed to Sleep without
+// blocking. Concurrency-safe so the apply batch driver can call into it
+// from any goroutine the echo runtime spins up.
+type sleepRecorder struct {
+	mu        sync.Mutex
+	durations []time.Duration
+}
+
+func (r *sleepRecorder) Sleep(d time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.durations = append(r.durations, d)
+}
+
+func (r *sleepRecorder) Calls() []time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]time.Duration, len(r.durations))
+	copy(out, r.durations)
+	return out
+}
+
+// TestAPIApplyRejectsStaleAction asserts the validation pass refuses to
+// forward an action whose (type, recording_id) pair isn't in the live
+// mismatch oracle — e.g. someone POSTs an add_to_collection for a
+// recording that's already in the collection. The encora client must
+// not be invoked, and no history row should be written.
+func TestAPIApplyRejectsStaleAction(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+
+	// Seed a recording in StatusSynced — collected, with a matching
+	// local file, so loadMismatches returns zero rows for it.
+	seedMismatchRecording(t, db, 99100, 90004242, "SyncedShow",
+		true, false, true, "MKV 1080p", "MKV 1080p")
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "add_to_collection", "recording_id": 90004242},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		Results []struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Results, 1)
+	assert.False(t, resp.Results[0].OK,
+		"action against a synced recording must be rejected")
+	assert.Contains(t, resp.Results[0].Error, "no longer applies",
+		"rejection reason should mention the stale-state guard")
+
+	assert.Empty(t, stub.addCalls,
+		"encora client must not be invoked for a stale action")
+	assert.Empty(t, stub.formatCalls,
+		"encora client must not be invoked for a stale action")
+
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindEncoraPush},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, events,
+		"a stale-action rejection must not produce an encora_push history row")
+}
+
+// TestAPIApplyRejectsTamperedFormat asserts that a FormatMismatch action
+// whose NewFormat doesn't match the live LocalFormat oracle is refused
+// before the encora client is touched. Without this guard a malicious
+// or stale form could push arbitrary format strings.
+func TestAPIApplyRejectsTamperedFormat(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+
+	// Seed a format mismatch with local format MKV 1080p; the test
+	// submits NewFormat=MKV 4K instead, simulating a tampered form.
+	seedMismatchRecording(t, db, 99101, 5151, "TamperShow",
+		true, false, true, "MKV 720p", "MKV 1080p")
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{
+				"type":         "format_mismatch",
+				"recording_id": 5151,
+				"new_format":   "MKV 4K",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		Results []struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Results, 1)
+	assert.False(t, resp.Results[0].OK)
+	assert.Contains(t, strings.ToLower(resp.Results[0].Error), "format")
+
+	assert.Empty(t, stub.formatCalls,
+		"a tampered format must not reach the encora client")
+}
+
+// TestAPIApplyHonorsRetryAfter scripts a 429 (RetryAfter=2s) on the
+// first action and a success on the second, asserts both actions
+// complete in a single response, and verifies the sleeper was called
+// with the parsed RetryAfter before the second call fired. This is the
+// regression fence against "one 429 cascades into N more 429s" because
+// nothing slept between calls.
+func TestAPIApplyHonorsRetryAfter(t *testing.T) {
+	t.Parallel()
+	srv, db, stub, sleepRec := applyTestServerWithSleeper(t)
+
+	// Two orphan recordings so two add_to_collection actions can both
+	// pass validation and go into the apply loop.
+	seedMismatchRecording(t, db, 99200, 8001, "RetryShowA",
+		false, false, true, "", "MKV 1080p")
+	seedMismatchRecording(t, db, 99201, 8002, "RetryShowB",
+		false, false, true, "", "MKV 1080p")
+
+	stub.addResponses = []stubResponse{
+		{rl: encora.RateLimitInfo{RetryAfter: 2 * time.Second}, err: encora.ErrRateLimited},
+		{rl: encora.RateLimitInfo{}, err: nil},
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "add_to_collection", "recording_id": 8001},
+			{"type": "add_to_collection", "recording_id": 8002},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		Results []struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Results, 2)
+	assert.False(t, resp.Results[0].OK,
+		"first action should report the 429")
+	assert.Contains(t, strings.ToLower(resp.Results[0].Error), "rate limited")
+	assert.True(t, resp.Results[1].OK,
+		"second action should still fire after the Retry-After sleep")
+
+	assert.Equal(t, []int64{8001, 8002}, stub.addCalls,
+		"both actions should reach the encora client")
+
+	calls := sleepRec.Calls()
+	require.Len(t, calls, 1,
+		"sleeper should fire exactly once between the 429 and the second action")
+	assert.Equal(t, 2*time.Second, calls[0],
+		"sleeper should honor the parsed Retry-After")
+}
+
+// TestAPIApplyDetachedContext asserts the apply push loop runs against
+// a context that survives a cancellation of the request context. We
+// fire two actions and let the stub's onAdd hook cancel the request
+// context during the first call. The second call's observed context
+// state must still be non-cancelled — proving context.WithoutCancel
+// was applied to the push loop. Validation runs first against the
+// (still-live) request context, which is why we cancel from inside
+// the stub instead of pre-cancelling: a pre-cancel would surface as a
+// 500 from the local DB driver before the loop could even start.
+func TestAPIApplyDetachedContext(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+
+	seedMismatchRecording(t, db, 99300, 6001, "DetachShowA",
+		false, false, true, "", "MKV 1080p")
+	seedMismatchRecording(t, db, 99301, 6002, "DetachShowB",
+		false, false, true, "", "MKV 1080p")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+
+	// Cancel the request context synchronously during the first
+	// upstream call. The hook fires only on the first AddToCollection
+	// because the test reuses cancel()'s idempotency.
+	stub.onAdd = cancel
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "add_to_collection", "recording_id": 6001},
+			{"type": "add_to_collection", "recording_id": 6002},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	// The handler ran to completion because pushCtx is detached from
+	// the cancelled request context.
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	require.Equal(t, []int64{6001, 6002}, stub.addCalls,
+		"both upstream calls should fire even after the request context was cancelled mid-batch")
+	require.Len(t, stub.observedAddCtxCancelled, 2)
+	for i, cancelled := range stub.observedAddCtxCancelled {
+		assert.False(t, cancelled,
+			"call %d: encora client should receive a non-cancelled context (detached)", i)
+	}
 }

@@ -38,6 +38,11 @@ type Server struct {
 	logger     zerolog.Logger
 	stagemedia *stagemedia.Client
 	encora     EncoraWriteClient
+	// sleeper is the function the apply batch driver uses to honor a
+	// 429's Retry-After before issuing the next request. Defaults to
+	// time.Sleep; tests inject a recorder to assert the call without
+	// blocking real wall-clock time.
+	sleeper func(time.Duration)
 }
 
 // Options configures a new server.
@@ -52,6 +57,11 @@ type Options struct {
 	// pass a stub satisfying EncoraWriteClient; production wiring passes
 	// a real *encora.Client.
 	Encora EncoraWriteClient
+	// Sleeper is optional. When nil, time.Sleep is used. Tests inject a
+	// recorder that captures the requested duration without sleeping
+	// for real, so the Retry-After honor logic stays exercisable under
+	// `go test -race` without a wall-clock pause.
+	Sleeper func(time.Duration)
 }
 
 // New constructs a server with all routes registered and templates
@@ -74,12 +84,17 @@ func New(opts Options) (*Server, error) {
 	e.Use(middleware.Recover())
 	e.Use(zerologMiddleware(opts.Logger))
 
+	sleeper := opts.Sleeper
+	if sleeper == nil {
+		sleeper = time.Sleep
+	}
 	srv := &Server{
 		echo:       e,
 		db:         opts.DB,
 		logger:     opts.Logger,
 		stagemedia: opts.Stagemedia,
 		encora:     opts.Encora,
+		sleeper:    sleeper,
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
