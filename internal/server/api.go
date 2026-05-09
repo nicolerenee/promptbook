@@ -214,22 +214,19 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
 }
 
-// decorateLocalPosters sets LocalPosterURL on every item that has a
-// cached show banner on disk. Under the v2 layout there's no choice
-// row to bulk-load — selection is implicit by file existence — so the
-// loop is a per-item cache.HasShowBanner stat rather than a SQL fan
-// out. Cache disabled / empty yields a no-op (every URL stays "").
+// decorateLocalPosters sets LocalPosterURL on every item to the
+// recording's burned-in poster (recordings/<id>/poster.jpg). Library
+// grid view renders this — each recording gets ITS poster, not the
+// show's banner, so multiple recordings of the same show don't all
+// look identical. The /images/* route falls through to a generated
+// placeholder when the file isn't on disk yet.
 func (s *Server) decorateLocalPosters(items []RecordingListItem) {
 	cache := s.ImageCache()
 	if cache == nil || cache.Disabled() || len(items) == 0 {
 		return
 	}
 	for i := range items {
-		showID := items[i].ShowID
-		if showID == 0 {
-			continue
-		}
-		items[i].LocalPosterURL = cache.ShowBannerURL(showID)
+		items[i].LocalPosterURL = cache.RecordingPosterURL(items[i].ID)
 	}
 }
 

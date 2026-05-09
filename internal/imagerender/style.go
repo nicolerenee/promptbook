@@ -44,11 +44,17 @@ type Style struct {
 
 // Default style values. Pulled out as named consts so the mnd lint
 // stays satisfied + future tweaks have one location to land.
+//
+// PadX / TitleSizePx / SubtitleSizePx default to ZERO so the renderer
+// derives them as fractions of the resolved band (see resolveStyle in
+// compose.go). Per-recording overrides via overlay_style_json with a
+// positive integer pin an absolute pixel size for users who want to
+// tune the look manually.
 const (
 	defaultBandHeightFraction = 0.14
-	defaultPadX               = 36
-	defaultTitleSizePx        = 48
-	defaultSubtitleSizePx     = 24
+	defaultPadX               = 0
+	defaultTitleSizePx        = 0
+	defaultSubtitleSizePx     = 0
 
 	// Brand palette. Band is sky blue (#7FA8C9); text is deep navy
 	// (#13284A). Solid alpha so the band reads as a real plate against

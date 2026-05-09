@@ -137,13 +137,20 @@ func (r *Renderer) compose(src image.Image, title, subtitle string, style Style)
 	titleUpper := strings.ToUpper(title)
 	subtitleUpper := strings.ToUpper(subtitle)
 
-	maxTextWidth := bandRect.Dx() - hPadFactor*style.PadX
+	// Resolve sizes + padding relative to the BAND when the user hasn't
+	// pinned absolute pixel values. StageMedia posters arrive at ~230x345
+	// and Encora screen-grabs at ~1280x720; a fixed 48 px title was sized
+	// for the latter and overflowed posters by 3x. Fractional defaults
+	// scale cleanly across both ends.
+	resolved := resolveStyle(style, bandRect)
+	maxTextWidth := bandRect.Dx() - hPadFactor*resolved.PadX
 	if maxTextWidth < 1 {
 		maxTextWidth = bandRect.Dx()
 	}
 
-	titleFace := pickTitleFace(titleUpper, style.Title, maxTextWidth)
-	subtitleFace := loadFace(style.Subtitle.Weight, int(style.Subtitle.SizePx))
+	titleSpec := FontSpec{SizePx: resolved.TitleSizePx, Weight: style.Title.Weight}
+	titleFace := pickTitleFace(titleUpper, titleSpec, maxTextWidth)
+	subtitleFace := loadFace(style.Subtitle.Weight, int(resolved.SubtitleSizePx))
 
 	// Layout: title centered on the upper third of the band, subtitle on
 	// the lower third. When subtitle is empty, the title takes the
@@ -161,6 +168,63 @@ func (r *Renderer) compose(src image.Image, title, subtitle string, style Style)
 // out as a const so mnd lint stays happy on the band-fit math.
 const hPadFactor = 2
 
+// Fractional sizing defaults. Title + subtitle font heights are
+// expressed as fractions of the BAND height (not the image height):
+// for a 14% band, the title at 0.50 fills the upper half of the
+// band, the subtitle at 0.28 fills the lower portion. Padding is a
+// fraction of the IMAGE width — 4% reads cleanly at any size.
+//
+// These kick in when style.Title.SizePx / Subtitle.SizePx / PadX are
+// zero (the default) so the user can still pin an absolute value via
+// the per-recording overlay_style_json blob if they want.
+const (
+	titleSizeBandFraction    = 0.50
+	subtitleSizeBandFraction = 0.28
+	padXImageFraction        = 0.04
+	minFontSizePx            = 8
+	minPadXPx                = 4
+)
+
+// resolved bundles the post-fraction-resolution sizes the compose
+// function works in.
+type resolvedStyle struct {
+	PadX           int
+	TitleSizePx    float64
+	SubtitleSizePx float64
+}
+
+// resolveStyle fills in font sizes + padding from band dimensions
+// when the user-supplied (or default-baked) absolute values are
+// zero. Caller-supplied positive values pass through verbatim so an
+// explicit `size_px` override still wins.
+func resolveStyle(style Style, bandRect image.Rectangle) resolvedStyle {
+	out := resolvedStyle{
+		PadX:           style.PadX,
+		TitleSizePx:    style.Title.SizePx,
+		SubtitleSizePx: style.Subtitle.SizePx,
+	}
+	bandH := bandRect.Dy()
+	if out.TitleSizePx <= 0 {
+		out.TitleSizePx = float64(bandH) * titleSizeBandFraction
+	}
+	if out.SubtitleSizePx <= 0 {
+		out.SubtitleSizePx = float64(bandH) * subtitleSizeBandFraction
+	}
+	if out.PadX <= 0 {
+		out.PadX = int(float64(bandRect.Dx()) * padXImageFraction)
+	}
+	if out.TitleSizePx < minFontSizePx {
+		out.TitleSizePx = minFontSizePx
+	}
+	if out.SubtitleSizePx < minFontSizePx {
+		out.SubtitleSizePx = minFontSizePx
+	}
+	if out.PadX < minPadXPx {
+		out.PadX = minPadXPx
+	}
+	return out
+}
+
 // pickTitleFace tries the configured title size first; if the rendered
 // title would exceed maxWidth, it shrinks the font (down to the
 // titleShrinkFloor cap) so the show name fits inside the band's
@@ -168,7 +232,10 @@ const hPadFactor = 2
 func pickTitleFace(text string, spec FontSpec, maxWidth int) font.Face {
 	size := spec.SizePx
 	if size <= 0 {
-		size = DefaultStyle.Title.SizePx
+		// Should not happen — resolveStyle ensures sizes are positive
+		// before this is called — but defensive fallback to the floor
+		// keeps the renderer from blowing up if the path changes.
+		size = minFontSizePx
 	}
 	floorSize := size * titleShrinkFloor
 	for size >= floorSize {
