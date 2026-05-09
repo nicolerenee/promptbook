@@ -21,6 +21,8 @@ var staticFS embed.FS
 // prefixed shared layout).
 var pageNames = []string{ //nolint:gochecknoglobals // immutable lookup table
 	"home.html",
+	"people.html",
+	"person.html",
 	"queue.html",
 	"recording.html",
 	"wants.html",

@@ -1,0 +1,34 @@
+{{define "person.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<header>
+  <h1>{{.Name}}</h1>
+  {{if .HeadshotURL}}
+    <img src="{{.HeadshotURL}}" alt="{{.Name}} headshot" class="headshot">
+  {{end}}
+  {{if .URL}}
+    <p><small>encora: <a href="https://{{.URL}}">{{.URL}}</a></small></p>
+  {{end}}
+  <p><a href="/people">&larr; all people</a></p>
+</header>
+
+{{if .Recordings}}
+<h2>Recordings ({{len .Recordings}})</h2>
+<table>
+  <thead>
+    <tr><th>Show</th><th>Tour</th><th>Date</th></tr>
+  </thead>
+  <tbody>
+  {{range .Recordings}}
+    <tr>
+      <td><a href="/recordings/{{.ID}}">{{.Show}}</a></td>
+      <td>{{.Tour}}</td>
+      <td>{{smartDate .DateFull .DateMonthKnown .DateDayKnown}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  <p><em>No recordings on file for this performer.</em></p>
+{{end}}
+{{end}}

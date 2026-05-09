@@ -67,7 +67,12 @@ func New(opts Options) (*Server, error) {
 	e.Use(middleware.Recover())
 	e.Use(zerologMiddleware(opts.Logger))
 
-	srv := &Server{echo: e, db: opts.DB, logger: opts.Logger, stagemedia: opts.Stagemedia}
+	srv := &Server{
+		echo:       e,
+		db:         opts.DB,
+		logger:     opts.Logger,
+		stagemedia: opts.Stagemedia,
+	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
 	return srv, nil
