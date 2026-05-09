@@ -1,17 +1,24 @@
 // Package storage provides the local SQLite cache and migrations.
 //
-// Migrations are embedded in the binary and applied via goose on Open.
+// Migrations are embedded in internal/dbm and applied via goose on Open.
+// The hand-rolled storage helpers in this package coexist with the ent
+// client (see OpenEnt) — Phase 1 just wires ent in alongside; Phase 2
+// will cut callers over.
 package storage
 
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"fmt"
 	"sync"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite" // sqlite driver
+
+	"github.com/nicolerenee/promptbook/internal/dbm"
+	"github.com/nicolerenee/promptbook/internal/ent"
 )
 
 // gooseMu serializes calls into goose's package-level globals (SetBaseFS,
@@ -20,9 +27,6 @@ import (
 //
 //nolint:gochecknoglobals // mutex protecting goose's own globals
 var gooseMu sync.Mutex
-
-//go:embed migrations/*.sql
-var migrationsFS embed.FS
 
 // Connection-pool sizing. WAL mode allows concurrent readers, so a
 // modest pool keeps the HTTP server responsive while a scheduled job
@@ -71,7 +75,7 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	gooseMu.Lock()
 	defer gooseMu.Unlock()
 
-	goose.SetBaseFS(migrationsFS)
+	goose.SetBaseFS(dbm.Migrations)
 	if err = goose.SetDialect("sqlite3"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("set goose dialect: %w", err)
@@ -81,4 +85,19 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 	return db, nil
+}
+
+// OpenEnt opens the database at path (running migrations) and returns
+// both the existing *sql.DB and a new *ent.Client backed by the same
+// connection pool. Phase 1 callers (sync, server, jobs) keep using
+// *sql.DB; Phase 2 cuts them over to ent. Sharing the pool avoids
+// double-pooling and double-lifecycle management — closing *sql.DB
+// also tears down the ent client.
+func OpenEnt(ctx context.Context, path string) (*sql.DB, *ent.Client, error) {
+	db, err := Open(ctx, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	return db, ent.NewClient(ent.Driver(drv)), nil
 }
