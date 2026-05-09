@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -35,17 +36,20 @@ type scheduledJobJSON struct {
 // jobRunJSON is one row in /api/v1/jobs/queue. DurationMs is computed
 // server-side so the UI's mm:ss formatter has a stable value to work
 // off of (clients otherwise diverge on Date.parse semantics for the
-// "running" case).
+// "running" case). Args is the per-Run parameter blob; nil/empty for
+// unparameterized runs (refresh-encora, scan-incoming) and populated
+// for fan-out follow-ups.
 type jobRunJSON struct {
-	ID         int64   `json:"id"`
-	JobName    string  `json:"job_name"`
-	QueuedAt   string  `json:"queued_at"`
-	StartedAt  *string `json:"started_at"`
-	EndedAt    *string `json:"ended_at"`
-	Status     string  `json:"status"`
-	Error      string  `json:"error"`
-	Trigger    string  `json:"trigger"`
-	DurationMs int64   `json:"duration_ms"`
+	ID         int64        `json:"id"`
+	JobName    string       `json:"job_name"`
+	Args       jobs.JobArgs `json:"args,omitempty"`
+	QueuedAt   string       `json:"queued_at"`
+	StartedAt  *string      `json:"started_at"`
+	EndedAt    *string      `json:"ended_at"`
+	Status     string       `json:"status"`
+	Error      string       `json:"error"`
+	Trigger    string       `json:"trigger"`
+	DurationMs int64        `json:"duration_ms"`
 }
 
 // handleListScheduledJobs renders the runner's ListScheduled output.
@@ -105,8 +109,10 @@ func (s *Server) handleListJobQueue(c echo.Context) error {
 }
 
 // handleRunJob is the manual-trigger endpoint. 404 when the name is
-// unknown, 409 when a run is already active for that job (dedup
-// contract), 200 with the new run_id otherwise.
+// unknown, 409 when a run is already active for that (name, args)
+// pair (dedup contract), 200 with the new run_id otherwise. Accepts
+// an optional JSON body `{args: {...}}`; missing or empty body fires
+// the job with nil args.
 func (s *Server) handleRunJob(c echo.Context) error {
 	if s.jobRunner == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "jobs not configured")
@@ -115,9 +121,21 @@ func (s *Server) handleRunJob(c echo.Context) error {
 	if name == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
 	}
-	run, err := s.jobRunner.RunNow(name)
+	var body struct {
+		Args jobs.JobArgs `json:"args"`
+	}
+	// Body is optional; an empty / missing payload fires the job
+	// with nil args. Bind errors here are typically "invalid JSON" —
+	// surface as 400 so the client can fix its request rather than
+	// silently get a no-args run.
+	if c.Request().ContentLength > 0 {
+		if err := c.Bind(&body); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid request body: "+err.Error())
+		}
+	}
+	run, err := s.jobRunner.RunNow(name, body.Args)
 	if err != nil {
-		if strings.Contains(err.Error(), "unknown job") {
+		if errors.Is(err, jobs.ErrUnknownJob) {
 			return echo.NewHTTPError(http.StatusNotFound, err.Error())
 		}
 		if strings.Contains(err.Error(), "already active") {
@@ -136,6 +154,7 @@ func runToJSON(r jobs.Run) jobRunJSON {
 	out := jobRunJSON{
 		ID:       r.ID,
 		JobName:  r.JobName,
+		Args:     r.Args,
 		QueuedAt: r.QueuedAt.UTC().Format(time.RFC3339),
 		Status:   string(r.Status),
 		Error:    r.Error,

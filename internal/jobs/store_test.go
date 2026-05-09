@@ -85,8 +85,8 @@ func TestStore_LoadStateNoRow(t *testing.T) {
 // freshly registered name.
 type stubJob struct{ name string }
 
-func (s stubJob) Name() string              { return s.name }
-func (stubJob) Run(_ context.Context) error { return nil }
+func (s stubJob) Name() string                              { return s.name }
+func (stubJob) Run(_ context.Context, _ jobs.JobArgs) error { return nil }
 
 func TestStore_MarkEndedUpsertsState(t *testing.T) {
 	t.Parallel()

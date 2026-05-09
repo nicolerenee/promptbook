@@ -15,6 +15,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/scanner"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
@@ -45,8 +46,10 @@ type RefreshEncoraJob struct {
 func (j *RefreshEncoraJob) Name() string { return "refresh-encora" }
 
 // Run invokes pbsync.Sync. Returns the wrapped error so the scheduler
-// records it on the job_runs row.
-func (j *RefreshEncoraJob) Run(ctx context.Context) error {
+// records it on the job_runs row. Ignores args — refresh-encora is a
+// periodic full-collection sync; per-entity follow-ups (refresh-show
+// / recording / actor) live in their own jobs.
+func (j *RefreshEncoraJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 	if j.Client == nil {
 		return errors.New("refresh-encora: encora client not configured")
 	}
@@ -80,8 +83,9 @@ func (j *ScanIncomingJob) Name() string { return "scan-incoming" }
 // scanner Result but not surfaced as Run errors — the scheduled-jobs
 // failure semantics are reserved for catastrophic scan failures
 // (db unreachable, root unwalkable). A noisy NFS mount with
-// permission errors should not paint the row red.
-func (j *ScanIncomingJob) Run(ctx context.Context) error {
+// permission errors should not paint the row red. Ignores args —
+// scan-incoming has no per-Run parameters.
+func (j *ScanIncomingJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 	if len(j.IncomingDirs) == 0 {
 		return errors.New("scan-incoming: no incoming directories configured")
 	}

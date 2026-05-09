@@ -34,42 +34,123 @@ type Trigger string
 
 // Trigger values: scheduled = the ticker fired; manual = a UI/API
 // caller invoked RunNow; startup = an OnStartup job fired once at
-// Runner.Start, or a missed-tick catch-up on restart.
+// Runner.Start, or a missed-tick catch-up on restart;
+// scheduled-fanout = a running job called EnqueueFromJob to chain a
+// follow-up parameterized run.
 const (
-	TriggerScheduled Trigger = "scheduled"
-	TriggerManual    Trigger = "manual"
-	TriggerStartup   Trigger = "startup"
+	TriggerScheduled       Trigger = "scheduled"
+	TriggerManual          Trigger = "manual"
+	TriggerStartup         Trigger = "startup"
+	TriggerScheduledFanout Trigger = "scheduled-fanout"
 )
+
+// JobArgs is the parameter blob passed to a single Run. nil or empty
+// for periodic / unparameterized jobs (e.g. refresh-encora,
+// scan-incoming); populated when a fan-out job enqueues per-entity
+// follow-ups (refresh-show-images {show_id: 498}). The map is
+// JSON-marshalable — every value must round-trip through encoding/json
+// because the blob is persisted in job_runs.args.
+type JobArgs map[string]any
+
+// GetInt64 returns the value under key as an int64, or 0 when missing
+// or wrong-typed. Tolerates the float64 shape that encoding/json
+// hands back for numeric values so a deserialized Run looks the same
+// as one constructed in memory.
+func (a JobArgs) GetInt64(key string) int64 {
+	if a == nil {
+		return 0
+	}
+	v, ok := a[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case int32:
+		return int64(n)
+	case float64:
+		return int64(n)
+	case float32:
+		return int64(n)
+	default:
+		return 0
+	}
+}
+
+// GetString returns the value under key as a string, or "" when
+// missing or wrong-typed.
+func (a JobArgs) GetString(key string) string {
+	if a == nil {
+		return ""
+	}
+	v, ok := a[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+// GetBool returns the value under key as a bool, or false when
+// missing or wrong-typed.
+func (a JobArgs) GetBool(key string) bool {
+	if a == nil {
+		return false
+	}
+	v, ok := a[key]
+	if !ok {
+		return false
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false
+	}
+	return b
+}
 
 // Job is the unit of work the Runner schedules and executes. The
 // implementation is responsible for honoring ctx — the Runner cancels
 // it on shutdown, but does not enforce a per-run timeout. Returning a
 // non-nil error marks the Run as failed and persists err.Error() on
-// the row; a panic is recovered with the same effect.
+// the row; a panic is recovered with the same effect. args carries
+// per-Run parameters; nil/empty for periodic and unparameterized
+// jobs.
 type Job interface {
 	Name() string
-	Run(ctx context.Context) error
+	Run(ctx context.Context, args JobArgs) error
 }
 
 // JobDef registers a Job with the Runner along with its scheduling
 // policy. Interval == 0 means "manual-only": the job is visible in
 // ListScheduled, has no NextRun, and only fires when RunNow is
 // called. OnStartup fires the job once when Runner.Start runs, ahead
-// of the tick loop, with trigger=startup.
+// of the tick loop, with trigger=startup. DefaultArgs is the args
+// blob passed to scheduled (interval-fired) and OnStartup runs;
+// manual triggers via RunNow can override it. Leave DefaultArgs nil
+// for plain unparameterized jobs.
 type JobDef struct {
-	Job       Job
-	Interval  time.Duration
-	OnStartup bool
+	Job         Job
+	Interval    time.Duration
+	OnStartup   bool
+	DefaultArgs JobArgs
 }
 
 // Run is one invocation of a Job. ID is the autoincrement primary key
 // from job_runs; QueuedAt is set when the Runner accepts the trigger;
 // StartedAt is zero until a worker picks the run up; EndedAt is zero
-// until Job.Run returns (or panics). Status / Error / Trigger track
-// the row's persisted columns one-to-one.
+// until Job.Run returns (or panics). Status / Error / Trigger / Args
+// track the row's persisted columns one-to-one; Args is nil for
+// runs that carry no parameters.
 type Run struct {
 	ID        int64
 	JobName   string
+	Args      JobArgs
 	QueuedAt  time.Time
 	StartedAt time.Time
 	EndedAt   time.Time

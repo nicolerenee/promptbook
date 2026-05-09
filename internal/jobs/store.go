@@ -3,9 +3,12 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Store wraps the job_runs and job_state tables. Every Runner
@@ -29,12 +32,15 @@ func NewStore(db *sql.DB) *Store {
 
 // InsertRun persists a freshly-queued Run and returns its assigned
 // ID. The caller is expected to update *r.ID with the returned value
-// before passing the pointer down to the worker pool.
+// before passing the pointer down to the worker pool. Args is
+// encoded as canonical JSON; nil/empty Args writes the empty string
+// so the no-args path is visually distinct in the database.
 func (s *Store) InsertRun(ctx context.Context, r *Run) (int64, error) {
+	argsJSON := canonicalArgs(r.Args)
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO job_runs (job_name, queued_at, status, trigger, error)
-		VALUES (?, ?, ?, ?, '')
-	`, r.JobName, r.QueuedAt, string(r.Status), string(r.Trigger))
+		INSERT INTO job_runs (job_name, queued_at, status, trigger, error, args)
+		VALUES (?, ?, ?, ?, '', ?)
+	`, r.JobName, r.QueuedAt, string(r.Status), string(r.Trigger), argsJSON)
 	if err != nil {
 		return 0, fmt.Errorf("insert job_run: %w", err)
 	}
@@ -144,11 +150,13 @@ func (s *Store) loadState(ctx context.Context, jobName string) (jobState, error)
 
 // ListRecent returns the newest limit Runs across every job, ordered
 // queued_at desc. The Runner's REST handler uses it to populate the
-// /jobs Queue section; limits are bounded by the caller.
+// /jobs Queue section; limits are bounded by the caller. Args is
+// decoded from the JSON column; an invalid blob is logged and
+// surfaced as nil so a corrupt row doesn't poison the whole list.
 func (s *Store) ListRecent(ctx context.Context, limit int) ([]Run, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, job_name, queued_at, started_at, ended_at,
-		       status, COALESCE(error, ''), trigger
+		       status, COALESCE(error, ''), trigger, COALESCE(args, '')
 		FROM job_runs
 		ORDER BY queued_at DESC, id DESC
 		LIMIT ?
@@ -164,10 +172,11 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]Run, error) {
 			r                  Run
 			startedAt, endedAt sql.NullTime
 			status, trigger    string
+			argsJSON           string
 		)
 		if scanErr := rows.Scan(
 			&r.ID, &r.JobName, &r.QueuedAt,
-			&startedAt, &endedAt, &status, &r.Error, &trigger,
+			&startedAt, &endedAt, &status, &r.Error, &trigger, &argsJSON,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan run row: %w", scanErr)
 		}
@@ -179,12 +188,32 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]Run, error) {
 		}
 		r.Status = Status(status)
 		r.Trigger = Trigger(trigger)
+		r.Args = decodeArgs(argsJSON, r.ID)
 		out = append(out, r)
 	}
 	if rerr := rows.Err(); rerr != nil {
 		return nil, fmt.Errorf("iterate run rows: %w", rerr)
 	}
 	return out, nil
+}
+
+// decodeArgs parses a job_runs.args blob. Empty string → nil (the
+// no-args path); invalid JSON logs a warning and returns nil so the
+// list keeps moving rather than hard-failing on a corrupt row.
+func decodeArgs(argsJSON string, runID int64) JobArgs {
+	if argsJSON == "" {
+		return nil
+	}
+	var args JobArgs
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		log.Warn().
+			Err(err).
+			Int64("run_id", runID).
+			Str("args_raw", argsJSON).
+			Msg("jobs: failed to decode persisted args; treating as empty")
+		return nil
+	}
+	return args
 }
 
 // ErrNoState signals that a job_state row does not yet exist for the

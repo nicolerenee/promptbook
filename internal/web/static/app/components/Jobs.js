@@ -174,20 +174,62 @@ function ScheduledRow(row) {
   ]);
 }
 
+// formatArgs renders a JobArgs blob as a compact "key=value" chip
+// label. Sorted keys for stability across redraws; longer values
+// truncate at 24 chars so the column doesn't blow out. Returns null
+// for empty / nullish args so the caller can drop the chip entirely.
+const ARGS_VALUE_MAX = 24;
+function formatArgs(args) {
+  if (!args || typeof args !== 'object') return null;
+  const keys = Object.keys(args);
+  if (keys.length === 0) return null;
+  keys.sort();
+  return keys.map((k) => {
+    let v = args[k];
+    if (typeof v === 'string' && v.length > ARGS_VALUE_MAX) {
+      v = v.slice(0, ARGS_VALUE_MAX - 1) + '…';
+    } else if (v && typeof v === 'object') {
+      v = JSON.stringify(v);
+      if (v.length > ARGS_VALUE_MAX) v = v.slice(0, ARGS_VALUE_MAX - 1) + '…';
+    }
+    return k + '=' + v;
+  }).join(' ');
+}
+
+// triggerLabel renders the row's trigger as a short, human-readable
+// string. Mirrors the runner's Trigger constants but collapses the
+// kebab-case "scheduled-fanout" into "fanout" for the table — the
+// full word doesn't fit cleanly in the Detail column.
+function triggerLabel(trigger) {
+  switch (trigger) {
+    case 'scheduled-fanout':
+      return 'fanout';
+    default:
+      return trigger || '';
+  }
+}
+
 // QueueRow renders one /jobs/queue row.
 function QueueRow(row) {
   const errored = row.status === 'failed';
+  const argsLabel = formatArgs(row.args);
   return m('tr', { class: 'hover:bg-base-200' }, [
-    m('td', m('div', { class: 'flex items-center gap-2' }, [
-      statusIcon(row.status),
-      m('span', { class: 'font-medium' }, row.job_name),
+    m('td', m('div', { class: 'flex flex-col gap-1' }, [
+      m('div', { class: 'flex items-center gap-2' }, [
+        statusIcon(row.status),
+        m('span', { class: 'font-medium' }, row.job_name),
+      ]),
+      argsLabel ? m('div', {
+        class: 'font-mono text-xs opacity-70 pl-6 truncate max-w-xs',
+        title: argsLabel,
+      }, argsLabel) : null,
     ])),
     m('td', { title: row.queued_at || '' }, relativeTime(row.queued_at)),
     m('td', { title: row.started_at || '' }, relativeTime(row.started_at)),
     m('td', { title: row.ended_at || '' }, relativeTime(row.ended_at)),
     m('td', { class: 'font-mono text-sm' }, formatDuration(row.duration_ms)),
     m('td', { class: 'text-xs' + (errored ? ' text-error' : ' opacity-60') },
-      errored ? (row.error || 'failed') : row.trigger),
+      errored ? (row.error || 'failed') : triggerLabel(row.trigger)),
   ]);
 }
 

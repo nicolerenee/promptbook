@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime/debug"
@@ -48,9 +49,13 @@ type Runner struct {
 	now     func() time.Time
 
 	// mu guards defs + state + active.
-	mu     sync.RWMutex
-	defs   map[string]JobDef
-	state  map[string]jobState
+	mu    sync.RWMutex
+	defs  map[string]JobDef
+	state map[string]jobState
+	// active dedups in-flight runs. Keyed on a composite of
+	// (job name, canonical-JSON of args) so periodic runs and
+	// manual runs with overrides don't conflict — only two callers
+	// with identical (name, args) collide.
 	active map[string]bool
 
 	// queue carries Runs from the scheduler / RunNow into the worker
@@ -58,6 +63,10 @@ type Runner struct {
 	// block the scheduler tick.
 	queue chan *Run
 }
+
+// ErrUnknownJob is returned by RunNow / EnqueueFromJob when no Job
+// is registered under the requested name.
+var ErrUnknownJob = errors.New("jobs: unknown job")
 
 // New constructs a Runner. Workers and Now default when zero.
 func New(opts Options) *Runner {
@@ -181,7 +190,7 @@ func (r *Runner) enqueueStartup(ctx context.Context) {
 
 	for _, d := range defs {
 		if r.shouldStartupFire(d, now) {
-			if _, err := r.enqueue(ctx, d.Job.Name(), TriggerStartup); err != nil {
+			if _, err := r.enqueue(ctx, d.Job.Name(), d.DefaultArgs, TriggerStartup); err != nil {
 				r.logger.Error().
 					Err(err).
 					Str("job_name", d.Job.Name()).
@@ -226,9 +235,10 @@ func (r *Runner) tick(ctx context.Context) {
 			continue
 		}
 		name := d.Job.Name()
+		key := dedupKey(name, d.DefaultArgs)
 		r.mu.RLock()
 		st, hasState := r.state[name]
-		alreadyActive := r.active[name]
+		alreadyActive := r.active[key]
 		r.mu.RUnlock()
 		if alreadyActive {
 			continue
@@ -239,7 +249,7 @@ func (r *Runner) tick(ctx context.Context) {
 		// Never-run job (no state): fire immediately so the first
 		// observation lands on the very next tick rather than after
 		// a full Interval delay.
-		if _, err := r.enqueue(ctx, name, TriggerScheduled); err != nil {
+		if _, err := r.enqueue(ctx, name, d.DefaultArgs, TriggerScheduled); err != nil {
 			r.logger.Error().
 				Err(err).
 				Str("job_name", name).
@@ -248,37 +258,87 @@ func (r *Runner) tick(ctx context.Context) {
 	}
 }
 
-// RunNow enqueues an immediate manual run. Returns the freshly
-// inserted Run (with ID populated) so the API can echo run_id back
-// to the caller. Returns an error when the job name isn't registered
-// or when a run is already active for that job (dedup contract).
-func (r *Runner) RunNow(name string) (*Run, error) {
+// RunNow enqueues an immediate manual run with the supplied args.
+// Returns the freshly inserted Run (with ID populated) so the API can
+// echo run_id back to the caller. Returns ErrUnknownJob when name
+// isn't registered or an "already active" error when a run with the
+// same (name, args) is already in flight.
+func (r *Runner) RunNow(name string, args JobArgs) (*Run, error) {
 	r.mu.RLock()
 	_, ok := r.defs[name]
 	r.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("jobs: unknown job %q", name)
+		return nil, fmt.Errorf("%w %q", ErrUnknownJob, name)
 	}
-	return r.enqueue(context.Background(), name, TriggerManual)
+	return r.enqueue(context.Background(), name, args, TriggerManual)
 }
 
-// enqueue is the shared path that the scheduler and RunNow both go
-// through. It claims the active flag under the lock, persists the
-// queued Run, then drops the *Run pointer onto the channel. The
-// matching active-flag release happens in the worker after Job.Run
-// returns; the InsertRun + active-set must therefore happen
-// atomically (under r.mu) so a quick re-enqueue can't slip through.
-func (r *Runner) enqueue(ctx context.Context, name string, trig Trigger) (*Run, error) {
+// EnqueueFromJob queues a parameterized run from inside another
+// running job. Returns ErrUnknownJob if no Job is registered under
+// name; returns the enqueued *Run on success (the run is in 'queued'
+// state). Used by long-running jobs (like refresh-encora) to fan out
+// per-entity follow-ups without going through the public RunNow
+// path. The resulting Run carries Trigger("scheduled-fanout") so the
+// UI can distinguish chained work from user-clicked manual runs.
+func (r *Runner) EnqueueFromJob(ctx context.Context, name string, args JobArgs) (*Run, error) {
+	r.mu.RLock()
+	_, ok := r.defs[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w %q", ErrUnknownJob, name)
+	}
+	return r.enqueue(ctx, name, args, TriggerScheduledFanout)
+}
+
+// dedupKey builds the (name, canonical-args) composite the active
+// map uses to track in-flight runs. Empty / nil args produce the
+// bare name + ":" prefix; populated args are encoded with stdlib
+// json.Marshal which sorts map keys alphabetically since Go 1.12,
+// so two equal-args calls always produce the same key.
+func dedupKey(name string, args JobArgs) string {
+	return name + ":" + canonicalArgs(args)
+}
+
+// canonicalArgs returns the canonical JSON encoding of args, or "" if
+// args is nil/empty. encoding/json sorts map keys alphabetically, so
+// two semantically-equal JobArgs always serialize to the same string.
+// Marshal failures are treated as "no args" — every value type the
+// public Get* helpers care about is JSON-safe by construction, so a
+// failure here would be programmer error and we'd rather miss a
+// dedup match than hard-fail an enqueue.
+func canonicalArgs(args JobArgs) string {
+	if len(args) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// enqueue is the shared path that the scheduler, RunNow, and
+// EnqueueFromJob all go through. It claims the active flag under the
+// lock, persists the queued Run, then drops the *Run pointer onto
+// the channel. The matching active-flag release happens in the
+// worker after Job.Run returns; the InsertRun + active-set must
+// therefore happen atomically (under r.mu) so a quick re-enqueue
+// can't slip through.
+func (r *Runner) enqueue(
+	ctx context.Context, name string, args JobArgs, trig Trigger,
+) (*Run, error) {
+	key := dedupKey(name, args)
 	r.mu.Lock()
-	if r.active[name] {
+	if r.active[key] {
 		r.mu.Unlock()
 		return nil, fmt.Errorf("jobs: %q is already active", name)
 	}
-	r.active[name] = true
+	r.active[key] = true
 	r.mu.Unlock()
 
 	run := &Run{
 		JobName:  name,
+		Args:     args,
 		QueuedAt: r.now(),
 		Status:   StatusQueued,
 		Trigger:  trig,
@@ -288,7 +348,7 @@ func (r *Runner) enqueue(ctx context.Context, name string, trig Trigger) (*Run, 
 		// Roll back the active flag so a persistent storage failure
 		// doesn't leave the job permanently un-runnable.
 		r.mu.Lock()
-		delete(r.active, name)
+		delete(r.active, key)
 		r.mu.Unlock()
 		return nil, fmt.Errorf("persist queued run: %w", err)
 	}
@@ -307,7 +367,7 @@ func (r *Runner) enqueue(ctx context.Context, name string, trig Trigger) (*Run, 
 		return run, nil
 	default:
 		r.mu.Lock()
-		delete(r.active, name)
+		delete(r.active, key)
 		r.mu.Unlock()
 		return nil, fmt.Errorf("jobs: queue full enqueueing %q", name)
 	}
@@ -332,7 +392,7 @@ func (r *Runner) executeRun(ctx context.Context, run *Run, workerIdx int) {
 	if !ok {
 		// The def disappeared between enqueue and dispatch
 		// (impossible under current API, defensive guard).
-		r.releaseActive(run.JobName)
+		r.releaseActive(run.JobName, run.Args)
 		return
 	}
 
@@ -354,7 +414,7 @@ func (r *Runner) executeRun(ctx context.Context, run *Run, workerIdx int) {
 		Logger()
 	logger.Info().Str("trigger", string(run.Trigger)).Msg("jobs: run started")
 
-	status, errText := r.invoke(ctx, logger, def.Job)
+	status, errText := r.invoke(ctx, logger, def.Job, run.Args)
 
 	endedAt := r.now()
 	run.EndedAt = endedAt
@@ -366,7 +426,7 @@ func (r *Runner) executeRun(ctx context.Context, run *Run, workerIdx int) {
 		logger.Error().Err(err).Msg("jobs: failed to persist end; state may be stale")
 	}
 
-	r.afterRun(run.JobName, startedAt, endedAt, status)
+	r.afterRun(run.JobName, run.Args, startedAt, endedAt, status)
 
 	logger.Info().
 		Str("status", string(status)).
@@ -383,7 +443,7 @@ func (r *Runner) executeRun(ctx context.Context, run *Run, workerIdx int) {
 //
 //nolint:nonamedreturns // deferred recover must mutate return values
 func (r *Runner) invoke(
-	ctx context.Context, logger zerolog.Logger, job Job,
+	ctx context.Context, logger zerolog.Logger, job Job, args JobArgs,
 ) (status Status, errText string) {
 	status = StatusSucceeded
 	defer func() {
@@ -397,7 +457,7 @@ func (r *Runner) invoke(
 			errText = fmt.Sprintf("panic: %v", rec)
 		}
 	}()
-	if err := job.Run(ctx); err != nil {
+	if err := job.Run(ctx, args); err != nil {
 		status = StatusFailed
 		errText = err.Error()
 		logger.Error().Err(err).Msg("jobs: run returned error")
@@ -418,8 +478,10 @@ func (r *Runner) defForRun(name string) (JobDef, bool) {
 
 // afterRun updates the in-memory state and clears the active flag
 // once a run finishes. A separate helper keeps the locking
-// localized.
-func (r *Runner) afterRun(name string, startedAt, endedAt time.Time, status Status) {
+// localized. State is keyed on name only (not args) — the
+// last-run summary aggregates across every (name, args) variant so
+// the Scheduled view stays one-row-per-job.
+func (r *Runner) afterRun(name string, args JobArgs, startedAt, endedAt time.Time, status Status) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	startedCopy := startedAt
@@ -430,15 +492,15 @@ func (r *Runner) afterRun(name string, startedAt, endedAt time.Time, status Stat
 		lastDuration:  endedAt.Sub(startedAt),
 		lastStatus:    status,
 	}
-	delete(r.active, name)
+	delete(r.active, dedupKey(name, args))
 }
 
-// releaseActive clears the active flag for name. Called on the
-// "should never happen" def-missing branch in executeRun so a stuck
-// flag can't accumulate.
-func (r *Runner) releaseActive(name string) {
+// releaseActive clears the active flag for the (name, args) pair.
+// Called on the "should never happen" def-missing branch in
+// executeRun so a stuck flag can't accumulate.
+func (r *Runner) releaseActive(name string, args JobArgs) {
 	r.mu.Lock()
-	delete(r.active, name)
+	delete(r.active, dedupKey(name, args))
 	r.mu.Unlock()
 }
 
