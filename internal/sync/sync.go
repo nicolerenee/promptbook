@@ -135,7 +135,7 @@ func syncCollection(
 		}
 		res.CollectionCount += len(page.Data)
 
-		if rl.Remaining > 0 && rl.Remaining <= opts.BurstReserve {
+		if rl.Remaining <= opts.BurstReserve {
 			res.RateLimitedBailedOut = true
 			return nil
 		}
@@ -176,7 +176,7 @@ func syncWants(
 		}
 		res.WantsCount += len(page.Data)
 
-		if rl.Remaining > 0 && rl.Remaining <= opts.BurstReserve {
+		if rl.Remaining <= opts.BurstReserve {
 			res.RateLimitedBailedOut = true
 			return nil
 		}

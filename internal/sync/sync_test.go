@@ -219,29 +219,48 @@ func TestSyncIsIdempotent(t *testing.T) {
 }
 
 // TestSyncBailsOnRateLimitFloor verifies that when X-RateLimit-Remaining
-// drops to BurstReserve the sync stops cleanly between phases (collection
-// finishes; wants is skipped) and the run is logged with the final
-// remaining quota. Last-good data is preserved.
+// drops to (or below) BurstReserve the sync stops cleanly between phases
+// (collection finishes; wants is skipped) and the run is logged with the
+// final remaining quota. Last-good data is preserved.
+//
+// Both remaining=1 (above zero, at-or-below floor) and remaining=0
+// (header explicitly says we're out of budget) must trigger the bail —
+// the latter caught a regression where a `> 0` guard let a depleted
+// quota slip through and 429 the next page request.
 func TestSyncBailsOnRateLimitFloor(t *testing.T) {
 	t.Parallel()
 
-	srv := newSyncFixtureServer(t, 1) // remaining=1 ≤ BurstReserve=2
-	t.Cleanup(srv.Close)
+	tests := []struct {
+		name      string
+		remaining int
+	}{
+		{name: "remaining_one", remaining: 1},
+		{name: "remaining_zero", remaining: 0},
+	}
 
-	db := newTestDB(t)
-	c := newTestClient(t, srv.URL)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	res, err := sync.Sync(context.Background(), c, db, sync.Options{BurstReserve: 2})
-	require.NoError(t, err)
-	require.NotNil(t, res)
+			srv := newSyncFixtureServer(t, tt.remaining)
+			t.Cleanup(srv.Close)
 
-	assert.True(t, res.RateLimitedBailedOut)
-	assert.Equal(t, 28, res.CollectionCount, "collection finishes its single page")
-	assert.Equal(t, 0, res.WantsCount, "wants must be skipped under floor")
+			db := newTestDB(t)
+			c := newTestClient(t, srv.URL)
 
-	var wants int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM wants`).Scan(&wants))
-	assert.Equal(t, 0, wants)
+			res, err := sync.Sync(context.Background(), c, db, sync.Options{BurstReserve: 2})
+			require.NoError(t, err)
+			require.NotNil(t, res)
+
+			assert.True(t, res.RateLimitedBailedOut)
+			assert.Equal(t, 28, res.CollectionCount, "collection finishes its single page")
+			assert.Equal(t, 0, res.WantsCount, "wants must be skipped under floor")
+
+			var wants int
+			require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM wants`).Scan(&wants))
+			assert.Equal(t, 0, wants)
+		})
+	}
 }
 
 // TestSyncSurfaces500 verifies upstream errors abort sync and the run row
