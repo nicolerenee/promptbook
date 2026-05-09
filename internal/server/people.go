@@ -71,9 +71,9 @@ func (s *Server) handleListPeople(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]any{
-		itemsKey: items,
-		"limit":  limit,
-		"offset": offset,
+		itemsKey:  items,
+		limitKey:  limit,
+		offsetKey: offset,
 	})
 }
 
