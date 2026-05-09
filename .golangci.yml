@@ -18,12 +18,6 @@ issues:
   # Default: 3
   max-same-issues: 50
 
-run:
-  # Skip Claude Code agent worktrees that live inside this repo.
-  # They contain sibling-branch source that pollutes lint runs.
-  skip-dirs:
-    - .claude
-
 formatters:
   enable:
     - goimports # checks if the code and import statements are formatted according to the 'goimports' command
@@ -451,6 +445,11 @@ linters:
     presets:
       - std-error-handling
       - common-false-positives
+    # Skip Claude Code agent worktrees that live inside this repo.
+    # They hold sibling-branch source that pollutes lint runs and is
+    # already linted in its own worktree before reporting back.
+    paths:
+      - '\.claude/'
     # Excluding configuration per-path, per-linter, per-text and per-source.
     rules:
       - path: '_test\.go'
