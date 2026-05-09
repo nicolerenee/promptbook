@@ -1,10 +1,189 @@
-// queue.js — placeholder. Implemented in a later wave.
+// queue.js — fetches /api/v1/queue and renders the manual import queue.
+//
+// API gap notes:
+//   - The Match / Resolve buttons are cosmetic for v1; there's no
+//     POST /api/v1/queue/{id}/import endpoint yet, so they're no-ops
+//     with a "(coming soon)" tooltip.
+//   - The design's "● ingesting" pulse + inline progress bar is also
+//     dropped — promptbook doesn't track in-flight ingest state for
+//     queue rows. A future SSE or polling endpoint would let us add
+//     it back.
+
 (function () {
   'use strict';
-  var root = document.getElementById('page-root');
-  if (!root || root.getAttribute('data-page') !== 'queue') return;
-  console.log('TODO: implement queue page');
-  root.innerHTML = '<div class="pb-empty">' +
-    'This page is being rebuilt in the new design. Coming soon.' +
+
+  var CONF_META = {
+    high:   { label: 'High',   cls: 'confidence-high' },
+    medium: { label: 'Medium', cls: 'confidence-medium' },
+    low:    { label: 'Low',    cls: 'confidence-low' },
+  };
+
+  function escapeHTML(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function humanSize(bytes) {
+    if (bytes == null || bytes === 0) return '—';
+    var n = Number(bytes);
+    if (!isFinite(n)) return '—';
+    var GB = 1024 * 1024 * 1024;
+    var MB = 1024 * 1024;
+    var KB = 1024;
+    if (n >= GB) return (n / GB).toFixed(2) + ' GB';
+    if (n >= MB) return (n / MB).toFixed(1) + ' MB';
+    if (n >= KB) return (n / KB).toFixed(1) + ' KB';
+    return n + ' B';
+  }
+
+  function relativeTime(iso) {
+    if (!iso) return '—';
+    var t = Date.parse(iso);
+    if (!isFinite(t)) return '—';
+    var deltaSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (deltaSec < 60) return deltaSec + ' sec ago';
+    var deltaMin = Math.floor(deltaSec / 60);
+    if (deltaMin < 60) return deltaMin + ' min ago';
+    var deltaHr = Math.floor(deltaMin / 60);
+    if (deltaHr < 24) return deltaHr + ' hr ago';
+    var deltaDay = Math.floor(deltaHr / 24);
+    if (deltaDay === 1) return 'yesterday';
+    if (deltaDay < 7) return deltaDay + ' days ago';
+    return new Date(t).toLocaleDateString();
+  }
+
+  function countMetrics(items) {
+    var totals = { discovered: items.length, autoResolvable: 0, needsYou: 0 };
+    items.forEach(function (it) {
+      if (it.suggested_confidence === 'high') totals.autoResolvable++;
+      else totals.needsYou++;
+    });
+    return totals;
+  }
+
+  function renderHeader(items) {
+    var sub = document.querySelector('[data-page-sub]');
+    if (sub) {
+      sub.textContent = 'Watching incoming · polled every minute · ' +
+        items.length + ' entr' + (items.length === 1 ? 'y' : 'ies');
+    }
+    var actions = document.querySelector('[data-page-actions]');
+    if (!actions || actions.dataset.rendered) return;
+    actions.dataset.rendered = '1';
+    var hasAuto = items.some(function (it) { return it.suggested_confidence === 'high'; });
+    var primaryAttrs = hasAuto ? '' : ' disabled';
+    actions.innerHTML =
+      '<button class="pb-btn pb-btn-ghost" type="button" title="(coming soon)">Re-scan</button>' +
+      '<button class="pb-btn pb-btn-primary" type="button" title="(coming soon)"' + primaryAttrs +
+        '>Import all auto-resolved</button>';
+  }
+
+  function metricTile(label, num, sub) {
+    return '<div class="pb-metric">' +
+      '<div class="pb-metric-label">' + escapeHTML(label) + '</div>' +
+      '<div class="pb-metric-num">' + escapeHTML(String(num)) + '</div>' +
+      '<div class="pb-metric-sub">' + escapeHTML(sub) + '</div>' +
     '</div>';
+  }
+
+  function renderMetrics(root, items) {
+    var t = countMetrics(items);
+    var html = '<div class="pb-metrics" style="grid-template-columns:repeat(3,1fr)">' +
+      metricTile('Discovered', t.discovered, 'in queue') +
+      '<div class="pb-metric" style="color:var(--status-synced)">' +
+        '<div class="pb-metric-label">Auto-resolvable</div>' +
+        '<div class="pb-metric-num">' + t.autoResolvable + '</div>' +
+        '<div class="pb-metric-sub" style="color:inherit;opacity:0.75">high-confidence match</div>' +
+      '</div>' +
+      '<div class="pb-metric" style="color:var(--accent)">' +
+        '<div class="pb-metric-label">Needs you</div>' +
+        '<div class="pb-metric-num">' + t.needsYou + '</div>' +
+        '<div class="pb-metric-sub" style="color:inherit;opacity:0.75">awaiting review</div>' +
+      '</div>' +
+    '</div>';
+    root.insertAdjacentHTML('beforeend', html);
+  }
+
+  function renderTable(root, items) {
+    var html = '<div class="pb-table-wrap"><table class="pb-table">' +
+      '<thead><tr>' +
+        '<th style="width:36px"></th>' +
+        '<th>Discovered</th>' +
+        '<th>Confidence</th>' +
+        '<th>File</th>' +
+        '<th>Suggested match</th>' +
+        '<th>Size</th>' +
+        '<th style="width:120px;text-align:right"></th>' +
+      '</tr></thead><tbody>';
+    if (items.length === 0) {
+      html += '<tr><td colspan="7" class="pb-empty" style="padding:32px 14px;text-align:center">' +
+        'Queue is empty. Drop video files into your <code>library.incomingDirs</code> to see them here.' +
+        '</td></tr>';
+    }
+    items.forEach(function (it) {
+      var conf = CONF_META[it.suggested_confidence];
+      var confBadge = conf ?
+        '<span class="confidence-badge ' + conf.cls + '">' + escapeHTML(conf.label) + '</span>' :
+        '<span class="pb-muted">—</span>';
+      var match = it.suggested_recording_id ?
+        '<a class="pb-cell-mono pb-link" href="/recordings/' + it.suggested_recording_id + '">' +
+          'enc-' + it.suggested_recording_id + '</a>' :
+        '<span class="pb-cell-mono pb-muted">— pick a recording —</span>';
+      var path = escapeHTML(it.file_path || '');
+      var pathCell = '<span class="pb-cell-mono" title="' + path + '" ' +
+        'style="display:inline-block;max-width:480px;overflow:hidden;text-overflow:ellipsis;' +
+        'white-space:nowrap;vertical-align:middle">' + path + '</span>';
+      var actionBtn = it.suggested_confidence === 'high' ?
+        '<button class="pb-btn pb-btn-primary" type="button" title="(coming soon)" disabled>Match</button>' :
+        '<button class="pb-btn" type="button" title="(coming soon)" disabled>Resolve…</button>';
+      html += '<tr>' +
+        '<td><input type="checkbox" class="pb-checkbox" disabled title="(coming soon)"></td>' +
+        '<td class="pb-cell-mono">' + escapeHTML(relativeTime(it.discovered_at)) + '</td>' +
+        '<td>' + confBadge + '</td>' +
+        '<td>' + pathCell + '</td>' +
+        '<td>' + match + '</td>' +
+        '<td class="pb-cell-mono">' + escapeHTML(humanSize(it.file_size_bytes)) + '</td>' +
+        '<td style="text-align:right">' + actionBtn + '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '<p class="pb-mono pb-muted" style="margin-top:14px;font-size:11.5px">' +
+      'Files matching <code>[encora-NNNNN]</code> in their name auto-import on the next scan. ' +
+      'Drop a <code>.encora-id</code> sidecar next to a video to add the ID without renaming.</p>';
+    root.insertAdjacentHTML('beforeend', html);
+  }
+
+  function renderError(root, err) {
+    root.innerHTML = '<div class="pb-empty" style="padding:32px;color:var(--status-missing)">' +
+      'Failed to load queue: ' +
+      escapeHTML(err && err.message ? err.message : String(err)) + '</div>';
+  }
+
+  function init() {
+    var root = document.getElementById('page-root');
+    if (!root || root.getAttribute('data-page') !== 'queue') return;
+    window.PB.api.get('/queue')
+      .then(function (body) {
+        var items = (body && body.items) || [];
+        items.sort(function (a, b) {
+          return Date.parse(b.discovered_at || 0) - Date.parse(a.discovered_at || 0);
+        });
+        root.innerHTML = '';
+        renderHeader(items);
+        renderMetrics(root, items);
+        renderTable(root, items);
+      })
+      .catch(function (err) { renderError(root, err); });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
