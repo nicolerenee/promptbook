@@ -8,10 +8,18 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"sync"
 
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite" // sqlite driver
 )
+
+// gooseMu serializes calls into goose's package-level globals (SetBaseFS,
+// SetDialect). Without this, parallel test cases racing through Open
+// trigger the race detector.
+//
+//nolint:gochecknoglobals // mutex protecting goose's own globals
+var gooseMu sync.Mutex
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
@@ -32,6 +40,9 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
+
+	gooseMu.Lock()
+	defer gooseMu.Unlock()
 
 	goose.SetBaseFS(migrationsFS)
 	if err = goose.SetDialect("sqlite3"); err != nil {

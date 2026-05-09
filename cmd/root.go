@@ -34,7 +34,7 @@ var (
 
 // appConfig holds the loaded configuration for use by subcommands.
 //
-//nolint:gochecknoglobals,unused // shared across cobra subcommand RunE funcs; wired in phase 2 sync.
+//nolint:gochecknoglobals // shared across cobra subcommand RunE funcs.
 var appConfig config.Config
 
 // rootCmd represents the base command.
