@@ -61,9 +61,9 @@ func seedRecordingForRender(ctx context.Context, t *testing.T, db *sql.DB, rid i
 	require.NoError(t, err)
 }
 
-func writeRenderHarnessBackdrop(t *testing.T, cache *imagecache.Cache, rid int64, idx int) {
+func writeRenderHarnessPosterSrc(t *testing.T, cache *imagecache.Cache, rid int64) {
 	t.Helper()
-	dest := cache.BackdropPath(rid, idx)
+	dest := cache.RecordingPosterSrcPath(rid)
 	require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0o750))
 	img := image.NewRGBA(image.Rect(0, 0, harnessImgWidth, harnessImgHeight))
 	for y := range harnessImgHeight {
@@ -77,7 +77,7 @@ func writeRenderHarnessBackdrop(t *testing.T, cache *imagecache.Cache, rid int64
 	require.NoError(t, f.Close())
 }
 
-func TestRegenerateBackdropEndpoint(t *testing.T) {
+func TestRegeneratePosterEndpoint(t *testing.T) {
 	t.Parallel()
 
 	t.Run("503_when_renderer_nil", func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestRegenerateBackdropEndpoint(t *testing.T) {
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequestWithContext(
-			t.Context(), http.MethodPost, "/api/v1/recordings/1/regenerate-backdrop", nil)
+			t.Context(), http.MethodPost, "/api/v1/recordings/1/regenerate-poster", nil)
 		srv.Handler().ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusServiceUnavailable, rr.Code, rr.Body.String())
 	})
@@ -104,29 +104,29 @@ func TestRegenerateBackdropEndpoint(t *testing.T) {
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequestWithContext(
-			t.Context(), http.MethodPost, "/api/v1/recordings/9999/regenerate-backdrop", nil)
+			t.Context(), http.MethodPost, "/api/v1/recordings/9999/regenerate-poster", nil)
 		srv.Handler().ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
 	})
 
-	t.Run("200_renders_when_backdrop_present", func(t *testing.T) {
+	t.Run("200_renders_when_poster_src_present", func(t *testing.T) {
 		t.Parallel()
 		ctx, db, cache, renderer := rendererHarness(t)
 		const rid int64 = 90004242
 		seedRecordingForRender(ctx, t, db, rid)
-		writeRenderHarnessBackdrop(t, cache, rid, 0)
+		writeRenderHarnessPosterSrc(t, cache, rid)
 
 		srv, err := server.New(server.Options{DB: db, ImageRenderer: renderer, ImageCache: cache})
 		require.NoError(t, err)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequestWithContext(
-			t.Context(), http.MethodPost, "/api/v1/recordings/90004242/regenerate-backdrop", nil)
+			t.Context(), http.MethodPost, "/api/v1/recordings/90004242/regenerate-poster", nil)
 		srv.Handler().ServeHTTP(rr, req)
 		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
-		rendered := filepath.Join(filepath.Dir(cache.BackdropPath(rid, 0)), "rendered.jpg")
-		assert.FileExists(t, rendered)
+		assert.True(t, cache.HasRecordingPoster(rid),
+			"poster.jpg should land after a successful regenerate")
 	})
 
 	t.Run("400_when_id_invalid", func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestRegenerateBackdropEndpoint(t *testing.T) {
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequestWithContext(
-			t.Context(), http.MethodPost, "/api/v1/recordings/notanumber/regenerate-backdrop", nil)
+			t.Context(), http.MethodPost, "/api/v1/recordings/notanumber/regenerate-poster", nil)
 		srv.Handler().ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 	})

@@ -126,6 +126,20 @@ type Job interface {
 	Run(ctx context.Context, args JobArgs) error
 }
 
+// Enqueuer is the slim interface a job depends on when it needs to
+// chain follow-up work — typically refresh-encora fanning out per-show /
+// per-recording / per-actor refresh jobs after the main sync finishes.
+// The real *Runner satisfies this via EnqueueFromJob; tests can pass a
+// stub that just records (name, args) calls.
+//
+// The interface lives here (next to Job) so jobs/builtin can depend on
+// it without pulling in the whole *Runner type. Production wiring
+// passes the runner itself; jobs that don't fan out leave the field
+// nil and skip the call.
+type Enqueuer interface {
+	EnqueueFromJob(ctx context.Context, name string, args JobArgs) (*Run, error)
+}
+
 // JobDef registers a Job with the Runner along with its scheduling
 // policy. Interval == 0 means "manual-only": the job is visible in
 // ListScheduled, has no NextRun, and only fires when RunNow is

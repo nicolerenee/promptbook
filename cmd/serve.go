@@ -140,13 +140,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	ingestOpt := buildIngestEngine(db, encClient, imgCache)
-	runner := buildJobRunner(ctx, db, encClient, smClient, imgCache)
 
 	// Renderer is nil when image caching is off so the picker
 	// handlers' nil-check 503s rather than half-mutating state. When
 	// caching is on, the same DB + cache instance the rest of the
 	// server uses powers Regenerate.
 	imgRenderer := imagerender.New(db, imgCache, log.Logger)
+
+	runner := buildJobRunner(ctx, db, encClient, smClient, imgCache, imgRenderer)
 
 	srv, err := server.New(server.Options{
 		DB:                db,
@@ -212,15 +213,21 @@ func buildIngestEngine(
 }
 
 // buildJobRunner constructs the scheduled-jobs runner with whatever
-// jobs the current configuration supports. Returns nil when neither
-// job has the prerequisites configured — the server's nil-check then
-// 503s on /api/v1/jobs/* and the rest of the API stays usable.
+// jobs the current configuration supports. Returns nil when no job has
+// the prerequisites configured — the server's nil-check then 503s on
+// /api/v1/jobs/* and the rest of the API stays usable.
+//
+// Image-refresh jobs (refresh-show-images, refresh-recording-images,
+// refresh-actor-headshot) are registered as manual-only (Interval==0)
+// so they appear in the Scheduled view but only fire when
+// refresh-encora's fan-out enqueues them or a user clicks Run.
 func buildJobRunner(
 	_ context.Context,
 	db *sql.DB,
 	encClient *encora.Client,
 	smClient *stagemedia.Client,
 	imgCache *imagecache.Cache,
+	imgRenderer *imagerender.Renderer,
 ) *jobs.Runner {
 	runner := jobs.New(jobs.Options{
 		DB:      db,
@@ -228,65 +235,111 @@ func buildJobRunner(
 		Workers: jobRunnerWorkers,
 	})
 
-	// Coerce the concrete clients into the sync interfaces with a
-	// true nil interface so the fetcher's nil-check fires correctly
-	// when caching is off. Mirrors the pattern in cmd/collection_sync.go.
-	var smSync sync.StagemediaImageClient
-	if smClient != nil {
-		smSync = smClient
-	}
-	var encScreenshots sync.EncoraScreenshotClient
-	if imgCache != nil && !imgCache.Disabled() && encClient != nil {
-		encScreenshots = encClient
-	}
-
 	registered := 0
-
-	if encClient != nil {
-		err := runner.Register(jobs.JobDef{
-			Job: &builtin.RefreshEncoraJob{
-				DB:                db,
-				Client:            encClient,
-				Logger:            log.Logger,
-				BurstReserve:      appConfig.Encora.RateLimit.BurstReserve,
-				ImageCache:        imgCache,
-				Stagemedia:        smSync,
-				EncoraScreenshots: encScreenshots,
-			},
-			Interval: refreshEncoraInterval,
-			// OnStartup intentionally false: the runner's restart
-			// catch-up logic (last_ended_at + interval ≤ now → enqueue)
-			// already fires the job right away when it's overdue. A
-			// fresh DB also fires immediately because last_ended_at is
-			// zero. Setting OnStartup would force a refresh on every
-			// boot regardless of whether one just ran.
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("register refresh-encora job")
-		} else {
-			registered++
-		}
-	}
-
-	if len(appConfig.Library.IncomingDirs) > 0 {
-		err := runner.Register(jobs.JobDef{
-			Job: &builtin.ScanIncomingJob{
-				DB:           db,
-				IncomingDirs: appConfig.Library.IncomingDirs,
-				Logger:       log.Logger,
-			},
-			Interval: appConfig.Library.WatchInterval,
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("register scan-incoming job")
-		} else {
-			registered++
-		}
-	}
+	registered += registerRefreshEncora(runner, db, encClient, imgCache)
+	registered += registerImageRefreshJobs(runner, db, encClient, smClient, imgCache, imgRenderer)
+	registered += registerScanIncoming(runner, db)
 
 	if registered == 0 {
 		log.Info().Msg("jobs runner has no registered jobs (encora + incomingDirs both unconfigured)")
 		return nil
 	}
 	return runner
+}
+
+// registerRefreshEncora wires the refresh-encora job and its
+// post-registration Enqueuer back-reference. Returns 1 on success, 0
+// otherwise.
+func registerRefreshEncora(
+	runner *jobs.Runner, db *sql.DB, encClient *encora.Client, imgCache *imagecache.Cache,
+) int {
+	if encClient == nil {
+		return 0
+	}
+	// Construct with a back-reference to the runner via the Enqueuer
+	// interface. The runner is already fully initialized at this
+	// point, so the assignment is safe. Solves the apparent circular
+	// dependency (jobs depend on Runner, Runner registers jobs) by
+	// treating the runner as a plain value injected into the job.
+	refreshJob := &builtin.RefreshEncoraJob{
+		DB:           db,
+		Client:       encClient,
+		Logger:       log.Logger,
+		BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
+		Cache:        imgCache,
+		Enqueuer:     runner,
+	}
+	if err := runner.Register(jobs.JobDef{
+		Job:      refreshJob,
+		Interval: refreshEncoraInterval,
+	}); err != nil {
+		log.Error().Err(err).Msg("register refresh-encora job")
+		return 0
+	}
+	return 1
+}
+
+// registerImageRefreshJobs wires the three per-entity image refresh
+// jobs as manual-only. Returns the number successfully registered.
+func registerImageRefreshJobs(
+	runner *jobs.Runner,
+	db *sql.DB,
+	encClient *encora.Client,
+	smClient *stagemedia.Client,
+	imgCache *imagecache.Cache,
+	imgRenderer *imagerender.Renderer,
+) int {
+	if smClient == nil || imgCache == nil || imgCache.Disabled() {
+		return 0
+	}
+	var smSync sync.StagemediaImageClient = smClient
+	var encScreenshots sync.EncoraScreenshotClient
+	if encClient != nil {
+		encScreenshots = encClient
+	}
+
+	count := 0
+	jobsToRegister := []jobs.JobDef{
+		{Job: &builtin.RefreshShowImagesJob{
+			DB: db, Cache: imgCache, SM: smSync, Logger: log.Logger,
+		}},
+		{Job: &builtin.RefreshRecordingImagesJob{
+			DB: db, Cache: imgCache, Encora: encScreenshots, SM: smSync,
+			Renderer: imgRenderer, Logger: log.Logger,
+		}},
+		{Job: &builtin.RefreshActorHeadshotJob{
+			DB: db, Cache: imgCache, SM: smSync, Logger: log.Logger,
+		}},
+	}
+	for _, def := range jobsToRegister {
+		if err := runner.Register(def); err != nil {
+			log.Error().Err(err).
+				Str("job_name", def.Job.Name()).
+				Msg("register image refresh job")
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// registerScanIncoming wires the scan-incoming job when at least one
+// incoming directory is configured. Returns 1 on success, 0 otherwise.
+func registerScanIncoming(runner *jobs.Runner, db *sql.DB) int {
+	if len(appConfig.Library.IncomingDirs) == 0 {
+		return 0
+	}
+	err := runner.Register(jobs.JobDef{
+		Job: &builtin.ScanIncomingJob{
+			DB:           db,
+			IncomingDirs: appConfig.Library.IncomingDirs,
+			Logger:       log.Logger,
+		},
+		Interval: appConfig.Library.WatchInterval,
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("register scan-incoming job")
+		return 0
+	}
+	return 1
 }

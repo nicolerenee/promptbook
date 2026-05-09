@@ -14,32 +14,16 @@ func TestImageChoiceFallbacks(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		choice     storage.ImageChoice
-		wantPoster int
-		wantBack   int
-		fallback   string
-		wantText   string
+		name     string
+		choice   storage.ImageChoice
+		fallback string
+		wantText string
 	}{
 		{
-			name:       "all_unset",
-			choice:     storage.ImageChoice{RecordingID: 1},
-			wantPoster: 0,
-			wantBack:   0,
-			fallback:   "Show · 2009-12",
-			wantText:   "Show · 2009-12",
-		},
-		{
-			name: "explicit_indexes",
-			choice: storage.ImageChoice{
-				RecordingID:   1,
-				PosterIndex:   new(2),
-				BackdropIndex: new(3),
-			},
-			wantPoster: 2,
-			wantBack:   3,
-			fallback:   "fallback",
-			wantText:   "fallback",
+			name:     "all_unset",
+			choice:   storage.ImageChoice{RecordingID: 1},
+			fallback: "Show · 2009-12",
+			wantText: "Show · 2009-12",
 		},
 		{
 			name: "overlay_override",
@@ -47,17 +31,13 @@ func TestImageChoiceFallbacks(t *testing.T) {
 				RecordingID:         1,
 				OverlayTextOverride: new("Custom Label"),
 			},
-			wantPoster: 0,
-			wantBack:   0,
-			fallback:   "fallback",
-			wantText:   "Custom Label",
+			fallback: "fallback",
+			wantText: "Custom Label",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.wantPoster, tt.choice.ResolvePoster())
-			assert.Equal(t, tt.wantBack, tt.choice.ResolveBackdrop())
 			assert.Equal(t, tt.wantText, tt.choice.ResolveOverlayText(tt.fallback))
 		})
 	}
@@ -84,34 +64,30 @@ func TestSetAndGetImageChoice(t *testing.T) {
 	choice, err := storage.GetImageChoice(t.Context(), db, rid)
 	require.NoError(t, err)
 	assert.Equal(t, rid, choice.RecordingID)
-	assert.Nil(t, choice.PosterIndex, "fresh row should have nil poster")
-	assert.Nil(t, choice.BackdropIndex)
 	assert.Nil(t, choice.OverlayTextOverride)
+	assert.Nil(t, choice.OverlayStyleJSON)
+	assert.False(t, choice.OverlayDisabled)
 
-	require.NoError(t, storage.SetPosterIndex(t.Context(), db, rid, 2))
-	require.NoError(t, storage.SetBackdropIndex(t.Context(), db, rid, 1))
 	require.NoError(t, storage.SetOverlayTextOverride(t.Context(), db, rid, "Greenwich Beacon · Broadway · 2017"))
 	require.NoError(t, storage.SetOverlayStyle(t.Context(), db, rid, `{"color":"#cc0000"}`))
+	require.NoError(t, storage.SetOverlayDisabled(t.Context(), db, rid, true))
 
 	choice, err = storage.GetImageChoice(t.Context(), db, rid)
 	require.NoError(t, err)
-	assert.Equal(t, 2, choice.ResolvePoster())
-	assert.Equal(t, 1, choice.ResolveBackdrop())
 	assert.Equal(t, "Greenwich Beacon · Broadway · 2017", choice.ResolveOverlayText("fallback"))
 	require.NotNil(t, choice.OverlayStyleJSON)
 	assert.JSONEq(t, `{"color":"#cc0000"}`, *choice.OverlayStyleJSON)
+	assert.True(t, choice.OverlayDisabled)
 
 	// Clear should null the override so fallback wins again.
 	require.NoError(t, storage.ClearOverlayTextOverride(t.Context(), db, rid))
 	require.NoError(t, storage.SetOverlayStyle(t.Context(), db, rid, ""))
+	require.NoError(t, storage.SetOverlayDisabled(t.Context(), db, rid, false))
 
 	choice, err = storage.GetImageChoice(t.Context(), db, rid)
 	require.NoError(t, err)
 	assert.Nil(t, choice.OverlayTextOverride)
 	assert.Equal(t, "fallback", choice.ResolveOverlayText("fallback"))
 	assert.Nil(t, choice.OverlayStyleJSON)
-	// Index columns survive the overlay clears — upserts only touch
-	// the named column.
-	assert.Equal(t, 2, choice.ResolvePoster())
-	assert.Equal(t, 1, choice.ResolveBackdrop())
+	assert.False(t, choice.OverlayDisabled)
 }

@@ -1,7 +1,6 @@
 package nfo_test
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,7 +11,6 @@ import (
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
-	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // sampleRecordings returns two synthetic recordings for the same show
@@ -65,9 +63,9 @@ func TestWriteShowCollectionNoPoster(t *testing.T) {
 }
 
 // TestWriteShowCollectionWithPoster verifies the poster path: when a
-// poster is cached and a show_image_choices row points at it, the
-// <thumb> + <fanart><thumb> elements appear with a forward-slash
-// relative path computed against Dir.
+// banner.jpg is cached for the show, the <thumb> + <fanart><thumb>
+// elements appear with a forward-slash relative path computed against
+// Dir. Selection is implicit by file existence under the v2 layout.
 func TestWriteShowCollectionWithPoster(t *testing.T) {
 	t.Parallel()
 
@@ -75,17 +73,10 @@ func TestWriteShowCollectionWithPoster(t *testing.T) {
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
 
-	// Stage two posters; the choice row pins index 1 so resolution
-	// must honor it (not fall through to the default 0).
-	writeFakeImage(t, cache.PosterPath(showID, 0))
-	writeFakeImage(t, cache.PosterPath(showID, 1))
-
-	db := openShowChoiceDB(t, showID, "Halcyon Crossing")
-	require.NoError(t, storage.SetShowPosterIndex(t.Context(), db, showID, 1))
+	writeFakeImage(t, cache.ShowBannerPath(showID))
 
 	dir := t.TempDir()
 	written, err := nfo.WriteShowCollectionFile(t.Context(), nfo.ShowWriteOptions{
-		DB:         db,
 		Cache:      cache,
 		ShowID:     showID,
 		ShowName:   "Halcyon Crossing",
@@ -98,7 +89,7 @@ func TestWriteShowCollectionWithPoster(t *testing.T) {
 	require.NoError(t, err)
 	body := string(got)
 
-	expectedRel, relErr := filepath.Rel(dir, cache.PosterPath(showID, 1))
+	expectedRel, relErr := filepath.Rel(dir, cache.ShowBannerPath(showID))
 	require.NoError(t, relErr)
 	assert.Contains(t, body, `<thumb>`+filepath.ToSlash(expectedRel)+`</thumb>`)
 	assert.Contains(t, body, `<fanart>`)
@@ -163,21 +154,4 @@ func TestWriteShowCollectionRejectsEmptyArgs(t *testing.T) {
 			assert.Error(t, err)
 		})
 	}
-}
-
-// openShowChoiceDB spins up a fresh SQLite DB and inserts a shows row
-// so SetShowPosterIndex's FK resolves. Mirrors openImageChoiceDB but
-// scoped to the show-only test path.
-func openShowChoiceDB(t *testing.T, showID int64, name string) *sql.DB {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "show_choices.db")
-	db, err := storage.Open(t.Context(), dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	_, err = db.ExecContext(t.Context(),
-		`INSERT OR IGNORE INTO shows (show_id, name) VALUES (?, ?)`,
-		showID, name)
-	require.NoError(t, err)
-	return db
 }

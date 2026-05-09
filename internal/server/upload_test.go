@@ -24,7 +24,6 @@ import (
 )
 
 // makeTestJPEG returns a tiny valid JPEG used as the upload payload.
-// 4x4 px is enough for image.Decode to succeed.
 func makeTestJPEG(t *testing.T) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
@@ -76,9 +75,7 @@ func postMultipart(
 }
 
 // uploadTestServer builds the same fixture pickerTestServer does but
-// returns the bare handles upload-path tests need. The DB is held in
-// the test goroutine via t.Cleanup; tests don't need a handle to it
-// today so we don't surface one.
+// returns the bare handles upload-path tests need.
 func uploadTestServer(
 	t *testing.T,
 	recordingID, showID int64,
@@ -109,43 +106,36 @@ func uploadTestServer(
 	return srv, cache
 }
 
-func TestAPIUploadBackdrop(t *testing.T) {
+func TestAPIUploadRecordingFanart(t *testing.T) {
 	t.Parallel()
 	const recID, showID int64 = 71001, 5101
 	srv, cache := uploadTestServer(t, recID, showID)
 
 	status, body := postMultipart(t, srv,
-		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/backdrop-upload",
+		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-upload",
 		makeTestJPEG(t))
 
 	require.Equal(t, http.StatusOK, status, body)
 	assert.Equal(t, true, body["ok"])
-	idxF, ok := body["index"].(float64)
-	require.True(t, ok, "index should be a number, got %T", body["index"])
-	assert.GreaterOrEqual(t, int(idxF), imagecache.UploadIndexFloor,
-		"uploaded backdrop should land at or above the upload floor")
-	assert.True(t, cache.HasBackdrop(recID, int(idxF)),
-		"backdrop file should exist at the returned index")
+	assert.True(t, cache.HasRecordingFanart(recID),
+		"fanart.jpg should land at recordings/<id>/fanart.jpg")
 }
 
-func TestAPIUploadShowPoster(t *testing.T) {
+func TestAPIUploadShowBanner(t *testing.T) {
 	t.Parallel()
 	const recID, showID int64 = 71002, 5102
 	srv, cache := uploadTestServer(t, recID, showID)
 
 	status, body := postMultipart(t, srv,
-		"/api/v1/shows/"+strconv.FormatInt(showID, 10)+"/poster-upload",
+		"/api/v1/shows/"+strconv.FormatInt(showID, 10)+"/banner-upload",
 		makeTestJPEG(t))
 
 	require.Equal(t, http.StatusOK, status, body)
 	assert.Equal(t, true, body["ok"])
-	idxF, ok := body["index"].(float64)
-	require.True(t, ok)
-	assert.GreaterOrEqual(t, int(idxF), imagecache.UploadIndexFloor)
-	assert.True(t, cache.HasPoster(showID, int(idxF)))
+	assert.True(t, cache.HasShowBanner(showID))
 }
 
-func TestAPIUploadRecordingPoster(t *testing.T) {
+func TestAPIUploadRecordingPosterTriggersRender(t *testing.T) {
 	t.Parallel()
 	const recID, showID int64 = 71003, 5103
 	srv, cache := uploadTestServer(t, recID, showID)
@@ -156,14 +146,25 @@ func TestAPIUploadRecordingPoster(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, status, body)
 	assert.Equal(t, true, body["ok"])
-	idxF, ok := body["index"].(float64)
-	require.True(t, ok)
-	// Recording-as-show-poster must key the file on show_id, NOT
-	// recording_id — that's the whole point of the wrapper.
-	assert.True(t, cache.HasPoster(showID, int(idxF)),
-		"recording-poster upload must land in the show's poster directory")
-	assert.False(t, cache.HasPoster(recID, int(idxF)),
-		"recording-poster upload must NOT use the recording id as key")
+	// poster-src.jpg lands; poster.jpg won't because the test server
+	// has no Renderer wired (Options.ImageRenderer is nil), and the
+	// regen path nil-checks.
+	assert.True(t, cache.HasRecordingPosterSrc(recID),
+		"poster-src.jpg should land after a successful upload")
+}
+
+func TestAPIUploadActorHeadshot(t *testing.T) {
+	t.Parallel()
+	srv, cache := uploadTestServer(t, 1, 1)
+
+	const actorID int64 = 9001
+	status, body := postMultipart(t, srv,
+		"/api/v1/actors/"+strconv.FormatInt(actorID, 10)+"/headshot-upload",
+		makeTestJPEG(t))
+
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Equal(t, true, body["ok"])
+	assert.True(t, cache.HasHeadshot(actorID))
 }
 
 func TestAPIUploadRejectsBadImage(t *testing.T) {
@@ -174,7 +175,7 @@ func TestAPIUploadRejectsBadImage(t *testing.T) {
 	body, ct := buildMultipart(t, []byte("not an image at all"))
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
-		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/backdrop-upload", body)
+		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-upload", body)
 	req.Header.Set("Content-Type", ct)
 	srv.Handler().ServeHTTP(rr, req)
 
@@ -195,9 +196,10 @@ func TestAPIUploadRequiresImageCache(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: "backdrop", path: "/api/v1/recordings/1/backdrop-upload"},
-		{name: "show_poster", path: "/api/v1/shows/1/poster-upload"},
+		{name: "fanart", path: "/api/v1/recordings/1/fanart-upload"},
+		{name: "show_banner", path: "/api/v1/shows/1/banner-upload"},
 		{name: "recording_poster", path: "/api/v1/recordings/1/poster-upload"},
+		{name: "actor_headshot", path: "/api/v1/actors/1/headshot-upload"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

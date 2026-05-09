@@ -1,6 +1,6 @@
-// Package imagecache stores poster, backdrop, and headshot images on
-// local disk so promptbook detail pages survive upstream deletions and
-// don't hot-link to third-party CDNs.
+// Package imagecache stores the user's chosen poster, fanart, and
+// headshot images on local disk so promptbook detail pages survive
+// upstream deletions and don't hot-link to third-party CDNs.
 //
 // The cache is file-system-backed — there is no SQLite manifest. File
 // existence on disk is the only source of truth; HasX methods are
@@ -8,11 +8,14 @@
 // every method returns the empty/false zero value, callers don't have
 // to nil-check the cache itself.
 //
-// Disk layout (canonical):
+// Disk layout (canonical, single-file-per-slot v2):
 //
-//	<Root>/posters/<show_id>/<index>.jpg
-//	<Root>/backdrops/<recording_id>/<index>.jpg
-//	<Root>/headshots/<actor_id>.jpg
+//	<Root>/actors/<actor_id>.jpg                — single headshot per actor
+//	<Root>/shows/<show_id>/banner.jpg           — show's chosen image
+//	<Root>/recordings/<recording_id>/
+//	    fanart.jpg                              — raw chosen wide image
+//	    poster.jpg                              — vertical poster WITH burned-in overlay
+//	    poster-src.jpg                          — raw source for poster.jpg
 //
 // File extension is always .jpg. StageMedia returns JPEG and Encora's
 // screen grabs are JPEG by convention; if PNG/WEBP support ever
@@ -21,9 +24,14 @@
 package imagecache
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif" // register GIF decoder for image.Decode.
+	"image/jpeg"
+	_ "image/png" // register PNG decoder for image.Decode.
 	"io"
 	"net/http"
 	"os"
@@ -37,9 +45,15 @@ import (
 // Subdirectory names under Root. Exposed as constants so the server's
 // /images/* file server and the cache writer agree on layout.
 const (
-	postersDir   = "posters"
-	backdropsDir = "backdrops"
-	headshotsDir = "headshots"
+	actorsDir     = "actors"
+	showsDir      = "shows"
+	recordingsDir = "recordings"
+
+	// Per-slot filenames inside the per-entity subdirectories.
+	bannerFile    = "banner.jpg"
+	fanartFile    = "fanart.jpg"
+	posterFile    = "poster.jpg"
+	posterSrcFile = "poster-src.jpg"
 
 	// fileExt is the extension every cached image is saved with. See
 	// the package doc for the rationale.
@@ -64,6 +78,11 @@ const (
 	// than this almost certainly isn't an image and signals an
 	// upstream error page or a misconfigured URL.
 	maxImageBytes = 50 * 1024 * 1024
+
+	// uploadJPEGQuality is the JPEG quality factor used when re-encoding
+	// uploaded images. 90 keeps file sizes reasonable while preserving
+	// the detail a poster/banner needs at thumbnail and full-size.
+	uploadJPEGQuality = 90
 )
 
 // ErrDisabled is returned by Fetch* methods when the cache is disabled
@@ -77,12 +96,13 @@ var ErrDisabled = errors.New("imagecache: disabled (no root configured)")
 var ErrNotImage = errors.New("imagecache: response not an image")
 
 // Counts is the on-disk count breakdown the settings page surfaces.
-// Each field is a count of files found under the matching subdirectory
-// — if the cache is disabled or empty, all fields are zero.
+// Each field is a count of files found under the matching slot kind —
+// if the cache is disabled or empty, all fields are zero.
 type Counts struct {
-	Posters   int `json:"posters"`
-	Backdrops int `json:"backdrops"`
-	Headshots int `json:"headshots"`
+	Headshots        int `json:"headshots"`
+	ShowBanners      int `json:"show_banners"`
+	RecordingFanarts int `json:"recording_fanarts"`
+	RecordingPosters int `json:"recording_posters"`
 }
 
 // Cache is the local image cache. Construct via New or as a struct
@@ -115,103 +135,124 @@ func (c *Cache) Disabled() bool {
 	return c == nil || c.Root == ""
 }
 
-// PosterPath returns the canonical filesystem path for a poster. Does
-// not imply the file exists; pair with HasPoster.
-func (c *Cache) PosterPath(showID int64, index int) string {
-	if c.Disabled() {
-		return ""
-	}
-	return filepath.Join(c.Root, postersDir, strconv.FormatInt(showID, 10),
-		strconv.Itoa(index)+fileExt)
-}
-
-// BackdropPath returns the canonical filesystem path for a backdrop.
-// Does not imply existence; pair with HasBackdrop.
-func (c *Cache) BackdropPath(recordingID int64, index int) string {
-	if c.Disabled() {
-		return ""
-	}
-	return filepath.Join(c.Root, backdropsDir, strconv.FormatInt(recordingID, 10),
-		strconv.Itoa(index)+fileExt)
-}
-
-// HeadshotPath returns the canonical filesystem path for a headshot.
-// Does not imply existence; pair with HasHeadshot.
+// HeadshotPath returns the canonical filesystem path for an actor's
+// headshot. Does not imply the file exists; pair with HasHeadshot.
 func (c *Cache) HeadshotPath(actorID int64) string {
 	if c.Disabled() {
 		return ""
 	}
-	return filepath.Join(c.Root, headshotsDir, strconv.FormatInt(actorID, 10)+fileExt)
+	return filepath.Join(c.Root, actorsDir, strconv.FormatInt(actorID, 10)+fileExt)
 }
 
-// HasPoster reports whether a poster file is on disk. False when
-// disabled or when the file is absent.
-func (c *Cache) HasPoster(showID int64, index int) bool {
-	return c.fileExists(c.PosterPath(showID, index))
+// ShowBannerPath returns the canonical filesystem path for a show's
+// chosen banner image. Does not imply existence; pair with HasShowBanner.
+func (c *Cache) ShowBannerPath(showID int64) string {
+	if c.Disabled() {
+		return ""
+	}
+	return filepath.Join(c.Root, showsDir, strconv.FormatInt(showID, 10), bannerFile)
 }
 
-// HasBackdrop reports whether a backdrop file is on disk.
-func (c *Cache) HasBackdrop(recordingID int64, index int) bool {
-	return c.fileExists(c.BackdropPath(recordingID, index))
+// RecordingFanartPath returns the canonical filesystem path for a
+// recording's chosen fanart (wide, raw — no overlay).
+func (c *Cache) RecordingFanartPath(recordingID int64) string {
+	if c.Disabled() {
+		return ""
+	}
+	return filepath.Join(c.Root, recordingsDir,
+		strconv.FormatInt(recordingID, 10), fanartFile)
 }
 
-// HasHeadshot reports whether a headshot file is on disk.
+// RecordingPosterPath returns the canonical filesystem path for a
+// recording's vertical poster with burned-in overlay text.
+func (c *Cache) RecordingPosterPath(recordingID int64) string {
+	if c.Disabled() {
+		return ""
+	}
+	return filepath.Join(c.Root, recordingsDir,
+		strconv.FormatInt(recordingID, 10), posterFile)
+}
+
+// RecordingPosterSrcPath returns the path of the raw poster source —
+// the input the renderer composites the overlay onto to produce
+// poster.jpg. Re-rendering reads this file rather than re-fetching.
+func (c *Cache) RecordingPosterSrcPath(recordingID int64) string {
+	if c.Disabled() {
+		return ""
+	}
+	return filepath.Join(c.Root, recordingsDir,
+		strconv.FormatInt(recordingID, 10), posterSrcFile)
+}
+
+// HasHeadshot reports whether an actor's headshot file is on disk.
 func (c *Cache) HasHeadshot(actorID int64) bool {
 	return c.fileExists(c.HeadshotPath(actorID))
 }
 
-// PosterURL returns the /images/... path the server exposes for the
-// cached poster, or "" when disabled or missing. Always relative —
+// HasShowBanner reports whether a show's banner file is on disk.
+func (c *Cache) HasShowBanner(showID int64) bool {
+	return c.fileExists(c.ShowBannerPath(showID))
+}
+
+// HasRecordingFanart reports whether a recording's fanart file is on disk.
+func (c *Cache) HasRecordingFanart(recordingID int64) bool {
+	return c.fileExists(c.RecordingFanartPath(recordingID))
+}
+
+// HasRecordingPoster reports whether a recording's overlaid poster
+// file is on disk.
+func (c *Cache) HasRecordingPoster(recordingID int64) bool {
+	return c.fileExists(c.RecordingPosterPath(recordingID))
+}
+
+// HasRecordingPosterSrc reports whether the raw poster source is on
+// disk. Used by the renderer to decide whether a re-render is possible.
+func (c *Cache) HasRecordingPosterSrc(recordingID int64) bool {
+	return c.fileExists(c.RecordingPosterSrcPath(recordingID))
+}
+
+// HeadshotURL returns the /images/... path the server exposes for the
+// cached headshot, or "" when disabled or missing. Always relative —
 // callers concatenate the host themselves.
-func (c *Cache) PosterURL(showID int64, index int) string {
-	if c.Disabled() || !c.HasPoster(showID, index) {
-		return ""
-	}
-	return "/images/" + postersDir + "/" + strconv.FormatInt(showID, 10) +
-		"/" + strconv.Itoa(index) + fileExt
-}
-
-// BackdropURL returns the /images/... path for the cached backdrop.
-func (c *Cache) BackdropURL(recordingID int64, index int) string {
-	if c.Disabled() || !c.HasBackdrop(recordingID, index) {
-		return ""
-	}
-	return "/images/" + backdropsDir + "/" + strconv.FormatInt(recordingID, 10) +
-		"/" + strconv.Itoa(index) + fileExt
-}
-
-// HeadshotURL returns the /images/... path for the cached headshot.
 func (c *Cache) HeadshotURL(actorID int64) string {
 	if c.Disabled() || !c.HasHeadshot(actorID) {
 		return ""
 	}
-	return "/images/" + headshotsDir + "/" + strconv.FormatInt(actorID, 10) + fileExt
+	return "/images/" + actorsDir + "/" + strconv.FormatInt(actorID, 10) + fileExt
 }
 
-// FetchPoster downloads url into the canonical poster slot. No-op
-// (returns ErrDisabled) when disabled. Returns the on-disk path on
-// success. When the file already exists the existing path is returned
-// without a network call — Fetch* is idempotent.
-func (c *Cache) FetchPoster(
-	ctx context.Context, showID int64, index int, url string,
-) (string, error) {
-	if c.Disabled() {
-		return "", ErrDisabled
+// ShowBannerURL returns the /images/... path for the cached show banner.
+func (c *Cache) ShowBannerURL(showID int64) string {
+	if c.Disabled() || !c.HasShowBanner(showID) {
+		return ""
 	}
-	return c.fetchTo(ctx, c.PosterPath(showID, index), url)
+	return "/images/" + showsDir + "/" + strconv.FormatInt(showID, 10) + "/" + bannerFile
 }
 
-// FetchBackdrop downloads url into the canonical backdrop slot.
-func (c *Cache) FetchBackdrop(
-	ctx context.Context, recordingID int64, index int, url string,
-) (string, error) {
-	if c.Disabled() {
-		return "", ErrDisabled
+// RecordingFanartURL returns the /images/... path for the cached fanart.
+func (c *Cache) RecordingFanartURL(recordingID int64) string {
+	if c.Disabled() || !c.HasRecordingFanart(recordingID) {
+		return ""
 	}
-	return c.fetchTo(ctx, c.BackdropPath(recordingID, index), url)
+	return "/images/" + recordingsDir + "/" +
+		strconv.FormatInt(recordingID, 10) + "/" + fanartFile
+}
+
+// RecordingPosterURL returns the /images/... path for the cached
+// burned-in poster.
+func (c *Cache) RecordingPosterURL(recordingID int64) string {
+	if c.Disabled() || !c.HasRecordingPoster(recordingID) {
+		return ""
+	}
+	return "/images/" + recordingsDir + "/" +
+		strconv.FormatInt(recordingID, 10) + "/" + posterFile
 }
 
 // FetchHeadshot downloads url into the canonical headshot slot.
+// Idempotent: when the file already exists, the existing path is
+// returned without a network call. Atomic: writes via a sibling .tmp
+// file and renames into place so a partial download never replaces a
+// good file.
 func (c *Cache) FetchHeadshot(
 	ctx context.Context, actorID int64, url string,
 ) (string, error) {
@@ -221,44 +262,100 @@ func (c *Cache) FetchHeadshot(
 	return c.fetchTo(ctx, c.HeadshotPath(actorID), url)
 }
 
-// CountBackdrops returns the number of cached backdrop files on disk
-// for a single recording. Walks <Root>/backdrops/<recording_id>/ —
-// missing directory returns 0, and a disabled cache returns 0 without
-// touching the filesystem. Useful for the recording-detail API which
-// needs to enumerate every cached backdrop, not just the first one.
-func (c *Cache) CountBackdrops(recordingID int64) int {
+// FetchShowBanner downloads url into the canonical banner slot.
+func (c *Cache) FetchShowBanner(
+	ctx context.Context, showID int64, url string,
+) (string, error) {
 	if c.Disabled() {
-		return 0
+		return "", ErrDisabled
 	}
-	return c.countTree(filepath.Join(c.Root, backdropsDir,
-		strconv.FormatInt(recordingID, 10)))
+	return c.fetchTo(ctx, c.ShowBannerPath(showID), url)
 }
 
-// CountPosters returns the number of cached poster files on disk for a
-// single show. Walks <Root>/posters/<show_id>/ — missing directory
-// returns 0, and a disabled cache returns 0 without touching the
-// filesystem. Mirrors CountBackdrops; used by the recording-detail
-// picker handlers to bounds-check incoming index values.
-func (c *Cache) CountPosters(showID int64) int {
+// FetchRecordingFanart downloads url into the canonical fanart slot.
+func (c *Cache) FetchRecordingFanart(
+	ctx context.Context, recordingID int64, url string,
+) (string, error) {
 	if c.Disabled() {
-		return 0
+		return "", ErrDisabled
 	}
-	return c.countTree(filepath.Join(c.Root, postersDir,
-		strconv.FormatInt(showID, 10)))
+	return c.fetchTo(ctx, c.RecordingFanartPath(recordingID), url)
 }
 
-// Counts walks the cache root and tallies files per kind. Returns the
-// zero Counts when disabled or when the root doesn't exist yet (empty
-// cache, no failures).
+// FetchRecordingPosterSrc downloads url into the canonical poster
+// source slot. Callers typically follow up with imagerender.Regenerate
+// to produce poster.jpg from the freshly-saved source.
+func (c *Cache) FetchRecordingPosterSrc(
+	ctx context.Context, recordingID int64, url string,
+) (string, error) {
+	if c.Disabled() {
+		return "", ErrDisabled
+	}
+	return c.fetchTo(ctx, c.RecordingPosterSrcPath(recordingID), url)
+}
+
+// SaveUploadedHeadshot writes raw upload bytes to the headshot slot,
+// re-encoding through image.Decode + jpeg.Encode so the on-disk shape
+// is uniform regardless of upload format. The write is atomic: the
+// re-encoded bytes land in a sibling .tmp file and rename into place.
+func (c *Cache) SaveUploadedHeadshot(
+	_ context.Context, actorID int64, body io.Reader,
+) error {
+	if c.Disabled() {
+		return ErrDisabled
+	}
+	return c.writeUploadedJPEG(c.HeadshotPath(actorID), body)
+}
+
+// SaveUploadedShowBanner writes raw upload bytes to the show banner slot.
+func (c *Cache) SaveUploadedShowBanner(
+	_ context.Context, showID int64, body io.Reader,
+) error {
+	if c.Disabled() {
+		return ErrDisabled
+	}
+	return c.writeUploadedJPEG(c.ShowBannerPath(showID), body)
+}
+
+// SaveUploadedRecordingFanart writes raw upload bytes to the fanart slot.
+func (c *Cache) SaveUploadedRecordingFanart(
+	_ context.Context, recordingID int64, body io.Reader,
+) error {
+	if c.Disabled() {
+		return ErrDisabled
+	}
+	return c.writeUploadedJPEG(c.RecordingFanartPath(recordingID), body)
+}
+
+// SaveUploadedRecordingPosterSrc writes raw upload bytes to the poster
+// source slot. Callers typically follow up with imagerender.Regenerate
+// to refresh poster.jpg from the new source.
+func (c *Cache) SaveUploadedRecordingPosterSrc(
+	_ context.Context, recordingID int64, body io.Reader,
+) error {
+	if c.Disabled() {
+		return ErrDisabled
+	}
+	return c.writeUploadedJPEG(c.RecordingPosterSrcPath(recordingID), body)
+}
+
+// Counts walks the cache root and tallies files per slot kind. Returns
+// the zero Counts when disabled or when the root doesn't exist yet
+// (empty cache, no failures).
 func (c *Cache) Counts() Counts {
 	if c.Disabled() {
 		return Counts{}
 	}
-	return Counts{
-		Posters:   c.countTree(filepath.Join(c.Root, postersDir)),
-		Backdrops: c.countTree(filepath.Join(c.Root, backdropsDir)),
-		Headshots: c.countTree(filepath.Join(c.Root, headshotsDir)),
-	}
+	out := Counts{}
+	out.Headshots = c.countTree(filepath.Join(c.Root, actorsDir))
+	// Show banners: count banner.jpg files under shows/<id>/.
+	out.ShowBanners = c.countNamed(filepath.Join(c.Root, showsDir), bannerFile)
+	// Recording fanarts + posters: count specifically-named files under
+	// recordings/<id>/. poster-src.jpg isn't counted — it's an internal
+	// re-render input, not a slot the user surfaces in the UI.
+	out.RecordingFanarts = c.countNamed(filepath.Join(c.Root, recordingsDir), fanartFile)
+	out.RecordingPosters = c.countNamed(filepath.Join(c.Root, recordingsDir), posterFile)
+	return out
 }
 
 // fileExists is a small helper around os.Stat. Returns false on any
@@ -275,11 +372,11 @@ func (c *Cache) fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-// fetchTo downloads url into dest, idempotently. The parent directory
-// is created if needed. When the destination already exists the
-// function returns without a network call. Errors from the upstream
-// fetch are returned to the caller — they're expected to log and
-// continue, never propagate up to fail a sync run.
+// fetchTo downloads url into dest, idempotently and atomically. The
+// parent directory is created if needed. When the destination already
+// exists the function returns without a network call. Errors from the
+// upstream fetch are returned to the caller — they're expected to log
+// and continue, never propagate up to fail a sync run.
 func (c *Cache) fetchTo(ctx context.Context, dest, url string) (string, error) {
 	if dest == "" {
 		return "", ErrDisabled
@@ -294,8 +391,8 @@ func (c *Cache) fetchTo(ctx context.Context, dest, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if writeErr := os.WriteFile(dest, body, fileMode); writeErr != nil {
-		return "", fmt.Errorf("write %s: %w", dest, writeErr)
+	if writeErr := writeAtomic(dest, body); writeErr != nil {
+		return "", writeErr
 	}
 	c.Logger.Debug().
 		Str("url", url).
@@ -303,6 +400,55 @@ func (c *Cache) fetchTo(ctx context.Context, dest, url string) (string, error) {
 		Int("bytes", len(body)).
 		Msg("imagecache: stored")
 	return dest, nil
+}
+
+// writeUploadedJPEG decodes body, re-encodes the result as a JPEG at
+// uploadJPEGQuality, and atomically writes it to dest. The parent
+// directory is created if needed. A decode failure surfaces as an
+// error (the caller maps it to HTTP 400 — bad upload) and no file is
+// written.
+//
+// PNG transparency is flattened to whatever Go's jpeg encoder does by
+// default (transparent pixels become black). Slot images are
+// rectangular display assets so this is the right trade-off; a future
+// opt-in could persist a parallel .png on top of the .jpg if the use
+// case ever demands transparency.
+func (c *Cache) writeUploadedJPEG(dest string, body io.Reader) error {
+	if dest == "" {
+		return ErrDisabled
+	}
+	img, _, err := image.Decode(body)
+	if err != nil {
+		return fmt.Errorf("decode upload: %w", err)
+	}
+	var buf bytes.Buffer
+	if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: uploadJPEGQuality}); encErr != nil {
+		return fmt.Errorf("encode jpeg: %w", encErr)
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(dest), dirMode); mkErr != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), mkErr)
+	}
+	return writeAtomic(dest, buf.Bytes())
+}
+
+// writeAtomic writes body to a sibling .tmp path and renames it over
+// dest on success. A partial write (interrupted by a crash) leaves the
+// previous good file in place and a stray .tmp the next call's defer
+// reaps.
+func writeAtomic(dest string, body []byte) error {
+	tmp := dest + ".tmp"
+	// Best-effort cleanup of any stale tmp from a prior crash.
+	if _, statErr := os.Stat(tmp); statErr == nil {
+		_ = os.Remove(tmp)
+	}
+	if err := os.WriteFile(tmp, body, fileMode); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if renameErr := os.Rename(tmp, dest); renameErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename %s -> %s: %w", tmp, dest, renameErr)
+	}
+	return nil
 }
 
 // fetchBody issues the HTTP GET, sanity-checks the Content-Type, and
@@ -373,6 +519,32 @@ func (c *Cache) countTree(dir string) int {
 	})
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		c.Logger.Warn().Err(err).Str("dir", dir).Msg("imagecache: count walk failed")
+	}
+	return count
+}
+
+// countNamed walks one level of subdirectories under dir and tallies
+// files matching basename. Used by Counts to count slot files (e.g.
+// banner.jpg per show) without lumping in sibling files like
+// poster-src.jpg.
+func (c *Cache) countNamed(dir, basename string) int {
+	count := 0
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0
+	}
+	if err != nil {
+		c.Logger.Warn().Err(err).Str("dir", dir).Msg("imagecache: count walk failed")
+		return 0
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name(), basename)
+		if c.fileExists(path) {
+			count++
+		}
 	}
 	return count
 }

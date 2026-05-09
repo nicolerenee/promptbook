@@ -1,8 +1,8 @@
-// Package imagerender produces the burned-in backdrop image
-// (rendered.jpg) the NFO writer points Jellyfin/Plex at as
-// <fanart>. The raw Encora screen-grab is preserved on disk under
-// backdrops/<recording_id>/<index>.jpg; rendered.jpg sits next to it
-// with the user-curated text band composited at the bottom.
+// Package imagerender produces the burned-in poster image (poster.jpg)
+// the NFO writer points Jellyfin/Plex at as <thumb aspect="poster">.
+// The raw poster source lives at recordings/<id>/poster-src.jpg;
+// poster.jpg sits next to it with the user-curated text band
+// composited at the bottom.
 //
 // The composite is intentionally playbill-inspired but flipped: a
 // near-black band runs across the bottom 14 % of the image, and the
@@ -35,9 +35,9 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// Renderer composites raw backdrops with a user-curated text overlay
-// and writes the result to rendered.jpg under the same recording's
-// backdrop directory.
+// Renderer composites the raw poster source with a user-curated text
+// overlay and writes the result to poster.jpg under the recording's
+// directory.
 type Renderer struct {
 	DB     *sql.DB
 	Cache  *imagecache.Cache
@@ -53,11 +53,11 @@ func New(db *sql.DB, cache *imagecache.Cache, logger zerolog.Logger) *Renderer {
 	return &Renderer{DB: db, Cache: cache, Logger: logger}
 }
 
-// Regenerate composes rendered.jpg for the recording from its
-// currently-selected raw backdrop and the overlay text + style stored
-// in recording_image_choices. Idempotent — calling it repeatedly for
-// the same selection produces a byte-identical file. No-op when the
-// recording has no cached backdrops.
+// Regenerate composes poster.jpg for the recording from poster-src.jpg
+// and the overlay text + style stored in recording_image_choices.
+// Idempotent — calling it repeatedly for the same source + style
+// produces a byte-identical file. No-op when the recording has no
+// poster-src.jpg on disk.
 func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	if r == nil {
 		return nil
@@ -67,33 +67,30 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	if err != nil {
 		return fmt.Errorf("imagerender: load image choice for %d: %w", recordingID, err)
 	}
-	backdropIdx := choice.ResolveBackdrop()
 
-	if !r.Cache.HasBackdrop(recordingID, backdropIdx) {
-		// Nothing to render yet — sync hasn't fetched a backdrop or the
-		// user picked an index that isn't on disk. Soft no-op.
+	if !r.Cache.HasRecordingPosterSrc(recordingID) {
+		// Nothing to render yet — refresh-recording-images hasn't
+		// pulled a poster source or the user uploaded one. Soft no-op.
 		r.Logger.Debug().
 			Int64("recording_id", recordingID).
-			Int("backdrop_index", backdropIdx).
-			Msg("imagerender: no backdrop on disk; skipping")
+			Msg("imagerender: no poster-src on disk; skipping")
 		return nil
 	}
-	srcPath := r.Cache.BackdropPath(recordingID, backdropIdx)
-	destPath := filepath.Join(filepath.Dir(srcPath), "rendered.jpg")
+	srcPath := r.Cache.RecordingPosterSrcPath(recordingID)
+	destPath := r.Cache.RecordingPosterPath(recordingID)
 
-	// Burn-in opt-out: copy the raw selected backdrop verbatim to
-	// rendered.jpg so the NFO writer's <fanart> still resolves but the
-	// resulting file carries no compositing. We stream bytes (no decode/
-	// re-encode) so the user's chosen image lands on disk lossless.
+	// Burn-in opt-out: copy poster-src.jpg verbatim to poster.jpg so
+	// the NFO writer's <thumb> still resolves but the resulting file
+	// carries no compositing. We stream bytes (no decode/re-encode) so
+	// the user's chosen image lands on disk lossless.
 	if choice.OverlayDisabled {
 		if copyErr := copyFileAtomic(srcPath, destPath); copyErr != nil {
 			return fmt.Errorf("imagerender: copy raw %s -> %s: %w", srcPath, destPath, copyErr)
 		}
 		r.Logger.Debug().
 			Int64("recording_id", recordingID).
-			Int("backdrop_index", backdropIdx).
 			Str("dest", destPath).
-			Msg("imagerender: overlay disabled; rendered.jpg is raw copy")
+			Msg("imagerender: overlay disabled; poster.jpg is raw copy")
 		return nil
 	}
 
@@ -130,9 +127,8 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	}
 	r.Logger.Debug().
 		Int64("recording_id", recordingID).
-		Int("backdrop_index", backdropIdx).
 		Str("dest", destPath).
-		Msg("imagerender: rendered.jpg written")
+		Msg("imagerender: poster.jpg written")
 	return nil
 }
 
@@ -230,6 +226,9 @@ func decodeJPEG(path string) (image.Image, error) {
 // over dest on success. A partial render never overwrites a previously
 // good file.
 func writeJPEGAtomic(dest string, img image.Image) error {
+	if dest == "" {
+		return errors.New("imagerender: empty destination path")
+	}
 	if mkErr := os.MkdirAll(filepath.Dir(dest), dirMode); mkErr != nil {
 		return fmt.Errorf("mkdir: %w", mkErr)
 	}

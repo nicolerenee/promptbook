@@ -9,16 +9,16 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// handleRegenerateBackdrop forces a re-render of rendered.jpg for the
+// handleRegeneratePoster forces a re-render of poster.jpg for the
 // given recording. Useful as a manual "Re-render" affordance and as a
-// cheap smoke test from curl. The picker UI's POST handlers also call
+// cheap smoke test from curl. The overlay/upload paths also call
 // imagerender.Regenerate directly when a choice changes, so this
 // endpoint is purely additive — it doesn't alter any DB state.
 //
 // 503 when the renderer wasn't wired (no image cache configured), 404
 // when the recording isn't in the local catalog, 200 with a tiny JSON
 // body on success.
-func (s *Server) handleRegenerateBackdrop(c echo.Context) error {
+func (s *Server) handleRegeneratePoster(c echo.Context) error {
 	if s.imageRenderer == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "image renderer not configured")
 	}

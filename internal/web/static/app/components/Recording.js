@@ -138,10 +138,9 @@ function basename(p) {
 }
 
 // loadRecording fetches /api/v1/recordings/:id and parks the response
-// on state.recording. Used both on initial mount and after a successful
-// danger-zone POST so the buttons reflect the new state. Also seeds
-// the picker view-model fields (selectedPosterIndex, ...) from the
-// payload so the picker UI lights up the green ring on first paint.
+// on state.recording. Under the v2 image cache the payload exposes
+// scalar image URLs (local_fanart_url, local_poster_url) rather than
+// indexed arrays — the chosen image IS the only image on disk.
 function loadRecording(id) {
   state.recording.loading = true;
   state.recording.error = null;
@@ -151,12 +150,6 @@ function loadRecording(id) {
     .then((body) => {
       state.recording.loaded = body;
       state.recording.loading = false;
-      state.recording.selectedPosterIndex =
-        body && body.selected_poster_index != null
-          ? body.selected_poster_index : null;
-      state.recording.selectedBackdropIndex =
-        body && body.selected_backdrop_index != null
-          ? body.selected_backdrop_index : null;
       state.recording.overlayOverride =
         body && body.overlay_text_override != null
           ? body.overlay_text_override : null;
@@ -195,20 +188,6 @@ function autoOverlayText(loaded) {
   return parts.join(' · ');
 }
 
-// posterIndexHighlight / backdropIndexHighlight return the index
-// currently rendered with the green selection ring. Both default to 0
-// when no choice has been saved — matching storage.ImageChoice's
-// Resolve* fallback so the UI agrees with what the renderer would
-// actually use for that recording.
-function posterIndexHighlight() {
-  return state.recording.selectedPosterIndex != null
-    ? state.recording.selectedPosterIndex : 0;
-}
-function backdropIndexHighlight() {
-  return state.recording.selectedBackdropIndex != null
-    ? state.recording.selectedBackdropIndex : 0;
-}
-
 // postPickerChoice issues a POST against the supplied path with the
 // JSON body. Locks state.recording.imageBusy for the duration so the
 // thumbnail buttons disable to prevent double-clicks; updates
@@ -242,17 +221,14 @@ function postPickerChoice(path, body, onSuccess) {
 }
 
 // runUpload pipes a picked File through the supplied upload endpoint,
-// then (on success) re-fetches the recording detail so the new
-// thumbnail joins the strip and posts the matching selection endpoint
-// so the upload becomes the active choice. Reuses imageBusy/imageError
-// for the busy/error UX so the picker controls stay coherent —
-// uploads visually behave like any other picker action.
+// then (on success) re-fetches the recording detail so local_*_url
+// fields pick up the newly-saved slot. Under the v2 layout the slot
+// itself IS the chosen image — no follow-up "make this the selection"
+// POST is needed.
 //
-// kind   — 'poster' | 'backdrop'; determines which selection endpoint
-//          to POST after the upload lands.
-// path   — upload endpoint, server-relative including /api/v1.
-// id     — the recording id, used to construct the selection endpoint.
-function runUpload(kind, path, id, file) {
+// path — upload endpoint, server-relative including /api/v1.
+// id   — the recording id, used to re-load detail after the upload.
+function runUpload(path, id, file) {
   if (!file) return;
   if (state.recording.imageBusy) return;
   state.recording.imageBusy = true;
@@ -261,31 +237,14 @@ function runUpload(kind, path, id, file) {
 
   uploadFile(path, file)
     .then((resp) => {
+      state.recording.imageBusy = false;
       if (!resp || resp.ok !== true) {
-        const msg = (resp && resp.error) || 'upload failed';
-        state.recording.imageError = msg;
-        state.recording.imageBusy = false;
+        state.recording.imageError = (resp && resp.error) || 'upload failed';
         m.redraw();
         return null;
       }
-      const newIdx = resp.index;
-      // Re-fetch the recording so local_poster_urls / local_backdrop_urls
-      // pick up the freshly-saved file. loadRecording sets imageBusy to
-      // false implicitly (no — it only resets dangerBusy/Error +
-      // imageError). Clear it ourselves before the selection POST.
-      state.recording.imageBusy = false;
-      return loadRecording(id).then(() => {
-        // Promote the upload to the active selection. postPickerChoice
-        // handles the imageBusy + redraw lifecycle on its own.
-        const selectionPath = '/recordings/' + id + '/' + kind;
-        postPickerChoice(selectionPath, { index: newIdx }, () => {
-          if (kind === 'poster') {
-            state.recording.selectedPosterIndex = newIdx;
-          } else {
-            state.recording.selectedBackdropIndex = newIdx;
-          }
-        });
-      });
+      // Re-fetch so local_*_url picks up the new slot.
+      return loadRecording(id);
     })
     .catch((err) => {
       state.recording.imageBusy = false;
@@ -466,19 +425,12 @@ function renderHeader(loaded) {
   ]);
 }
 
-// renderPosterCard shows the active poster (the one the user has
-// selected, or the default at index 0) as an <img>, or a neutral
-// placeholder when none is available. The image-picker UI lives in
-// the modal opened from the header's "Edit images" button.
+// renderPosterCard shows the cached poster.jpg (the burned-in render
+// output) or a neutral placeholder. Under v2 the chosen image is the
+// only image — no index dance, no upstream fallback (the picker UI
+// fetches options live in Phase 4).
 function renderPosterCard(loaded) {
-  // Prefer the local cached posters since those are what the renderer
-  // actually uses; fall back to the upstream stagemedia URLs when the
-  // cache hasn't populated yet.
-  const local = (loaded && loaded.local_poster_urls) || [];
-  const upstream = (loaded && loaded.posters) || [];
-  const urls = local.length > 0 ? local : upstream;
-  const idx = posterIndexHighlight();
-  const chosen = urls[idx] || urls[0] || '';
+  const chosen = (loaded && loaded.local_poster_url) || '';
   const figure = chosen
     ? m('figure', m('img', {
         src: chosen,
@@ -702,119 +654,65 @@ function renderDangerZone(loaded) {
   ]);
 }
 
-// renderImageThumb is the per-thumbnail vnode used by both the poster
-// and backdrop strips. Renders an <img> wrapped in a button so the
-// selection is keyboard-reachable; the green ring lights up when the
-// supplied index matches the currently-selected one.
-function renderImageThumb({ url, alt, selected, busy, onclick, aspect }) {
-  const ringClass = selected ? ' ring-2 ring-success' : '';
-  const opacityClass = busy ? ' opacity-50' : '';
-  // Use inline width/height styles via tailwind classes — w-32 matches
-  // ~128px, balanced enough for both 2:3 posters and 16:9 backdrops.
+// renderSlotPreview is the v2 picker tab body for a single slot
+// (poster / fanart). Shows the current cached image (if any) plus an
+// Upload button that posts to the matching slot endpoint. The browse-
+// upstream-options UI lands in Phase 4; this preview is the minimal
+// affordance the user needs to override the auto-fetched slot.
+function renderSlotPreview({ url, alt, aspect, uploadLabel, uploadPath, id }) {
+  const busy = state.recording.imageBusy;
   const figureClass = 'rounded overflow-hidden bg-base-200 ' +
-    (aspect === 'backdrop' ? 'w-48 aspect-video' : 'w-32 aspect-[2/3]');
-  return m('button', {
-    type: 'button',
-    class: 'btn btn-ghost p-0 h-auto rounded' + ringClass + opacityClass,
-    disabled: busy,
-    onclick,
-    'aria-pressed': selected ? 'true' : 'false',
-  }, m('figure', { class: figureClass }, m('img', {
-    src: url,
-    alt,
-    class: 'w-full h-full object-cover',
-    loading: 'lazy',
-  })));
+    (aspect === 'backdrop' ? 'w-full aspect-video max-w-2xl' : 'w-48 aspect-[2/3]');
+  return m('section', { class: 'space-y-3' }, [
+    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+      m('h3', { class: 'text-sm font-semibold' }, uploadLabel),
+      renderUploadButton({
+        label: 'Upload ' + (aspect === 'backdrop' ? 'fanart' : 'poster'),
+        disabled: busy,
+        onSelect: (file) => runUpload(uploadPath, id, file),
+      }),
+    ]),
+    url
+      ? m('figure', { class: figureClass }, m('img', {
+          src: url,
+          alt,
+          class: 'w-full h-full object-cover',
+          loading: 'lazy',
+        }))
+      : m('div', { class: 'opacity-60 text-sm' },
+          'No image on disk yet — upload one, or wait for the next ' +
+          'refresh-encora job to populate this slot. ' +
+          'A live picker for upstream options lands in Phase 4.'),
+  ]);
 }
 
-// renderPosterPicker is the poster thumbnail strip subsection. Empty
-// state nudges the user to sync; otherwise renders one thumb per
-// cached poster with the selected one highlighted. The Upload button
-// next to the heading triggers a hidden file picker; the chosen file
-// is posted to /recordings/:id/poster-upload (which server-side
-// resolves the recording's show_id and saves under the show's poster
-// directory at index >= UploadIndexFloor).
+// renderPosterPicker is the poster tab. Single slot under v2 — no
+// thumbnail strip, no green-ring index. Phase 4 will add live upstream
+// option browsing; for now this is preview + upload.
 function renderPosterPicker(loaded) {
-  const urls = (loaded.local_poster_urls || []).filter((u) => !!u);
   const id = loaded.Recording.id;
-  const highlight = posterIndexHighlight();
-  const busy = state.recording.imageBusy;
-  return m('section', { class: 'space-y-2' }, [
-    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-      m('h3', { class: 'text-sm font-semibold' },
-        'Posters · ' + urls.length + ' available'),
-      renderUploadButton({
-        label: 'Upload poster',
-        disabled: busy,
-        onSelect: (file) => runUpload(
-          'poster',
-          '/api/v1/recordings/' + id + '/poster-upload',
-          id,
-          file,
-        ),
-      }),
-    ]),
-    urls.length === 0
-      ? m('div', { class: 'opacity-60 text-sm' },
-          'No posters cached yet — sync to fetch, or upload your own.')
-      : m('div', { class: 'flex flex-wrap gap-3' },
-          urls.map((url, i) => renderImageThumb({
-            url,
-            alt: 'poster ' + (i + 1),
-            selected: i === highlight,
-            busy,
-            aspect: 'poster',
-            onclick: () => postPickerChoice(
-              '/recordings/' + id + '/poster',
-              { index: i },
-              () => { state.recording.selectedPosterIndex = i; },
-            ),
-          }))),
-  ]);
+  return renderSlotPreview({
+    url: loaded.local_poster_url || '',
+    alt: (loaded.Recording.show || 'recording') + ' poster',
+    aspect: 'poster',
+    uploadLabel: 'Poster',
+    uploadPath: '/api/v1/recordings/' + id + '/poster-upload',
+    id,
+  });
 }
 
-// renderBackdropPicker is the backdrop thumbnail strip subsection.
-// Visually wider than the poster strip because backdrops are 16:9.
-// The Upload button mirrors the poster strip's affordance — a chosen
-// file is POSTed to /recordings/:id/backdrop-upload and lands at
-// index >= UploadIndexFloor in the recording's backdrop directory.
+// renderBackdropPicker is the fanart tab. Same shape as the poster
+// tab but the slot is fanart.jpg and the aspect is 16:9.
 function renderBackdropPicker(loaded) {
-  const urls = loaded.local_backdrop_urls || [];
   const id = loaded.Recording.id;
-  const highlight = backdropIndexHighlight();
-  const busy = state.recording.imageBusy;
-  return m('section', { class: 'space-y-2' }, [
-    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-      m('h3', { class: 'text-sm font-semibold' },
-        'Backdrops · ' + urls.length + ' available'),
-      renderUploadButton({
-        label: 'Upload backdrop',
-        disabled: busy,
-        onSelect: (file) => runUpload(
-          'backdrop',
-          '/api/v1/recordings/' + id + '/backdrop-upload',
-          id,
-          file,
-        ),
-      }),
-    ]),
-    urls.length === 0
-      ? m('div', { class: 'opacity-60 text-sm' },
-          'No backdrops cached yet — sync to fetch screen-grabs, or upload your own.')
-      : m('div', { class: 'flex flex-wrap gap-3' },
-          urls.map((url, i) => renderImageThumb({
-            url,
-            alt: 'backdrop ' + (i + 1),
-            selected: i === highlight,
-            busy,
-            aspect: 'backdrop',
-            onclick: () => postPickerChoice(
-              '/recordings/' + id + '/backdrop',
-              { index: i },
-              () => { state.recording.selectedBackdropIndex = i; },
-            ),
-          }))),
-  ]);
+  return renderSlotPreview({
+    url: loaded.local_fanart_url || '',
+    alt: (loaded.Recording.show || 'recording') + ' fanart',
+    aspect: 'backdrop',
+    uploadLabel: 'Fanart',
+    uploadPath: '/api/v1/recordings/' + id + '/fanart-upload',
+    id,
+  });
 }
 
 // renderOverlayEditor is the burned-in-text override subsection. The

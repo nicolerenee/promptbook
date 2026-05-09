@@ -23,7 +23,6 @@ import (
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/rename"
-	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // isoYearLen is the prefix-length of year on Encora's ISO date strings.
@@ -289,20 +288,16 @@ func MovieNFOPathForPlan(p rename.Plan) string {
 	return filepath.Join(p.AbsoluteFolder(), "movie.nfo")
 }
 
-// renderedBackdropName is the filename the imagerender package writes
-// when it produces a playbill-style burned-in backdrop. When present in
-// the same backdrop directory as the raw screen-grabs, it takes
-// precedence — Jellyfin/Plex pull the rendered version into their own
-// metadata cache and we never want them showing the un-overlaid grab.
-const renderedBackdropName = "rendered.jpg"
-
 // WriteOptions carries the optional plumbing the writer needs to emit
-// local image references in the NFO. Both DB and Cache are optional;
-// when either is nil or the cache is disabled, the writer skips image
-// resolution and the NFO simply omits the <thumb> / <fanart> elements.
+// local image references in the NFO. Cache is optional; when nil or
+// the cache is disabled, the writer skips image resolution and the
+// NFO simply omits the <thumb> / <fanart> elements. DB is unused
+// today — under the v2 single-file-per-slot layout image selection is
+// implicit by file existence — but the field is kept for API stability
+// and a future audit-trail use case.
 type WriteOptions struct {
-	// DB is queried for the user's image_choice row. nil disables image
-	// references regardless of Cache state.
+	// DB is reserved for future use (audit trail of which choice was
+	// in effect when the NFO was written). Currently ignored.
 	DB *sql.DB
 	// Cache is the on-disk image cache. nil or Cache.Disabled() == true
 	// disables image references.
@@ -310,21 +305,20 @@ type WriteOptions struct {
 }
 
 // WriteRecordingFile renders the NFO for rec into folder, including
-// local poster / fanart references when opts has a usable DB + Cache.
+// local poster / fanart references when opts has a usable Cache.
 // Returns the absolute path to the written movie.nfo.
 //
-// Image-reference resolution is best-effort: any error from the image
-// choice lookup is swallowed silently so a transient DB hiccup never
-// blocks an otherwise-successful ingest. The caller's logger picks up
-// the missing references on the next manual inspection.
+// Image-reference resolution is best-effort: a missing slot file
+// simply omits the corresponding element rather than emitting a
+// broken reference.
 func WriteRecordingFile(
-	ctx context.Context,
+	_ context.Context,
 	folder string,
 	rec encora.Recording,
 	opts WriteOptions,
 ) (string, error) {
 	model := FromRecording(rec)
-	posterRel, fanartRel := resolveLocalImagePaths(ctx, opts.DB, opts.Cache, rec, folder)
+	posterRel, fanartRel := resolveLocalImagePaths(opts.Cache, rec, folder)
 	if posterRel != "" {
 		model.Thumbs = append(model.Thumbs, Thumb{Aspect: "poster", Path: posterRel})
 	}
@@ -337,73 +331,29 @@ func WriteRecordingFile(
 // resolveLocalImagePaths returns NFO-relative paths to the poster and
 // fanart images on disk, or empty strings when imaging is disabled or
 // the file is missing. Both paths use forward slashes regardless of
-// host OS — the Jellyfin/Plex convention. The fanart path prefers a
-// rendered.jpg sibling (the imagerender output with the playbill-style
-// overlay burned in) over the raw selected screen-grab.
+// host OS — the Jellyfin/Plex convention.
 //
-// Returns (poster, fanart). Either can be empty independently.
+// Returns (poster, fanart). Either can be empty independently. Under
+// v2 the poster slot is recordings/<id>/poster.jpg (the renderer's
+// burned-in output) and the fanart slot is recordings/<id>/fanart.jpg
+// (the raw wide image, no overlay).
 func resolveLocalImagePaths(
-	ctx context.Context,
-	db *sql.DB,
 	cache *imagecache.Cache,
 	rec encora.Recording,
 	nfoDir string,
 ) (string, string) {
-	if cache == nil || cache.Disabled() || db == nil {
-		return "", ""
-	}
-	choice, err := storage.GetImageChoice(ctx, db, rec.ID)
-	if err != nil {
-		// Best-effort: a DB read failure isn't worth failing the NFO
-		// over. Caller still gets a valid NFO without image hints.
+	if cache == nil || cache.Disabled() {
 		return "", ""
 	}
 
-	return relPosterPath(cache, rec, choice, nfoDir), relFanartPath(cache, rec, choice, nfoDir)
-}
-
-// relPosterPath returns the NFO-relative path to the user's selected
-// poster, or "" when the file isn't on disk.
-func relPosterPath(
-	cache *imagecache.Cache,
-	rec encora.Recording,
-	choice storage.ImageChoice,
-	nfoDir string,
-) string {
-	idx := choice.ResolvePoster()
-	if !cache.HasPoster(rec.Metadata.ShowID, idx) {
-		return ""
+	var posterRel, fanartRel string
+	if cache.HasRecordingPoster(rec.ID) {
+		posterRel = relForNFO(nfoDir, cache.RecordingPosterPath(rec.ID))
 	}
-	abs := cache.PosterPath(rec.Metadata.ShowID, idx)
-	return relForNFO(nfoDir, abs)
-}
-
-// relFanartPath returns the NFO-relative path to the fanart, preferring
-// a rendered.jpg sibling when present. Returns "" when neither the
-// rendered nor the raw selected backdrop is on disk.
-func relFanartPath(
-	cache *imagecache.Cache,
-	rec encora.Recording,
-	choice storage.ImageChoice,
-	nfoDir string,
-) string {
-	idx := choice.ResolveBackdrop()
-	rawAbs := cache.BackdropPath(rec.ID, idx)
-	if rawAbs == "" {
-		return ""
+	if cache.HasRecordingFanart(rec.ID) {
+		fanartRel = relForNFO(nfoDir, cache.RecordingFanartPath(rec.ID))
 	}
-	// rendered.jpg lives in the same directory as the raw indexed
-	// backdrops. When the renderer has produced one, we point Jellyfin
-	// at it instead — the playbill-style overlay is the whole point of
-	// the rendered output.
-	renderedAbs := filepath.Join(filepath.Dir(rawAbs), renderedBackdropName)
-	if fileExists(renderedAbs) {
-		return relForNFO(nfoDir, renderedAbs)
-	}
-	if cache.HasBackdrop(rec.ID, idx) {
-		return relForNFO(nfoDir, rawAbs)
-	}
-	return ""
+	return posterRel, fanartRel
 }
 
 // relForNFO converts an absolute on-disk path into a path relative to
@@ -416,18 +366,4 @@ func relForNFO(nfoDir, abs string) string {
 		return ""
 	}
 	return filepath.ToSlash(rel)
-}
-
-// fileExists is a small helper around os.Stat used by the rendered.jpg
-// precedence check. Mirrors imagecache.fileExists but kept package-local
-// to avoid widening that package's public surface.
-func fileExists(path string) bool {
-	if path == "" {
-		return false
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return !info.IsDir()
 }

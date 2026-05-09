@@ -1,9 +1,6 @@
 package server_test
 
 import (
-	"bytes"
-	"context"
-	gosql "database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,20 +18,16 @@ import (
 )
 
 // showFixtureName is the canonical synthetic show name used by every
-// detail-handler test in this file. Hard-coded because every test
-// only needs a single show and the value isn't load-bearing on any
-// assertion (assertions key off the JSON shape, not the literal name).
+// detail-handler test in this file.
 const showFixtureName = "Halcyon Crossing"
 
 // showDetailFixture seeds a minimal shows + recordings setup so the
-// show detail handler has data to render. Returns the wired server,
-// the DB handle (for direct assertions), and the cache handle (so
-// tests can stage poster files).
+// show detail handler has data to render.
 func showDetailFixture(
 	t *testing.T,
 	showID int64,
 	recordingIDs []int64,
-) (*server.Server, *gosql.DB, *imagecache.Cache) {
+) (*server.Server, *imagecache.Cache) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -47,9 +40,6 @@ func showDetailFixture(
 	require.NoError(t, err)
 
 	for i, rid := range recordingIDs {
-		// Pick increasing date_full so yearSpan has something to chew
-		// on; the first row carries a non-empty show_description so
-		// the handler's description query has a hit.
 		raw := `{"id":` + strconv.FormatInt(rid, 10) +
 			`,"metadata":{"show_id":` + strconv.FormatInt(showID, 10) +
 			`,"show_description":"<p>Best show.</p>"}}`
@@ -66,7 +56,7 @@ func showDetailFixture(
 
 	srv, err := server.New(server.Options{DB: db, ImageCache: cache})
 	require.NoError(t, err)
-	return srv, db, cache
+	return srv, cache
 }
 
 // TestAPIGetShow verifies the detail JSON includes the show name,
@@ -75,7 +65,7 @@ func TestAPIGetShow(t *testing.T) {
 	t.Parallel()
 
 	const showID int64 = 4711
-	srv, _, _ := showDetailFixture(t, showID, []int64{90100222, 8223})
+	srv, _ := showDetailFixture(t, showID, []int64{90100222, 8223})
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(
@@ -117,57 +107,20 @@ func TestAPIGetShowNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
 }
 
-// TestAPISetShowPosterPersists exercises the picker POST: a new
-// show_image_choices row should land with the requested index.
-func TestAPISetShowPosterPersists(t *testing.T) {
-	t.Parallel()
-
-	const showID int64 = 4712
-	srv, db, cache := showDetailFixture(t, showID, []int64{9001})
-
-	stageImage(t, cache.PosterPath(showID, 0))
-	stageImage(t, cache.PosterPath(showID, 1))
-
-	body, err := json.Marshal(map[string]int{"index": 1})
-	require.NoError(t, err)
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(
-		t.Context(), http.MethodPost,
-		"/api/v1/shows/"+strconv.FormatInt(showID, 10)+"/poster",
-		bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	choice, err := storage.GetShowImageChoice(context.Background(), db, showID)
-	require.NoError(t, err)
-	require.NotNil(t, choice.PosterIndex)
-	assert.Equal(t, 1, *choice.PosterIndex)
-}
-
-// TestAPIGetShowReflectsSelectedPoster ensures the selected_poster_index
-// surfaced by GET /shows/:id round-trips after a POST persists a pick.
-func TestAPIGetShowReflectsSelectedPoster(t *testing.T) {
+// TestAPIGetShowReflectsBanner verifies that when a banner.jpg is on
+// disk, the GET response surfaces it via local_banner_url.
+func TestAPIGetShowReflectsBanner(t *testing.T) {
 	t.Parallel()
 
 	const showID int64 = 4713
-	srv, _, cache := showDetailFixture(t, showID, []int64{9101})
-	stageImage(t, cache.PosterPath(showID, 0))
-	stageImage(t, cache.PosterPath(showID, 1))
+	srv, cache := showDetailFixture(t, showID, []int64{9101})
 
-	postBody, err := json.Marshal(map[string]int{"index": 1})
-	require.NoError(t, err)
+	// Stage a banner.jpg directly — selection is implicit by file
+	// existence under v2.
+	stageImage(t, cache.ShowBannerPath(showID))
+
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(
-		t.Context(), http.MethodPost,
-		"/api/v1/shows/"+strconv.FormatInt(showID, 10)+"/poster",
-		bytes.NewReader(postBody))
-	req.Header.Set("Content-Type", "application/json")
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	rr = httptest.NewRecorder()
-	req = httptest.NewRequestWithContext(
 		t.Context(), http.MethodGet,
 		"/api/v1/shows/"+strconv.FormatInt(showID, 10), nil)
 	srv.Handler().ServeHTTP(rr, req)
@@ -175,68 +128,5 @@ func TestAPIGetShowReflectsSelectedPoster(t *testing.T) {
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
-	assert.InEpsilon(t, float64(1), got["selected_poster_index"], 0.0001)
-
-	urls, _ := got["local_poster_urls"].([]any)
-	assert.Len(t, urls, 2, "both staged posters should round-trip")
-}
-
-// TestAPISetShowPosterBoundsCheck rejects out-of-range indexes.
-func TestAPISetShowPosterBoundsCheck(t *testing.T) {
-	t.Parallel()
-
-	const showID int64 = 4714
-	srv, _, cache := showDetailFixture(t, showID, []int64{9201})
-	stageImage(t, cache.PosterPath(showID, 0))
-
-	tests := []struct {
-		name  string
-		index int
-	}{
-		{name: "negative", index: -1},
-		{name: "too_large", index: 99},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			body, err := json.Marshal(map[string]int{"index": tt.index})
-			require.NoError(t, err)
-			rr := httptest.NewRecorder()
-			req := httptest.NewRequestWithContext(
-				t.Context(), http.MethodPost,
-				"/api/v1/shows/"+strconv.FormatInt(showID, 10)+"/poster",
-				bytes.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			srv.Handler().ServeHTTP(rr, req)
-			assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
-			assert.Contains(t, rr.Body.String(), "out of range")
-		})
-	}
-}
-
-// TestAPISetShowPosterRequiresImageCache returns 503 when the cache
-// isn't configured.
-func TestAPISetShowPosterRequiresImageCache(t *testing.T) {
-	t.Parallel()
-
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	_, err = db.ExecContext(t.Context(),
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, int64(7), "X")
-	require.NoError(t, err)
-
-	srv, err := server.New(server.Options{DB: db})
-	require.NoError(t, err)
-
-	body, err := json.Marshal(map[string]int{"index": 0})
-	require.NoError(t, err)
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(
-		t.Context(), http.MethodPost,
-		"/api/v1/shows/7/poster", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	srv.Handler().ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	assert.Contains(t, got["local_banner_url"], "/images/shows/")
 }

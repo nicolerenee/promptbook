@@ -18,6 +18,11 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
 import { smartDate } from '../utils/format.js';
+import {
+  uploadFile,
+  errorMessageFromUpload,
+  renderUploadButton,
+} from '../utils/uploadPicker.js';
 import ImagePickerModal, {
   renderEditImagesButton,
   renderImageErrorToast,
@@ -56,21 +61,6 @@ function cmpStr(a, b) {
   return 0;
 }
 
-// errorMessage extracts a human-readable string from a thrown api
-// error. Mirrors the helper in Recording.js.
-function errorMessage(err) {
-  if (!err) return 'unknown error';
-  if (err.body) {
-    try {
-      const parsed = JSON.parse(err.body);
-      if (parsed && parsed.error) return String(parsed.error);
-      if (parsed && parsed.message) return String(parsed.message);
-    } catch (_) { /* not JSON */ }
-    if (typeof err.body === 'string' && err.body.length < 240) return err.body;
-  }
-  return err.message || String(err);
-}
-
 // loadShow fetches /api/v1/shows/:id and parks the response on
 // state.show. Used both on initial mount and after a successful
 // poster pick so the highlighted thumb updates.
@@ -91,41 +81,36 @@ function loadShow(id) {
     });
 }
 
-// posterIndexHighlight returns the index whose thumbnail should wear
-// the green selection ring. Defaults to 0 — matching
-// ShowImageChoice.ResolvePoster on the server.
-function posterIndexHighlight() {
-  const detail = state.show.detail;
-  if (detail && detail.selected_poster_index != null) {
-    return detail.selected_poster_index;
-  }
-  return 0;
-}
-
-// pickPoster issues the POST and re-fetches on success so
-// selected_poster_index reflects the new pick.
-function pickPoster(index) {
+// runBannerUpload uploads a chosen file to the show's banner slot and
+// re-loads the detail so local_banner_url picks up the new image.
+function runBannerUpload(file) {
+  if (!file) return;
   if (state.show.imageBusy) return;
   const id = state.show.id;
   state.show.imageBusy = true;
   state.show.imageError = null;
-  api.post('/shows/' + encodeURIComponent(id) + '/poster', { index })
+  m.redraw();
+
+  uploadFile('/api/v1/shows/' + encodeURIComponent(id) + '/banner-upload', file)
     .then((resp) => {
       state.show.imageBusy = false;
-      if (resp && resp.ok) {
-        return loadShow(id);
+      if (!resp || resp.ok !== true) {
+        state.show.imageError = (resp && resp.error) || 'upload failed';
+        m.redraw();
+        return null;
       }
-      state.show.imageError = (resp && resp.error) || 'unknown error';
-      m.redraw();
-      return null;
+      return loadShow(id);
     })
     .catch((err) => {
       state.show.imageBusy = false;
       if (err && err.status === 503) {
         state.show.imageError =
           'Image cache not configured — set library.imageRoot on the server.';
+      } else if (err && err.status === 413) {
+        state.show.imageError =
+          'Upload too large — keep the file under 10 MB.';
       } else {
-        state.show.imageError = errorMessage(err);
+        state.show.imageError = errorMessageFromUpload(err);
       }
       m.redraw();
     });
@@ -179,9 +164,7 @@ function sortRows(rows, sort) {
 // right-aligned "Edit images" action that opens the poster picker
 // modal.
 function renderHeader(detail) {
-  const urls = detail.local_poster_urls || [];
-  const idx = posterIndexHighlight();
-  const posterURL = urls[idx] || urls[0] || '';
+  const posterURL = detail.local_banner_url || '';
   const span = yearSpanText(detail);
   const stateCounts = detail.state_counts || {};
   const badges = Object.keys(stateCounts)
@@ -246,51 +229,35 @@ function yearSpanText(detail) {
   return String(first != null ? first : last);
 }
 
-// renderImageThumb is the per-poster-thumbnail vnode. Modeled on the
-// helper in Recording.js but poster-only (no aspect dial).
-function renderImageThumb({ url, alt, selected, busy, onclick }) {
-  const ringClass = selected ? ' ring-2 ring-success' : '';
-  const opacityClass = busy ? ' opacity-50' : '';
-  return m('button', {
-    type: 'button',
-    class: 'btn btn-ghost p-0 h-auto rounded' + ringClass + opacityClass,
-    disabled: busy,
-    onclick,
-    'aria-pressed': selected ? 'true' : 'false',
-  }, m('figure', {
-    class: 'rounded overflow-hidden bg-base-200 w-32 aspect-[2/3]',
-  }, m('img', {
-    src: url,
-    alt,
-    class: 'w-full h-full object-cover',
-    loading: 'lazy',
-  })));
-}
-
-// renderPosterPicker lays out one thumbnail per cached poster with
-// the active one highlighted by the green ring. Shows are
-// poster-only — no backdrop / overlay sections like Recording.js.
-// Rendered inside the picker modal opened by the header's
-// "Edit images" button; image errors surface via the toast outside
-// the modal so a failed POST still reaches the user mid-close.
+// renderPosterPicker shows the cached banner with an Upload button.
+// Single slot under v2 — no thumbnail strip, no green-ring index.
+// Phase 4 will add live upstream option browsing via a new "browse"
+// affordance; for now this is preview + upload.
 function renderPosterPicker(detail) {
-  const urls = detail.local_poster_urls || [];
-  const highlight = posterIndexHighlight();
+  const url = detail.local_banner_url || '';
   const busy = state.show.imageBusy;
-  return m('section', { class: 'space-y-2' }, [
-    m('h3', { class: 'text-sm font-semibold' },
-      'Posters · ' + urls.length + ' available'),
-    urls.length === 0
-      ? m('div', { class: 'opacity-60 text-sm' },
-          'No posters cached yet — sync to fetch.')
-      : m('div', { class: 'flex flex-wrap gap-3' },
-          urls.map((url, i) => renderImageThumb({
-            url,
-            alt: 'poster ' + (i + 1),
-            selected: i === highlight,
-            busy,
-            onclick: () => pickPoster(i),
-          }))),
+  return m('section', { class: 'space-y-3' }, [
+    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+      m('h3', { class: 'text-sm font-semibold' }, 'Show banner'),
+      renderUploadButton({
+        label: 'Upload banner',
+        disabled: busy,
+        onSelect: runBannerUpload,
+      }),
+    ]),
+    url
+      ? m('figure', {
+          class: 'rounded overflow-hidden bg-base-200 w-48 aspect-[2/3]',
+        }, m('img', {
+          src: url,
+          alt: (detail.name || 'show') + ' banner',
+          class: 'w-full h-full object-cover',
+          loading: 'lazy',
+        }))
+      : m('div', { class: 'opacity-60 text-sm' },
+          'No banner on disk yet — upload one, or wait for the next ' +
+          'refresh-show-images job. ' +
+          'A live picker for upstream options lands in Phase 4.'),
   ]);
 }
 

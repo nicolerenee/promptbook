@@ -2,7 +2,6 @@ package nfo_test
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"flag"
 	"os"
@@ -16,7 +15,6 @@ import (
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
-	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // updateGolden lets developers regenerate the checked-in golden NFO when
@@ -60,10 +58,10 @@ func TestWriteMarigoldGolden(t *testing.T) {
 }
 
 // TestWriteRecordingFileWithImages exercises the full image-aware
-// pipeline: a populated cache + DB choice, a rendered.jpg sibling
-// taking precedence over the raw selected backdrop, and the resulting
-// <thumb aspect="poster"> + <fanart><thumb> hints. Paths are tempdir-
-// relative so we assert via Contains rather than a checked-in golden.
+// pipeline under the v2 single-file-per-slot layout: poster.jpg
+// (the burned-in render output) lands as <thumb aspect="poster">,
+// fanart.jpg (the raw wide image) lands as <fanart><thumb>. Paths are
+// tempdir-relative so we assert via Contains rather than a golden.
 func TestWriteRecordingFileWithImages(t *testing.T) {
 	t.Parallel()
 
@@ -72,25 +70,15 @@ func TestWriteRecordingFileWithImages(t *testing.T) {
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
 
-	// Lay down a synthetic poster, raw backdrop, and rendered backdrop
-	// so the writer's existence checks resolve true. Index 1 verifies
-	// ResolvePoster/Backdrop are honored over the default 0.
-	posterIdx, backdropIdx := 1, 1
-	writeFakeImage(t, cache.PosterPath(rec.Metadata.ShowID, posterIdx))
-	writeFakeImage(t, cache.BackdropPath(rec.ID, backdropIdx))
-	// rendered.jpg sits beside the indexed backdrops; its presence
-	// should make it win over <id>/1.jpg.
-	renderedPath := filepath.Join(filepath.Dir(cache.BackdropPath(rec.ID, backdropIdx)), "rendered.jpg")
-	writeFakeImage(t, renderedPath)
-
-	db := openImageChoiceDB(t, rec)
-	require.NoError(t, storage.SetPosterIndex(t.Context(), db, rec.ID, posterIdx))
-	require.NoError(t, storage.SetBackdropIndex(t.Context(), db, rec.ID, backdropIdx))
+	// Lay down poster.jpg + fanart.jpg so the writer's existence checks
+	// resolve true.
+	writeFakeImage(t, cache.RecordingPosterPath(rec.ID))
+	writeFakeImage(t, cache.RecordingFanartPath(rec.ID))
 
 	folder := t.TempDir()
 	written, err := nfo.WriteRecordingFile(
 		t.Context(), folder, rec,
-		nfo.WriteOptions{DB: db, Cache: cache},
+		nfo.WriteOptions{Cache: cache},
 	)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(folder, "movie.nfo"), written)
@@ -98,12 +86,9 @@ func TestWriteRecordingFileWithImages(t *testing.T) {
 	got, err := os.ReadFile(written)
 	require.NoError(t, err)
 
-	// Sanity-check the image element shape before pinning to a golden.
-	// Both paths are .. -relative because the cache lives in a sibling
-	// tempdir, not under folder. Forward slashes always.
-	expectedPosterRel, relErr := filepath.Rel(folder, cache.PosterPath(rec.Metadata.ShowID, posterIdx))
+	expectedPosterRel, relErr := filepath.Rel(folder, cache.RecordingPosterPath(rec.ID))
 	require.NoError(t, relErr)
-	expectedFanartRel, relErr := filepath.Rel(folder, renderedPath)
+	expectedFanartRel, relErr := filepath.Rel(folder, cache.RecordingFanartPath(rec.ID))
 	require.NoError(t, relErr)
 	assert.Contains(t, string(got),
 		`<thumb aspect="poster">`+filepath.ToSlash(expectedPosterRel)+`</thumb>`)
@@ -128,31 +113,29 @@ func TestWriteRecordingFileNoCache(t *testing.T) {
 	assert.NotContains(t, string(got), `<fanart>`)
 }
 
-// TestWriteRecordingFileBackdropFallback verifies that when no
-// rendered.jpg exists, the writer falls back to the raw indexed
-// backdrop rather than dropping the fanart entirely.
-func TestWriteRecordingFileBackdropFallback(t *testing.T) {
+// TestWriteRecordingFileFanartOnly verifies that when only fanart.jpg
+// exists (no poster.jpg yet — overlay-render hasn't happened) the
+// writer emits the fanart hint and omits the poster element.
+func TestWriteRecordingFileFanartOnly(t *testing.T) {
 	t.Parallel()
 
 	rec := loadMarigold(t)
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
 
-	rawBackdrop := cache.BackdropPath(rec.ID, 0)
-	writeFakeImage(t, rawBackdrop)
-	// No rendered.jpg, no poster → only fanart should land.
+	fanartPath := cache.RecordingFanartPath(rec.ID)
+	writeFakeImage(t, fanartPath)
 
-	db := openImageChoiceDB(t, rec)
 	folder := t.TempDir()
 	written, err := nfo.WriteRecordingFile(
 		t.Context(), folder, rec,
-		nfo.WriteOptions{DB: db, Cache: cache},
+		nfo.WriteOptions{Cache: cache},
 	)
 	require.NoError(t, err)
 	got, err := os.ReadFile(written)
 	require.NoError(t, err)
 
-	expectedRel, relErr := filepath.Rel(folder, rawBackdrop)
+	expectedRel, relErr := filepath.Rel(folder, fanartPath)
 	require.NoError(t, relErr)
 	assert.Contains(t, string(got), `<thumb>`+filepath.ToSlash(expectedRel)+`</thumb>`)
 	assert.NotContains(t, string(got), `<thumb aspect="poster">`)
@@ -164,33 +147,6 @@ func writeFakeImage(t *testing.T, path string) {
 	t.Helper()
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
 	require.NoError(t, os.WriteFile(path, []byte{0xff}, 0o600))
-}
-
-// openImageChoiceDB spins up a fresh SQLite DB with migrations applied
-// and inserts the parent show + recording rows for rec.ID so the
-// recording_image_choices FK constraint is satisfied. Used by tests
-// that exercise GetImageChoice / SetPosterIndex / SetBackdropIndex
-// through the NFO writer.
-func openImageChoiceDB(t *testing.T, rec encora.Recording) *sql.DB {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "image_choices.db")
-	db, err := storage.Open(t.Context(), dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	// Seed parent rows. INSERT OR IGNORE makes the helper safe across
-	// multiple invocations of the same test setup.
-	_, err = db.ExecContext(t.Context(),
-		`INSERT OR IGNORE INTO shows (show_id, name) VALUES (?, ?)`,
-		rec.Metadata.ShowID, rec.Show)
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(),
-		`INSERT OR IGNORE INTO recordings
-			(recording_id, show_id, tour, date_full, raw_json)
-		 VALUES (?, ?, ?, ?, ?)`,
-		rec.ID, rec.Metadata.ShowID, rec.Tour, rec.Date.FullDate, "{}")
-	require.NoError(t, err)
-	return db
 }
 
 // zerologNop returns a zero-value zerolog.Logger — the package's

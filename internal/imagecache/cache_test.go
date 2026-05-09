@@ -1,12 +1,18 @@
 package imagecache_test
 
 import (
+	"bytes"
 	"errors"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -54,6 +60,37 @@ func imageServer(t *testing.T, contentType string) (*httptest.Server, *atomic.In
 	return srv, hits
 }
 
+// makeJPEG returns a tiny valid JPEG byte slice. Used as the synthetic
+// upload payload in the SaveUploaded* tests.
+func makeJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for x := range 4 {
+		for y := range 4 {
+			img.Set(x, y, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}))
+	return buf.Bytes()
+}
+
+// makePNG returns a tiny valid PNG byte slice. Exercises the
+// re-encode path — uploads that arrive as PNG must be saved back as
+// JPEG so the on-disk shape is uniform.
+func makePNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for x := range 4 {
+		for y := range 4 {
+			img.Set(x, y, color.RGBA{R: 10, G: 200, B: 30, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
+}
+
 func TestCacheDisabled(t *testing.T) {
 	t.Parallel()
 	c := imagecache.New("", nil, zerologTest(t))
@@ -66,51 +103,59 @@ func TestCacheDisabled(t *testing.T) {
 			t.Helper()
 			assert.True(t, c.Disabled())
 		}},
-		{name: "PosterPath empty", op: func(t *testing.T) {
-			t.Helper()
-			assert.Empty(t, c.PosterPath(1, 0))
-		}},
-		{name: "BackdropPath empty", op: func(t *testing.T) {
-			t.Helper()
-			assert.Empty(t, c.BackdropPath(1, 0))
-		}},
 		{name: "HeadshotPath empty", op: func(t *testing.T) {
 			t.Helper()
 			assert.Empty(t, c.HeadshotPath(1))
 		}},
-		{name: "HasPoster false", op: func(t *testing.T) {
+		{name: "ShowBannerPath empty", op: func(t *testing.T) {
 			t.Helper()
-			assert.False(t, c.HasPoster(1, 0))
+			assert.Empty(t, c.ShowBannerPath(1))
 		}},
-		{name: "HasBackdrop false", op: func(t *testing.T) {
+		{name: "RecordingFanartPath empty", op: func(t *testing.T) {
 			t.Helper()
-			assert.False(t, c.HasBackdrop(1, 0))
+			assert.Empty(t, c.RecordingFanartPath(1))
+		}},
+		{name: "RecordingPosterPath empty", op: func(t *testing.T) {
+			t.Helper()
+			assert.Empty(t, c.RecordingPosterPath(1))
 		}},
 		{name: "HasHeadshot false", op: func(t *testing.T) {
 			t.Helper()
 			assert.False(t, c.HasHeadshot(1))
 		}},
-		{name: "PosterURL empty", op: func(t *testing.T) {
+		{name: "HasShowBanner false", op: func(t *testing.T) {
 			t.Helper()
-			assert.Empty(t, c.PosterURL(1, 0))
+			assert.False(t, c.HasShowBanner(1))
+		}},
+		{name: "HasRecordingFanart false", op: func(t *testing.T) {
+			t.Helper()
+			assert.False(t, c.HasRecordingFanart(1))
+		}},
+		{name: "HasRecordingPoster false", op: func(t *testing.T) {
+			t.Helper()
+			assert.False(t, c.HasRecordingPoster(1))
 		}},
 		{name: "HeadshotURL empty", op: func(t *testing.T) {
 			t.Helper()
 			assert.Empty(t, c.HeadshotURL(1))
 		}},
+		{name: "ShowBannerURL empty", op: func(t *testing.T) {
+			t.Helper()
+			assert.Empty(t, c.ShowBannerURL(1))
+		}},
 		{name: "Counts zero", op: func(t *testing.T) {
 			t.Helper()
 			assert.Equal(t, imagecache.Counts{}, c.Counts())
 		}},
-		{name: "FetchPoster ErrDisabled", op: func(t *testing.T) {
-			t.Helper()
-			_, err := c.FetchPoster(t.Context(), 1, 0, "https://example.invalid/x.jpg")
-			require.Error(t, err)
-			assert.ErrorIs(t, err, imagecache.ErrDisabled)
-		}},
 		{name: "FetchHeadshot ErrDisabled", op: func(t *testing.T) {
 			t.Helper()
 			_, err := c.FetchHeadshot(t.Context(), 1, "https://example.invalid/x.jpg")
+			require.Error(t, err)
+			assert.ErrorIs(t, err, imagecache.ErrDisabled)
+		}},
+		{name: "FetchShowBanner ErrDisabled", op: func(t *testing.T) {
+			t.Helper()
+			_, err := c.FetchShowBanner(t.Context(), 1, "https://example.invalid/x.jpg")
 			require.Error(t, err)
 			assert.ErrorIs(t, err, imagecache.ErrDisabled)
 		}},
@@ -132,7 +177,7 @@ func TestNilCacheDisabled(t *testing.T) {
 	assert.True(t, c.Disabled())
 }
 
-func TestFetchPosterRoundTrip(t *testing.T) {
+func TestFetchHeadshotRoundTrip(t *testing.T) {
 	t.Parallel()
 	gofakeit.Seed(0)
 	srv, hits := imageServer(t, "image/jpeg")
@@ -140,30 +185,30 @@ func TestFetchPosterRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	c := imagecache.New(root, srv.Client(), zerologTest(t))
 
-	showID := gofakeit.Int64()
-	require.False(t, c.HasPoster(showID, 0))
+	actorID := gofakeit.Int64()
+	require.False(t, c.HasHeadshot(actorID))
 
-	dest, err := c.FetchPoster(t.Context(), showID, 0, srv.URL+"/poster.jpg")
+	dest, err := c.FetchHeadshot(t.Context(), actorID, srv.URL+"/h.jpg")
 	require.NoError(t, err)
-	assert.True(t, c.HasPoster(showID, 0))
-	assert.Equal(t, c.PosterPath(showID, 0), dest)
+	assert.True(t, c.HasHeadshot(actorID))
+	assert.Equal(t, c.HeadshotPath(actorID), dest)
 	assert.FileExists(t, dest)
 
 	body, err := os.ReadFile(dest)
 	require.NoError(t, err)
 	assert.Equal(t, fakePNG, body)
-	assert.Equal(t, "/images/posters/"+strconv.FormatInt(showID, 10)+"/0.jpg",
-		c.PosterURL(showID, 0))
+	assert.Equal(t, "/images/actors/"+strconv.FormatInt(actorID, 10)+".jpg",
+		c.HeadshotURL(actorID))
 
 	// Re-fetch is a no-op; the upstream server should not be hit
 	// twice for the same slot.
-	_, err = c.FetchPoster(t.Context(), showID, 0, srv.URL+"/poster.jpg")
+	_, err = c.FetchHeadshot(t.Context(), actorID, srv.URL+"/h.jpg")
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), hits.Load(),
-		"second FetchPoster must not re-download an already-cached file")
+		"second FetchHeadshot must not re-download an already-cached file")
 }
 
-func TestFetchHeadshotIdempotent(t *testing.T) {
+func TestFetchShowBannerIdempotent(t *testing.T) {
 	t.Parallel()
 	gofakeit.Seed(1)
 	srv, hits := imageServer(t, "image/png")
@@ -171,20 +216,44 @@ func TestFetchHeadshotIdempotent(t *testing.T) {
 	root := t.TempDir()
 	c := imagecache.New(root, srv.Client(), zerologTest(t))
 
-	actorID := gofakeit.Int64()
+	showID := gofakeit.Int64()
 
 	// Fetch twice; both calls must succeed but the upstream server
 	// is hit exactly once.
-	_, err := c.FetchHeadshot(t.Context(), actorID, srv.URL+"/h.png")
+	_, err := c.FetchShowBanner(t.Context(), showID, srv.URL+"/banner.png")
 	require.NoError(t, err)
-	_, err = c.FetchHeadshot(t.Context(), actorID, srv.URL+"/h.png")
+	_, err = c.FetchShowBanner(t.Context(), showID, srv.URL+"/banner.png")
 	require.NoError(t, err)
 
 	assert.Equal(t, int32(1), hits.Load())
-	assert.True(t, c.HasHeadshot(actorID))
+	assert.True(t, c.HasShowBanner(showID))
 
-	url := c.HeadshotURL(actorID)
-	assert.Equal(t, "/images/headshots/"+strconv.FormatInt(actorID, 10)+".jpg", url)
+	url := c.ShowBannerURL(showID)
+	assert.Equal(t, "/images/shows/"+strconv.FormatInt(showID, 10)+"/banner.jpg", url)
+}
+
+func TestFetchRecordingFanartAndPosterSrc(t *testing.T) {
+	t.Parallel()
+	srv, _ := imageServer(t, "image/jpeg")
+
+	root := t.TempDir()
+	c := imagecache.New(root, srv.Client(), zerologTest(t))
+
+	const recID int64 = 90004242
+	_, err := c.FetchRecordingFanart(t.Context(), recID, srv.URL+"/fanart.jpg")
+	require.NoError(t, err)
+	_, err = c.FetchRecordingPosterSrc(t.Context(), recID, srv.URL+"/poster-src.jpg")
+	require.NoError(t, err)
+
+	assert.True(t, c.HasRecordingFanart(recID))
+	assert.True(t, c.HasRecordingPosterSrc(recID))
+	// poster.jpg is not auto-produced — it lands only after the renderer
+	// composites poster-src.jpg + overlay.
+	assert.False(t, c.HasRecordingPoster(recID))
+
+	assert.Equal(t,
+		"/images/recordings/"+strconv.FormatInt(recID, 10)+"/fanart.jpg",
+		c.RecordingFanartURL(recID))
 }
 
 func TestFetchRejectsNonImageContentType(t *testing.T) {
@@ -194,10 +263,10 @@ func TestFetchRejectsNonImageContentType(t *testing.T) {
 	root := t.TempDir()
 	c := imagecache.New(root, srv.Client(), zerologTest(t))
 
-	_, err := c.FetchPoster(t.Context(), 42, 0, srv.URL+"/oops.html")
+	_, err := c.FetchHeadshot(t.Context(), 42, srv.URL+"/oops.html")
 	require.Error(t, err)
 	require.ErrorIs(t, err, imagecache.ErrNotImage)
-	assert.False(t, c.HasPoster(42, 0))
+	assert.False(t, c.HasHeadshot(42))
 }
 
 func TestFetchPropagatesUpstream500(t *testing.T) {
@@ -211,9 +280,9 @@ func TestFetchPropagatesUpstream500(t *testing.T) {
 	root := t.TempDir()
 	c := imagecache.New(root, srv.Client(), zerologTest(t))
 
-	_, err := c.FetchPoster(t.Context(), 99, 0, srv.URL+"/boom")
+	_, err := c.FetchShowBanner(t.Context(), 99, srv.URL+"/boom")
 	require.Error(t, err)
-	assert.False(t, c.HasPoster(99, 0))
+	assert.False(t, c.HasShowBanner(99))
 }
 
 func TestCounts(t *testing.T) {
@@ -226,89 +295,30 @@ func TestCounts(t *testing.T) {
 	// Empty root → all zeros.
 	assert.Equal(t, imagecache.Counts{}, c.Counts())
 
-	_, err := c.FetchPoster(t.Context(), 1, 0, srv.URL+"/p0.jpg")
+	_, err := c.FetchShowBanner(t.Context(), 1, srv.URL+"/p0.jpg")
 	require.NoError(t, err)
-	_, err = c.FetchPoster(t.Context(), 1, 1, srv.URL+"/p1.jpg")
-	require.NoError(t, err)
-	_, err = c.FetchPoster(t.Context(), 2, 0, srv.URL+"/p2.jpg")
+	_, err = c.FetchShowBanner(t.Context(), 2, srv.URL+"/p2.jpg")
 	require.NoError(t, err)
 	_, err = c.FetchHeadshot(t.Context(), 7, srv.URL+"/h7.jpg")
 	require.NoError(t, err)
 	_, err = c.FetchHeadshot(t.Context(), 8, srv.URL+"/h8.jpg")
 	require.NoError(t, err)
-	_, err = c.FetchBackdrop(t.Context(), 555, 0, srv.URL+"/b0.jpg")
+	_, err = c.FetchRecordingFanart(t.Context(), 555, srv.URL+"/b0.jpg")
 	require.NoError(t, err)
+	// poster-src.jpg + a synthetic poster.jpg so the counter sees the
+	// burned-in slot.
+	_, err = c.FetchRecordingPosterSrc(t.Context(), 555, srv.URL+"/ps.jpg")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(c.RecordingPosterPath(555),
+		[]byte("not really a jpeg"), 0o600))
 
 	counts := c.Counts()
 	assert.Equal(t, imagecache.Counts{
-		Posters: 3, Backdrops: 1, Headshots: 2,
+		Headshots:        2,
+		ShowBanners:      2,
+		RecordingFanarts: 1,
+		RecordingPosters: 1,
 	}, counts)
-}
-
-func TestCountBackdrops(t *testing.T) {
-	t.Parallel()
-	srv, _ := imageServer(t, "image/jpeg")
-
-	root := t.TempDir()
-	c := imagecache.New(root, srv.Client(), zerologTest(t))
-
-	const recA int64 = 90100222
-	const recB int64 = 8223
-
-	// Empty directory tree → zero count even before any fetches.
-	assert.Equal(t, 0, c.CountBackdrops(recA))
-
-	// Populate two backdrops for recA, one for recB; they must
-	// be counted separately so the per-recording surface in the
-	// API doesn't bleed across recordings.
-	_, err := c.FetchBackdrop(t.Context(), recA, 0, srv.URL+"/a0.jpg")
-	require.NoError(t, err)
-	_, err = c.FetchBackdrop(t.Context(), recA, 1, srv.URL+"/a1.jpg")
-	require.NoError(t, err)
-	_, err = c.FetchBackdrop(t.Context(), recB, 0, srv.URL+"/b0.jpg")
-	require.NoError(t, err)
-
-	assert.Equal(t, 2, c.CountBackdrops(recA))
-	assert.Equal(t, 1, c.CountBackdrops(recB))
-	assert.Equal(t, 0, c.CountBackdrops(int64(99999)),
-		"a recording with no cached backdrops returns 0")
-
-	// Disabled cache returns 0 without touching the filesystem.
-	disabled := imagecache.New("", nil, zerologTest(t))
-	assert.Equal(t, 0, disabled.CountBackdrops(recA))
-}
-
-func TestCountPosters(t *testing.T) {
-	t.Parallel()
-	srv, _ := imageServer(t, "image/jpeg")
-
-	root := t.TempDir()
-	c := imagecache.New(root, srv.Client(), zerologTest(t))
-
-	const showA int64 = 4711
-	const showB int64 = 4712
-
-	// Empty tree → zero count even before any fetches.
-	assert.Equal(t, 0, c.CountPosters(showA))
-
-	// Populate two posters for showA, one for showB; they must be
-	// counted separately so the per-show bounds-check in the API
-	// doesn't bleed across shows.
-	_, err := c.FetchPoster(t.Context(), showA, 0, srv.URL+"/a0.jpg")
-	require.NoError(t, err)
-	_, err = c.FetchPoster(t.Context(), showA, 1, srv.URL+"/a1.jpg")
-	require.NoError(t, err)
-	_, err = c.FetchPoster(t.Context(), showB, 0, srv.URL+"/b0.jpg")
-	require.NoError(t, err)
-
-	assert.Equal(t, 2, c.CountPosters(showA))
-	assert.Equal(t, 1, c.CountPosters(showB))
-	assert.Equal(t, 0, c.CountPosters(int64(99999)),
-		"a show with no cached posters returns 0")
-
-	// Disabled cache returns 0 without touching the filesystem.
-	disabled := imagecache.New("", nil, zerologTest(t))
-	assert.Equal(t, 0, disabled.CountPosters(showA))
 }
 
 func TestPathLayoutMatchesURL(t *testing.T) {
@@ -322,19 +332,29 @@ func TestPathLayoutMatchesURL(t *testing.T) {
 		wantRel string
 	}{
 		{
-			name:    "poster",
-			path:    c.PosterPath(101, 2),
-			wantRel: filepath.Join("posters", "101", "2.jpg"),
-		},
-		{
-			name:    "backdrop",
-			path:    c.BackdropPath(202, 5),
-			wantRel: filepath.Join("backdrops", "202", "5.jpg"),
-		},
-		{
 			name:    "headshot",
 			path:    c.HeadshotPath(303),
-			wantRel: filepath.Join("headshots", "303.jpg"),
+			wantRel: filepath.Join("actors", "303.jpg"),
+		},
+		{
+			name:    "show_banner",
+			path:    c.ShowBannerPath(101),
+			wantRel: filepath.Join("shows", "101", "banner.jpg"),
+		},
+		{
+			name:    "recording_fanart",
+			path:    c.RecordingFanartPath(202),
+			wantRel: filepath.Join("recordings", "202", "fanart.jpg"),
+		},
+		{
+			name:    "recording_poster",
+			path:    c.RecordingPosterPath(202),
+			wantRel: filepath.Join("recordings", "202", "poster.jpg"),
+		},
+		{
+			name:    "recording_poster_src",
+			path:    c.RecordingPosterSrcPath(202),
+			wantRel: filepath.Join("recordings", "202", "poster-src.jpg"),
 		},
 	}
 	for _, tt := range tests {
@@ -345,6 +365,67 @@ func TestPathLayoutMatchesURL(t *testing.T) {
 			assert.Equal(t, tt.wantRel, rel)
 		})
 	}
+}
+
+func TestSaveUploadedRoundTrip(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		body func(*testing.T) []byte
+	}{
+		{name: "jpeg_input", body: makeJPEG},
+		{name: "png_input", body: makePNG},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := imagecache.New(t.TempDir(), nil, zerologTest(t))
+			payload := tt.body(t)
+
+			require.NoError(t, c.SaveUploadedHeadshot(
+				t.Context(), 4711, bytes.NewReader(payload)))
+			require.NoError(t, c.SaveUploadedShowBanner(
+				t.Context(), 5811, bytes.NewReader(payload)))
+			require.NoError(t, c.SaveUploadedRecordingFanart(
+				t.Context(), 6911, bytes.NewReader(payload)))
+			require.NoError(t, c.SaveUploadedRecordingPosterSrc(
+				t.Context(), 7011, bytes.NewReader(payload)))
+
+			// Every saved file must round-trip through jpeg.Decode.
+			for _, p := range []string{
+				c.HeadshotPath(4711),
+				c.ShowBannerPath(5811),
+				c.RecordingFanartPath(6911),
+				c.RecordingPosterSrcPath(7011),
+			} {
+				require.FileExists(t, p)
+				f, err := os.Open(p)
+				require.NoError(t, err)
+				_, err = jpeg.Decode(f)
+				require.NoError(t, err, "stored upload must decode as JPEG")
+				_ = f.Close()
+			}
+		})
+	}
+}
+
+func TestSaveUploadedRejectsUndecodable(t *testing.T) {
+	t.Parallel()
+	c := imagecache.New(t.TempDir(), nil, zerologTest(t))
+
+	err := c.SaveUploadedHeadshot(
+		t.Context(), 1, strings.NewReader("not an image"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode upload")
+	assert.False(t, c.HasHeadshot(1),
+		"failed decode must not leave a half-written file on disk")
+}
+
+func TestSaveUploadedDisabled(t *testing.T) {
+	t.Parallel()
+	c := imagecache.New("", nil, zerologTest(t))
+	err := c.SaveUploadedHeadshot(t.Context(), 1, bytes.NewReader(makeJPEG(t)))
+	assert.ErrorIs(t, err, imagecache.ErrDisabled)
 }
 
 func TestFetchTimesOutOnStuckUpstream(t *testing.T) {
@@ -363,7 +444,7 @@ func TestFetchTimesOutOnStuckUpstream(t *testing.T) {
 	c := imagecache.New(root, hc, zerologTest(t))
 
 	start := time.Now()
-	_, err := c.FetchPoster(t.Context(), 1, 0, srv.URL+"/never.jpg")
+	_, err := c.FetchHeadshot(t.Context(), 1, srv.URL+"/never.jpg")
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second,
 		"the per-request timeout must short-circuit a stuck upstream")
@@ -373,16 +454,12 @@ func TestFetchTimesOutOnStuckUpstream(t *testing.T) {
 }
 
 // TestFetchSurvivesPartialBytes guards against a regression where an
-// io.EOF mid-stream silently produced a truncated cache entry. We
-// simulate the partial response by closing the connection after the
-// first chunk; the cache should fail loudly rather than persist a
-// corrupt file.
+// io.EOF mid-stream silently produced a truncated cache entry.
 func TestFetchSurvivesPartialBytes(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "image/jpeg")
-			// Hijack to drop the connection mid-write.
 			hj, ok := w.(http.Hijacker)
 			if !ok {
 				_, _ = w.Write(fakePNG[:5])
@@ -394,7 +471,6 @@ func TestFetchSurvivesPartialBytes(t *testing.T) {
 			}
 			_, _ = conn.Write([]byte(
 				"HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\n\r\n"))
-			// Don't write a body; the next read will see EOF.
 			_ = conn.Close()
 		}))
 	t.Cleanup(srv.Close)
@@ -402,21 +478,13 @@ func TestFetchSurvivesPartialBytes(t *testing.T) {
 	root := t.TempDir()
 	c := imagecache.New(root, srv.Client(), zerologTest(t))
 
-	_, err := c.FetchPoster(t.Context(), 7, 0, srv.URL+"/x.jpg")
-	// Either we get ErrNotImage (empty body) or a transport-level
-	// error; both are fine. What we don't tolerate is a quiet success
-	// with a zero-byte file on disk.
+	_, err := c.FetchHeadshot(t.Context(), 7, srv.URL+"/x.jpg")
 	if err == nil {
-		assert.False(t, c.HasPoster(7, 0),
+		assert.False(t, c.HasHeadshot(7),
 			"truncated upstream must not produce a cached file")
 		return
 	}
-	// On the error path, no file should be visible — fetchTo writes
-	// only after a successful body read.
-	assert.False(t, c.HasPoster(7, 0))
-	// One known shape is ErrNotImage when the body comes back empty;
-	// the alternative is a transport error. We don't pin the exact
-	// error so the test stays robust across Go versions.
+	assert.False(t, c.HasHeadshot(7))
 	if errors.Is(err, imagecache.ErrNotImage) {
 		assert.ErrorIs(t, err, imagecache.ErrNotImage)
 	}

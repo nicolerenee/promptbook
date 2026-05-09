@@ -1724,61 +1724,10 @@ func TestAPIApplyDetachedContext(t *testing.T) {
 	}
 }
 
-// stagemediaPostersServer returns an httptest.Server that responds to
-// /api/images?show_id=...&actor_ids=1 with the supplied poster URLs.
-// The Posters() client method only consumes the "posters" field, so
-// performers + error are stubbed empty/null.
-func stagemediaPostersServer(t *testing.T, posters []string) *httptest.Server {
-	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/images", func(w http.ResponseWriter, r *http.Request) {
-		body := map[string]any{
-			"posters":    posters,
-			"performers": []any{},
-			"error":      nil,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(body)
-		_ = r // unused but kept for signature symmetry.
-	})
-	return httptest.NewServer(mux)
-}
-
-// TestAPIRecordingByIDIncludesPosters wires a real stagemedia.Client
-// at an httptest server that returns two poster URLs and asserts the
-// /api/v1/recordings/{id} response surfaces them under the "posters"
-// JSON key.
-func TestAPIRecordingByIDIncludesPosters(t *testing.T) {
-	t.Parallel()
-
-	upstream := stagemediaPostersServer(t, []string{"url-a", "url-b"})
-	t.Cleanup(upstream.Close)
-
-	smClient, err := stagemedia.New(stagemedia.Options{
-		BaseURL: upstream.URL,
-		APIKey:  "test",
-	})
-	require.NoError(t, err)
-
-	srv := fixtureBackedServerWithStagemedia(t, smClient)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(),
-		http.MethodGet, "/api/v1/recordings/90100222", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	var body struct {
-		Posters []string `json:"posters"`
-	}
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.Equal(t, []string{"url-a", "url-b"}, body.Posters)
-}
-
-// TestAPIRecordingByIDNoPostersWhenNilClient asserts the response
-// returns an empty (but present) "posters" field when the server has
-// no stagemedia client configured.
-func TestAPIRecordingByIDNoPostersWhenNilClient(t *testing.T) {
+// TestAPIRecordingByIDLocalFanartURL asserts the recording-detail
+// response surfaces local_fanart_url when fanart.jpg is on disk under
+// the v2 cache layout. Empty otherwise.
+func TestAPIRecordingByIDLocalFanartURL(t *testing.T) {
 	t.Parallel()
 
 	srv := fixtureBackedServer(t)
@@ -1790,11 +1739,14 @@ func TestAPIRecordingByIDNoPostersWhenNilClient(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
 	var body struct {
-		Posters []string `json:"posters"`
+		LocalFanartURL string `json:"local_fanart_url"`
+		LocalPosterURL string `json:"local_poster_url"`
 	}
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.Empty(t, body.Posters,
-		"posters should be empty (or nil) when stagemedia is unconfigured")
+	// fixture-backed server has no image cache configured, so both
+	// URL fields are empty strings — the JSON shape is stable.
+	assert.Empty(t, body.LocalFanartURL)
+	assert.Empty(t, body.LocalPosterURL)
 }
 
 // TestAPIRecordingByIDIncludesNFOContent seeds a recording_versions

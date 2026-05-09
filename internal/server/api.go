@@ -31,12 +31,6 @@ const (
 	// a shared constant because goconst flags the duplication once
 	// three or more sibling tab tables exist.
 	allTabLabel = "All"
-
-	// stagemediaPosterTimeout caps how long the recording-detail
-	// handler will wait for the StageMedia poster fetch before
-	// continuing without posters. The handler logs a warning and
-	// returns an empty slice on timeout so the page still renders.
-	stagemediaPosterTimeout = 5 * time.Second
 )
 
 // RecordingListItem is the shape returned by /api/v1/recordings and
@@ -44,10 +38,11 @@ const (
 // format strings come from the storage.RecordingState reconciler so the
 // JSON and HTML pages render the same five-status taxonomy.
 //
-// LocalPosterURL is the /images/... path of the user-curated poster
-// for the recording's show, or empty when the cache is disabled or
-// no poster is on disk yet. The grid view in Library.js prefers it
-// over reaching for an upstream URL we don't trust to stay reachable.
+// LocalPosterURL is the /images/... path of the show's chosen banner
+// image (recordings on the library grid render the show banner, not a
+// per-recording poster). Empty when the cache is disabled or no banner
+// is on disk yet. The frontend prefers it over reaching for an
+// upstream URL we don't trust to stay reachable.
 type RecordingListItem struct {
 	ID             int64  `json:"id"`
 	ShowID         int64  `json:"show_id"`
@@ -88,35 +83,36 @@ func (s *Server) routes() {
 	api.GET("/profile", s.handleProfile)
 	api.GET("/recordings", s.handleListRecordings)
 	api.GET("/recordings/:id", s.handleGetRecording)
-	// Per-recording image choice surfaces. POSTs persist the user's
-	// curated poster/backdrop selection or overlay-text override and
-	// (for backdrop/overlay) trigger a re-render of rendered.jpg via
-	// the imagerender stub. Bounds-checked against the cache's
-	// CountPosters/CountBackdrops; 503 when image caching is off.
-	api.POST("/recordings/:id/poster", s.handleSetPoster)
-	api.POST("/recordings/:id/backdrop", s.handleSetBackdrop)
+	// Per-recording overlay surfaces. The text override + the burn-in
+	// opt-out sit on recording_image_choices. POSTs persist the value
+	// and (for the override) trigger a re-render of poster.jpg.
 	api.POST("/recordings/:id/overlay", s.handleSetOverlay)
 	api.POST("/recordings/:id/overlay-disabled", s.handleSetOverlayDisabled)
 	// User image uploads. Multipart "file" field, 10 MiB cap, decoded
-	// + re-encoded as JPEG into the same on-disk cache layout, at
-	// indexes >= imagecache.UploadIndexFloor (100). The picker UI
-	// follows up with POST .../poster or .../backdrop to make the
-	// upload the active selection.
-	api.POST("/recordings/:id/backdrop-upload", s.handleUploadBackdrop)
+	// + re-encoded as JPEG into the canonical slot under the v2 layout.
+	// poster-upload writes to poster-src.jpg and triggers a render so
+	// the burned-in poster.jpg lands on disk before the response
+	// returns.
+	api.POST("/recordings/:id/fanart-upload", s.handleUploadRecordingFanart)
 	api.POST("/recordings/:id/poster-upload", s.handleUploadRecordingPoster)
-	api.POST("/shows/:id/poster-upload", s.handleUploadPoster)
+	api.POST("/shows/:id/banner-upload", s.handleUploadShowBanner)
+	api.POST("/actors/:id/headshot-upload", s.handleUploadActorHeadshot)
+	// "Set from URL" endpoints: the picker UI POSTs the chosen upstream
+	// URL; the server downloads it into the slot. These replace the
+	// indexed-pick endpoints from the v1 cache layout.
+	api.POST("/recordings/:id/fanart-from-url", s.handleSetRecordingFanartFromURL)
+	api.POST("/recordings/:id/poster-from-url", s.handleSetRecordingPosterFromURL)
+	api.POST("/shows/:id/banner-from-url", s.handleSetShowBannerFromURL)
+	api.POST("/actors/:id/headshot-from-url", s.handleSetActorHeadshotFromURL)
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
 	api.GET("/queue", s.handleListQueue)
 	api.POST("/queue/:id/import", s.handleImportQueue)
 	api.GET("/people", s.handleListPeople)
 	api.GET("/people/:id", s.handleGetPerson)
-	// Shows: by-show aggregate list + per-show detail + poster pick.
-	// No overlay text — shows don't get burned-in labels (only
-	// recordings do).
+	// Shows: by-show aggregate list + per-show detail.
 	api.GET("/shows", s.handleListShows)
 	api.GET("/shows/:id", s.handleGetShow)
-	api.POST("/shows/:id/poster", s.handleSetShowPoster)
 	api.GET("/history", s.handleListHistory)
 	api.GET("/mismatches", s.handleListMismatches)
 	api.GET("/settings", s.handleSettings)
@@ -131,11 +127,11 @@ func (s *Server) routes() {
 	api.POST("/encora/wants/:id/remove", s.handleRemoveFromWants)
 	api.POST("/encora/wants/:id/add", s.handleAddToWants)
 
-	// Manual re-render of the burned-in backdrop. Picker handlers also
-	// invoke imagerender.Regenerate directly when a choice changes;
-	// this endpoint is the explicit "Re-render" affordance + a smoke
-	// test surface. 503 when the renderer is nil.
-	api.POST("/recordings/:id/regenerate-backdrop", s.handleRegenerateBackdrop)
+	// Manual re-render of the burned-in poster. Overlay/upload paths
+	// also invoke imagerender.Regenerate directly; this endpoint is the
+	// explicit "Re-render" affordance + a smoke-test surface. 503 when
+	// the renderer is nil.
+	api.POST("/recordings/:id/regenerate-poster", s.handleRegeneratePoster)
 
 	// Scheduled-jobs API. The Mithril /jobs page polls these every
 	// 5s; the runner returns 503 when not wired (tests + no-config).
@@ -195,137 +191,61 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 		return err
 	}
 
-	// Decorate each row with the on-disk poster URL keyed off the
-	// show's curated poster index. Bulk-load show choices once per
-	// request to avoid N+1 queries — for the unique-show subset of a
-	// typical 50-row page this is a single SQL roundtrip.
-	if posterErr := s.decorateLocalPosters(ctx, items); posterErr != nil {
-		s.logger.Warn().Err(posterErr).Msg("decorate local poster urls failed; serving without")
-	}
+	// Decorate each row with the show's banner URL. Selection is
+	// implicit by file existence under the v2 layout, so the helper
+	// just stat()s each unique show banner path — no SQL fan-out.
+	s.decorateLocalPosters(items)
 
 	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
 }
 
-// decorateLocalPosters sets LocalPosterURL on every item that maps to a
-// cached poster on disk. Bulk-loads show_image_choices for the unique
-// show ids in the page so the cost is one SQL query regardless of page
-// size. Cache disabled / no rows yields a no-op (every URL stays "").
-func (s *Server) decorateLocalPosters(ctx context.Context, items []RecordingListItem) error {
+// decorateLocalPosters sets LocalPosterURL on every item that has a
+// cached show banner on disk. Under the v2 layout there's no choice
+// row to bulk-load — selection is implicit by file existence — so the
+// loop is a per-item cache.HasShowBanner stat rather than a SQL fan
+// out. Cache disabled / empty yields a no-op (every URL stays "").
+func (s *Server) decorateLocalPosters(items []RecordingListItem) {
 	cache := s.ImageCache()
 	if cache == nil || cache.Disabled() || len(items) == 0 {
-		return nil
-	}
-	showIDs := make(map[int64]struct{}, len(items))
-	for _, it := range items {
-		if it.ShowID != 0 {
-			showIDs[it.ShowID] = struct{}{}
-		}
-	}
-	choices, err := loadShowPosterChoices(ctx, s.db, showIDs)
-	if err != nil {
-		return err
+		return
 	}
 	for i := range items {
 		showID := items[i].ShowID
 		if showID == 0 {
 			continue
 		}
-		idx := choices[showID] // 0 when not in map (default).
-		items[i].LocalPosterURL = cache.PosterURL(showID, idx)
+		items[i].LocalPosterURL = cache.ShowBannerURL(showID)
 	}
-	return nil
-}
-
-// loadShowPosterChoices returns a {show_id: poster_index} map populated
-// from show_image_choices for the supplied show ids. Shows without a
-// row are absent from the map — callers should treat absence as
-// "fallback to index 0".
-func loadShowPosterChoices(
-	ctx context.Context, db *sql.DB, showIDs map[int64]struct{},
-) (map[int64]int, error) {
-	out := make(map[int64]int, len(showIDs))
-	if len(showIDs) == 0 {
-		return out, nil
-	}
-	placeholders := make([]string, 0, len(showIDs))
-	args := make([]any, 0, len(showIDs))
-	for id := range showIDs {
-		placeholders = append(placeholders, "?")
-		args = append(args, id)
-	}
-	//nolint:gosec // G202: placeholders are "?" markers, not user input.
-	q := `
-		SELECT show_id, poster_index
-		FROM show_image_choices
-		WHERE poster_index IS NOT NULL
-		  AND show_id IN (` + strings.Join(placeholders, ",") + `)
-	`
-	rows, err := db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query show poster choices: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var (
-			showID int64
-			idx    int
-		)
-		if scanErr := rows.Scan(&showID, &idx); scanErr != nil {
-			return nil, fmt.Errorf("scan show poster choice: %w", scanErr)
-		}
-		out[showID] = idx
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate show poster choices: %w", rerr)
-	}
-	return out, nil
 }
 
 // recordingDetailResponse wraps storage.LoadedRecording with the
-// server-side enrichment fields (StageMedia posters, on-disk NFO
-// content + mtime). The embedded *storage.LoadedRecording flattens its
-// PascalCase fields into the same JSON object so existing consumers see
-// no shape change beyond the new lower-case keys.
+// server-side enrichment fields. The embedded *storage.LoadedRecording
+// flattens its PascalCase fields into the same JSON object so existing
+// consumers see no shape change beyond the new lower-case keys.
 //
-// LocalPosterURLs is a sibling of Posters, same length and same index
-// order. Each entry is a /images/... path when the matching poster is
-// in the on-disk cache, "" otherwise — the frontend prefers local URLs
-// when non-empty so the user doesn't hot-link StageMedia for content
-// that's already on the server's filesystem.
-//
-// LocalBackdropURLs lists the cached screen-grab backdrops for the
-// recording, in index order. Empty slice when caching is off or
-// nothing's downloaded yet — the frontend falls back to no backdrop in
-// that case rather than reaching for an upstream URL we don't trust to
-// stay reachable.
+// LocalFanartURL is the /images/... path of the recording's fanart
+// (wide, raw — no overlay). LocalPosterURL is the burned-in poster
+// (vertical, with overlay). Both are empty strings when the slot file
+// isn't on disk yet.
 //
 // Cast performers grow a parallel local_headshot_url field on
 // LoadedRecording.Cast at JSON marshal time via castWithLocalHeadshots.
-// The legacy fields stay for callers that haven't migrated.
 type recordingDetailResponse struct {
 	*storage.LoadedRecording
 
-	Posters           []string                `json:"posters"`
-	LocalPosterURLs   []string                `json:"local_poster_urls"`
-	LocalBackdropURLs []string                `json:"local_backdrop_urls"`
-	Cast              []castEntryWithHeadshot `json:"cast"`
-	NFOContent        string                  `json:"nfo_content"`
-	NFOModifiedAt     *time.Time              `json:"nfo_modified_at"`
+	Cast           []castEntryWithHeadshot `json:"cast"`
+	NFOContent     string                  `json:"nfo_content"`
+	NFOModifiedAt  *time.Time              `json:"nfo_modified_at"`
+	LocalFanartURL string                  `json:"local_fanart_url"`
+	LocalPosterURL string                  `json:"local_poster_url"`
 
-	// SelectedPosterIndex / SelectedBackdropIndex carry the user's
-	// curated picks from recording_image_choices. Both nil when the
-	// row is absent or the column is null — the UI then falls back
-	// to highlighting index 0 to match storage.ImageChoice.Resolve*.
-	SelectedPosterIndex   *int `json:"selected_poster_index"`
-	SelectedBackdropIndex *int `json:"selected_backdrop_index"`
 	// OverlayTextOverride is the user-supplied burned-in label, or
 	// nil when no override has been saved (the renderer uses its own
 	// auto-derived "show · tour · date" string in that case).
 	OverlayTextOverride *string `json:"overlay_text_override"`
 	// OverlayDisabled, when true, tells the renderer to skip the
-	// playbill-style band and copy the raw selected backdrop through
-	// to rendered.jpg unchanged. Mirrors the column on
-	// recording_image_choices.
+	// playbill-style band and copy poster-src.jpg through to
+	// poster.jpg unchanged.
 	OverlayDisabled bool `json:"overlay_disabled"`
 }
 
@@ -354,18 +274,18 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 		return err
 	}
 
-	posters := s.fetchPostersForRecording(ctx, loaded)
-	localPosterURLs := s.localPosterURLs(loaded.Recording.Metadata.ShowID, posters)
-	localBackdropURLs := s.localBackdropURLs(loaded.Recording.ID)
 	castWithHeadshots := s.castWithLocalHeadshots(loaded.Cast)
-
 	nfoContent, nfoModifiedAt := s.readNFOForRecording(loaded)
+
+	var localFanartURL, localPosterURL string
+	if cache := s.ImageCache(); cache != nil && !cache.Disabled() {
+		localFanartURL = cache.RecordingFanartURL(id)
+		localPosterURL = cache.RecordingPosterURL(id)
+	}
 
 	// Image choices are best-effort enrichment — a query failure
 	// shouldn't break the whole detail page. Log and serve a
-	// zero-valued ImageChoice; the UI then highlights the default
-	// (index 0) and shows no override, matching the resolve-fallback
-	// contract.
+	// zero-valued ImageChoice.
 	choice, choiceErr := storage.GetImageChoice(ctx, s.db, id)
 	if choiceErr != nil {
 		s.logger.Warn().
@@ -376,58 +296,15 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, recordingDetailResponse{
-		LoadedRecording:       loaded,
-		Posters:               posters,
-		LocalPosterURLs:       localPosterURLs,
-		LocalBackdropURLs:     localBackdropURLs,
-		Cast:                  castWithHeadshots,
-		NFOContent:            nfoContent,
-		NFOModifiedAt:         nfoModifiedAt,
-		SelectedPosterIndex:   choice.PosterIndex,
-		SelectedBackdropIndex: choice.BackdropIndex,
-		OverlayTextOverride:   choice.OverlayTextOverride,
-		OverlayDisabled:       choice.OverlayDisabled,
+		LoadedRecording:     loaded,
+		Cast:                castWithHeadshots,
+		NFOContent:          nfoContent,
+		NFOModifiedAt:       nfoModifiedAt,
+		LocalFanartURL:      localFanartURL,
+		LocalPosterURL:      localPosterURL,
+		OverlayTextOverride: choice.OverlayTextOverride,
+		OverlayDisabled:     choice.OverlayDisabled,
 	})
-}
-
-// localPosterURLs returns a slice the same length as posters where
-// each entry is the cached /images/... URL when the matching index is
-// on disk, "" otherwise. Returns an empty (but length-matched) slice
-// when caching is disabled so the JSON shape is stable.
-func (s *Server) localPosterURLs(showID int64, posters []string) []string {
-	out := make([]string, len(posters))
-	cache := s.ImageCache()
-	if cache == nil || cache.Disabled() || showID == 0 {
-		return out
-	}
-	for i := range posters {
-		out[i] = cache.PosterURL(showID, i)
-	}
-	return out
-}
-
-// localBackdropURLs enumerates every cached backdrop for the recording
-// in index order. Returns a non-nil empty slice (so the JSON renders
-// [] rather than null) when caching is disabled, the recording has no
-// id, or nothing's been cached for this recording yet.
-func (s *Server) localBackdropURLs(recordingID int64) []string {
-	cache := s.ImageCache()
-	if cache == nil || cache.Disabled() || recordingID == 0 {
-		return []string{}
-	}
-	count := cache.CountBackdrops(recordingID)
-	out := make([]string, 0, count)
-	for i := range count {
-		// CountBackdrops counts files in the directory but doesn't
-		// guarantee they're contiguously numbered (a manual delete
-		// could leave a gap). BackdropURL returns "" when the
-		// specific index isn't present, which we filter out so the
-		// returned slice is a list of usable URLs only.
-		if u := cache.BackdropURL(recordingID, i); u != "" {
-			out = append(out, u)
-		}
-	}
-	return out
 }
 
 // castWithLocalHeadshots wraps each ResolvedCastEntry with the local
@@ -445,38 +322,6 @@ func (s *Server) castWithLocalHeadshots(
 		}
 	}
 	return out
-}
-
-// fetchPostersForRecording asks StageMedia for poster URLs for the
-// recording's show, with a hard 5-second timeout. Returns an empty
-// (non-nil) slice when StageMedia is unconfigured, the recording has
-// no show id, or the upstream call fails. Failures log a warning so
-// operators can spot a misconfigured key without poisoning the page.
-func (s *Server) fetchPostersForRecording(
-	ctx context.Context, loaded *storage.LoadedRecording,
-) []string {
-	if s.Stagemedia() == nil {
-		return []string{}
-	}
-	showID := loaded.Recording.Metadata.ShowID
-	if showID == 0 {
-		return []string{}
-	}
-	timedCtx, cancel := context.WithTimeout(ctx, stagemediaPosterTimeout)
-	defer cancel()
-	posters, err := s.Stagemedia().Posters(timedCtx, showID)
-	if err != nil {
-		s.logger.Warn().
-			Err(err).
-			Int64("recording_id", loaded.Recording.ID).
-			Int64("show_id", showID).
-			Msg("stagemedia: posters fetch failed; returning empty list")
-		return []string{}
-	}
-	if posters == nil {
-		return []string{}
-	}
-	return posters
 }
 
 // readNFOForRecording reads the movie.nfo sitting next to the

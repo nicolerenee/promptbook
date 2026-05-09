@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -22,15 +21,12 @@ import (
 )
 
 // pickerTestServer wires a fresh DB + on-disk image cache + minimal
-// recording row, then returns the server, db, cache root, and the
-// recording id so tests can drive the picker endpoints without
-// pulling in the full fixture sync. The cache root is left empty by
-// default; tests stage poster/backdrop fixtures under it before
-// posting.
+// recording row, then returns the server + db so tests can drive the
+// overlay endpoints and read back the persisted choice.
 func pickerTestServer(
 	t *testing.T,
 	recordingID, showID int64,
-) (*server.Server, *gosql.DB, *imagecache.Cache) {
+) (*server.Server, *gosql.DB) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -38,9 +34,6 @@ func pickerTestServer(
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	// Seed a minimal recording with a raw_json payload that carries the
-	// show id — handleSetPoster reads it back via storage.LoadRecording
-	// to bounds-check against CountPosters(showID).
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, "PickerShow")
 	require.NoError(t, err)
@@ -60,17 +53,7 @@ func pickerTestServer(
 
 	srv, err := server.New(server.Options{DB: db, ImageCache: cache})
 	require.NoError(t, err)
-	return srv, db, cache
-}
-
-// stageImage writes a placeholder file under the cache root at the
-// canonical poster/backdrop layout so CountPosters / CountBackdrops
-// see it. The bytes are arbitrary — the picker handlers don't open
-// the files, they only count them.
-func stageImage(t *testing.T, path string) {
-	t.Helper()
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
-	require.NoError(t, os.WriteFile(path, []byte("x"), 0o600))
+	return srv, db
 }
 
 func postChoiceJSON(
@@ -100,64 +83,12 @@ func loadChoice(t *testing.T, db *gosql.DB, recordingID int64) storage.ImageChoi
 	return c
 }
 
-func TestAPISetPosterPersists(t *testing.T) {
-	t.Parallel()
-
-	const recordingID int64 = 90100222
-	const showID int64 = 4711
-	srv, db, cache := pickerTestServer(t, recordingID, showID)
-
-	// Stage two posters so the bounds-check accepts index 0 and 1.
-	stageImage(t, cache.PosterPath(showID, 0))
-	stageImage(t, cache.PosterPath(showID, 1))
-
-	status, body := postChoiceJSON(t, srv,
-		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/poster",
-		map[string]int{"index": 1})
-
-	require.Equal(t, http.StatusOK, status, body)
-	assert.Contains(t, body, `"ok":true`)
-
-	choice := loadChoice(t, db, recordingID)
-	require.NotNil(t, choice.PosterIndex,
-		"poster choice should be persisted, not nil")
-	assert.Equal(t, 1, *choice.PosterIndex)
-}
-
-func TestAPISetBackdropPersists(t *testing.T) {
-	t.Parallel()
-
-	const recordingID int64 = 8223
-	const showID int64 = 4712
-	srv, db, cache := pickerTestServer(t, recordingID, showID)
-
-	// Stage three backdrops keyed on recording id (not show id).
-	stageImage(t, cache.BackdropPath(recordingID, 0))
-	stageImage(t, cache.BackdropPath(recordingID, 1))
-	stageImage(t, cache.BackdropPath(recordingID, 2))
-
-	status, body := postChoiceJSON(t, srv,
-		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/backdrop",
-		map[string]int{"index": 2})
-
-	require.Equal(t, http.StatusOK, status, body)
-	assert.Contains(t, body, `"ok":true`)
-
-	choice := loadChoice(t, db, recordingID)
-	require.NotNil(t, choice.BackdropIndex)
-	assert.Equal(t, 2, *choice.BackdropIndex)
-}
-
 func TestAPISetOverlayTextOverrideAndClear(t *testing.T) {
 	t.Parallel()
 
 	const recordingID int64 = 8224
 	const showID int64 = 4713
-	srv, db, cache := pickerTestServer(t, recordingID, showID)
-
-	// Backdrop has to exist for the cache not to be Disabled() —
-	// stage one so the renderer call (stub) is exercised.
-	stageImage(t, cache.BackdropPath(recordingID, 0))
+	srv, db := pickerTestServer(t, recordingID, showID)
 
 	// Step 1: persist an explicit override.
 	status, body := postChoiceJSON(t, srv,
@@ -185,10 +116,7 @@ func TestAPISetOverlayDisabledFlipsAndSurfacesInDetail(t *testing.T) {
 
 	const recordingID int64 = 8230
 	const showID int64 = 4720
-	srv, db, cache := pickerTestServer(t, recordingID, showID)
-
-	// Stage one backdrop so the cache has something to render against.
-	stageImage(t, cache.BackdropPath(recordingID, 0))
+	srv, db := pickerTestServer(t, recordingID, showID)
 
 	// Step 1: flip the flag on.
 	status, body := postChoiceJSON(t, srv,
@@ -223,61 +151,14 @@ func TestAPISetOverlayDisabledFlipsAndSurfacesInDetail(t *testing.T) {
 		"overlay-disabled should flip back to false")
 }
 
-func TestAPISetPosterBoundsCheck(t *testing.T) {
-	t.Parallel()
-
-	const recordingID int64 = 8225
-	const showID int64 = 4714
-	srv, _, cache := pickerTestServer(t, recordingID, showID)
-
-	// One poster on disk → valid range is [0, 1).
-	stageImage(t, cache.PosterPath(showID, 0))
-
-	tests := []struct {
-		name  string
-		index int
-	}{
-		{name: "negative_index", index: -1},
-		{name: "out_of_range", index: 999},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			status, body := postChoiceJSON(t, srv,
-				"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/poster",
-				map[string]int{"index": tt.index})
-			assert.Equal(t, http.StatusBadRequest, status, body)
-			assert.Contains(t, body, "out of range")
-		})
-	}
-}
-
-func TestAPISetBackdropBoundsCheck(t *testing.T) {
-	t.Parallel()
-
-	const recordingID int64 = 8226
-	const showID int64 = 4715
-	srv, _, cache := pickerTestServer(t, recordingID, showID)
-
-	// Two backdrops on disk → valid range is [0, 2).
-	stageImage(t, cache.BackdropPath(recordingID, 0))
-	stageImage(t, cache.BackdropPath(recordingID, 1))
-
-	status, body := postChoiceJSON(t, srv,
-		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/backdrop",
-		map[string]int{"index": 5})
-	assert.Equal(t, http.StatusBadRequest, status, body)
-	assert.Contains(t, body, "out of range")
-}
-
-func TestAPIPickerRequiresImageCache(t *testing.T) {
+func TestAPIOverlayRequiresImageCache(t *testing.T) {
 	t.Parallel()
 
 	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	// No ImageCache on Options → 503 on every picker route.
+	// No ImageCache on Options → 503 on every overlay route.
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
 
@@ -286,8 +167,6 @@ func TestAPIPickerRequiresImageCache(t *testing.T) {
 		path string
 		body any
 	}{
-		{name: "poster", path: "/api/v1/recordings/1/poster", body: map[string]int{"index": 0}},
-		{name: "backdrop", path: "/api/v1/recordings/1/backdrop", body: map[string]int{"index": 0}},
 		{name: "overlay", path: "/api/v1/recordings/1/overlay", body: map[string]any{"clear": true}},
 		{
 			name: "overlay_disabled",
@@ -304,7 +183,7 @@ func TestAPIPickerRequiresImageCache(t *testing.T) {
 	}
 }
 
-func TestAPIPickerRecordingNotFound(t *testing.T) {
+func TestAPIOverlayRecordingNotFound(t *testing.T) {
 	t.Parallel()
 
 	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
@@ -316,7 +195,7 @@ func TestAPIPickerRecordingNotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	status, body := postChoiceJSON(t, srv,
-		"/api/v1/recordings/99999/poster",
-		map[string]int{"index": 0})
+		"/api/v1/recordings/99999/overlay",
+		map[string]any{"clear": true})
 	assert.Equal(t, http.StatusNotFound, status, body)
 }

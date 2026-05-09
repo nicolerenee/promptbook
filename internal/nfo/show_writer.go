@@ -10,10 +10,11 @@ package nfo
 // element — but the union below works in both: each engine ignores
 // fields it doesn't understand.
 //
-// `<thumb>` resolves to the user-curated show poster (via
-// storage.GetShowImageChoice), with a forward-slash relative path
-// computed against the directory the NFO will land in. When no
-// poster is cached the <thumb>/<fanart> elements are simply omitted.
+// `<thumb>` resolves to the show's banner image at
+// shows/<show_id>/banner.jpg in the v2 image cache. The path is a
+// forward-slash relative reference computed against the directory the
+// NFO will land in. When no banner is cached the <thumb>/<fanart>
+// elements are simply omitted.
 
 import (
 	"context"
@@ -29,7 +30,6 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
-	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // CollectionNFO is the root <collection> element. Field order matches
@@ -63,12 +63,11 @@ type CollectionUnique struct {
 }
 
 // ShowWriteOptions carries the inputs WriteShowCollectionFile needs.
-// DB and Cache are optional in the same sense as WriteOptions:
-// nil/disabled disables the <thumb>/<fanart> elements but still
-// produces a valid <collection> document.
+// Cache is optional: nil/disabled disables the <thumb>/<fanart>
+// elements but still produces a valid <collection> document. DB is
+// reserved for future use (audit trail) and is currently ignored.
 type ShowWriteOptions struct {
-	// DB is queried for the user's show poster choice. nil disables
-	// poster references regardless of Cache state.
+	// DB is reserved for future use. Currently ignored.
 	DB *sql.DB
 	// Cache is the on-disk image cache. nil or Cache.Disabled() == true
 	// disables poster references.
@@ -151,22 +150,17 @@ func buildShowNFO(ctx context.Context, opts ShowWriteOptions) CollectionNFO {
 }
 
 // resolveShowPosterPath returns the NFO-relative forward-slash path to
-// the user's curated show poster, or "" when imaging is disabled, the
-// choice can't be loaded, or the file isn't on disk.
-func resolveShowPosterPath(ctx context.Context, opts ShowWriteOptions) string {
-	if opts.Cache == nil || opts.Cache.Disabled() || opts.DB == nil {
+// the show's chosen banner, or "" when imaging is disabled or the
+// banner isn't on disk. Selection is implicit by file existence under
+// the v2 layout — there's no per-show choice row.
+func resolveShowPosterPath(_ context.Context, opts ShowWriteOptions) string {
+	if opts.Cache == nil || opts.Cache.Disabled() {
 		return ""
 	}
-	choice, err := storage.GetShowImageChoice(ctx, opts.DB, opts.ShowID)
-	if err != nil {
-		// Best-effort: a DB hiccup just drops the poster reference.
+	if !opts.Cache.HasShowBanner(opts.ShowID) {
 		return ""
 	}
-	idx := choice.ResolvePoster()
-	if !opts.Cache.HasPoster(opts.ShowID, idx) {
-		return ""
-	}
-	abs := opts.Cache.PosterPath(opts.ShowID, idx)
+	abs := opts.Cache.ShowBannerPath(opts.ShowID)
 	rel, err := filepath.Rel(opts.Dir, abs)
 	if err != nil {
 		return ""

@@ -78,9 +78,10 @@ type settingsImageCache struct {
 }
 
 type settingsImageCacheCounts struct {
-	Posters   int `json:"posters"`
-	Backdrops int `json:"backdrops"`
-	Headshots int `json:"headshots"`
+	Headshots        int `json:"headshots"`
+	ShowBanners      int `json:"show_banners"`
+	RecordingFanarts int `json:"recording_fanarts"`
+	RecordingPosters int `json:"recording_posters"`
 }
 
 // handleSettings returns the loaded application configuration with
@@ -155,9 +156,10 @@ func buildImageCacheSettings(
 	}
 	c := cache.Counts()
 	out.Counts = settingsImageCacheCounts{
-		Posters:   c.Posters,
-		Backdrops: c.Backdrops,
-		Headshots: c.Headshots,
+		Headshots:        c.Headshots,
+		ShowBanners:      c.ShowBanners,
+		RecordingFanarts: c.RecordingFanarts,
+		RecordingPosters: c.RecordingPosters,
 	}
 	return out
 }
