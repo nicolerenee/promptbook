@@ -59,20 +59,20 @@ type RecordingListItem struct {
 	LocalFormat    string `json:"local_format"`
 }
 
-// recordingsListItem is the legacy trimmed shape kept for the deprecated
-// loadRecordingsList helper. New code paths should use RecordingListItem.
-//
-// Deprecated: use RecordingListItem and loadStatefulRecordings instead.
-type recordingsListItem struct {
-	ID             int64  `json:"id"`
-	Show           string `json:"show"`
-	Tour           string `json:"tour"`
-	DateFull       string `json:"date_full"`
-	DateMonthKnown bool   `json:"date_month_known"`
-	DateDayKnown   bool   `json:"date_day_known"`
-	Master         string `json:"master"`
-	InCollection   bool   `json:"in_collection"`
-	InWants        bool   `json:"in_wants"`
+// wantsListItem is the JSON shape returned by /api/v1/wants. It surfaces
+// the wants row's last_synced_at as wants_added so the UI can render an
+// "Added" timestamp.
+type wantsListItem struct {
+	ID             int64   `json:"id"`
+	Show           string  `json:"show"`
+	Tour           string  `json:"tour"`
+	DateFull       string  `json:"date_full"`
+	DateMonthKnown bool    `json:"date_month_known"`
+	DateDayKnown   bool    `json:"date_day_known"`
+	Master         string  `json:"master"`
+	InCollection   bool    `json:"in_collection"`
+	InWants        bool    `json:"in_wants"`
+	WantsAdded     *string `json:"wants_added"`
 }
 
 func (s *Server) routes() {
@@ -265,17 +265,11 @@ func readNFO(path string) (string, *time.Time, error) {
 }
 
 func (s *Server) handleListWants(c echo.Context) error {
-	items, err := loadRecordingsList(c.Request().Context(), s.db, wantsScanLimit, 0, "false")
+	items, err := loadWantsList(c.Request().Context(), s.db, wantsScanLimit, 0)
 	if err != nil {
 		return err
 	}
-	wants := make([]recordingsListItem, 0, len(items))
-	for _, item := range items {
-		if item.InWants {
-			wants = append(wants, item)
-		}
-	}
-	return c.JSON(http.StatusOK, map[string]any{itemsKey: wants})
+	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
 }
 
 func (s *Server) handleSyncRuns(c echo.Context) error {
@@ -505,59 +499,65 @@ func loadRecordingMeta(
 	return out, nil
 }
 
-// loadRecordingsList queries recordings + collection/wants membership in
-// one go. owned filter values: "" / "any" / "true" / "false".
-//
-// Deprecated: this is the legacy shape used by /api/v1/wants. New code
-// should use loadStatefulRecordings, which exposes the RecordingState
-// reconciler output.
-func loadRecordingsList(
+// loadWantsList queries every wants row joined with its recording / show
+// metadata and surfaces wants.last_synced_at as the per-row WantsAdded
+// timestamp. Rows are returned newest-added first so the UI's "added"
+// timeline reads chronologically. Excludes wants whose recording is also
+// in the collection — those are no longer "wants" from a UX standpoint.
+func loadWantsList(
 	ctx context.Context,
 	db *sql.DB,
 	limit, offset int,
-	owned string,
-) ([]recordingsListItem, error) {
-	q := `
+) ([]wantsListItem, error) {
+	const q = `
 		SELECT
-			r.recording_id, s.name, r.tour, r.date_full,
+			r.recording_id, COALESCE(s.name, ''), r.tour, r.date_full,
 			r.date_month_known, r.date_day_known, r.master,
 			c.recording_id IS NOT NULL AS in_collection,
-			w.recording_id IS NOT NULL AS in_wants
-		FROM recordings r
+			w.last_synced_at
+		FROM wants w
+		JOIN recordings r ON r.recording_id = w.recording_id
 		LEFT JOIN shows s ON s.show_id = r.show_id
 		LEFT JOIN collection c ON c.recording_id = r.recording_id
-		LEFT JOIN wants w ON w.recording_id = r.recording_id
+		WHERE c.recording_id IS NULL
+		ORDER BY w.last_synced_at DESC, r.recording_id DESC
+		LIMIT ? OFFSET ?
 	`
-	switch owned {
-	case "true":
-		q += `WHERE c.recording_id IS NOT NULL `
-	case "false":
-		q += `WHERE c.recording_id IS NULL `
-	}
-	q += `ORDER BY s.name, r.tour, r.date_full LIMIT ? OFFSET ?`
-
 	rows, err := db.QueryContext(ctx, q, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query wants list: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	out := make([]recordingsListItem, 0)
+	out := make([]wantsListItem, 0)
 	for rows.Next() {
-		var item recordingsListItem
-		var monthKnown, dayKnown int
-		var inColl, inWants int
-		if scanErr := rows.Scan(&item.ID, &item.Show, &item.Tour, &item.DateFull,
-			&monthKnown, &dayKnown, &item.Master, &inColl, &inWants); scanErr != nil {
-			return nil, scanErr
+		var (
+			item                 wantsListItem
+			monthKnown, dayKnown int
+			inColl               int
+			lastSynced           sql.NullString
+		)
+		if scanErr := rows.Scan(
+			&item.ID, &item.Show, &item.Tour, &item.DateFull,
+			&monthKnown, &dayKnown, &item.Master,
+			&inColl, &lastSynced,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scan wants list row: %w", scanErr)
 		}
 		item.DateMonthKnown = monthKnown == 1
 		item.DateDayKnown = dayKnown == 1
 		item.InCollection = inColl == 1
-		item.InWants = inWants == 1
+		item.InWants = true
+		if lastSynced.Valid {
+			s := lastSynced.String
+			item.WantsAdded = &s
+		}
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if rerr := rows.Err(); rerr != nil {
+		return nil, fmt.Errorf("iterate wants list rows: %w", rerr)
+	}
+	return out, nil
 }
 
 func paramInt(c echo.Context, name string, fallback int) int {

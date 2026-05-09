@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,16 +64,27 @@ type historyItem struct {
 // handleListHistory serves the JSON history list. Honors the same
 // ?kind=, ?limit=, ?offset= query params as the HTML page; unknown kinds
 // in the CSV are silently dropped so a stale link doesn't 400 the UI.
+// Also accepts ?recording_id= to scope the list to a single recording's
+// activity timeline; malformed values 400.
 func (s *Server) handleListHistory(c echo.Context) error {
 	kinds := parseHistoryKindParam(c.QueryParam("kind"))
 	limit := paramInt(c, "limit", historyListLimit)
 	offset := paramInt(c, "offset", 0)
 
-	events, err := storage.ListHistory(c.Request().Context(), s.db, storage.ListHistoryOptions{
+	opts := storage.ListHistoryOptions{
 		Kinds:  kinds,
 		Limit:  limit,
 		Offset: offset,
-	})
+	}
+	if raw := strings.TrimSpace(c.QueryParam("recording_id")); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid recording_id")
+		}
+		opts.RecordingID = &id
+	}
+
+	events, err := storage.ListHistory(c.Request().Context(), s.db, opts)
 	if err != nil {
 		return err
 	}
