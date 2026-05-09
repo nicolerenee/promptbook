@@ -8,18 +8,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/labstack/echo/v4"
 
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
-
-// stagemediaImageTimeout caps how long the people detail page waits on
-// the StageMedia.me API before giving up and rendering without a
-// headshot. The page must remain useful even when the image side-call
-// is slow, errors, or returns nothing.
-const stagemediaImageTimeout = 5 * time.Second
 
 // peopleListLimit is the default limit applied to /api/v1/people when
 // the caller doesn't pass ?limit=. The list is short enough that the
@@ -56,22 +49,24 @@ type PersonRecording struct {
 	State          string `json:"state"`
 }
 
-// PersonDetail is the JSON payload for /api/v1/people/{id}. HeadshotURL
-// is best-effort — populated when a stagemedia client is configured AND
-// the API call succeeds within the timeout, otherwise an empty string
-// so the field is always present in the response (the JS frontend
-// branches on truthy vs falsy rather than presence).
+// PersonDetail is the JSON payload for /api/v1/people/{id}.
 //
-// LocalHeadshotURL is the cache-served /images/... path when the actor's
-// headshot is on disk, "" otherwise. The frontend prefers the local URL
-// so detail pages still render after a stagemedia outage.
+// LocalHeadshotURL is the cache-served /images/... path when the
+// actor's headshot is on disk, "" otherwise. The placeholder
+// generator (Phase 3) backstops a missing slot with a generated
+// avatar so the frontend can render the URL unconditionally.
+//
+// Upstream stagemedia URLs are NOT exposed on this payload — Phase 4
+// dropped them so all detail responses only carry local /images/...
+// paths. The picker modal queries
+// GET /api/v1/actors/:id/headshot-options live when the user wants
+// to swap the slot.
 type PersonDetail struct {
 	PerformerID      int64             `json:"performer_id"`
 	Name             string            `json:"name"`
 	Slug             string            `json:"slug"`
 	URL              string            `json:"url"`
 	Recordings       []PersonRecording `json:"recordings"`
-	HeadshotURL      string            `json:"headshot_url"`
 	LocalHeadshotURL string            `json:"local_headshot_url"`
 }
 
@@ -134,9 +129,6 @@ func (s *Server) handleGetPerson(c echo.Context) error {
 		return err
 	}
 
-	if url := s.fetchHeadshot(ctx, detail); url != "" {
-		detail.HeadshotURL = url
-	}
 	if cache := s.ImageCache(); cache != nil && !cache.Disabled() {
 		detail.LocalHeadshotURL = cache.HeadshotURL(detail.PerformerID)
 	}
@@ -345,39 +337,4 @@ func loadPersonRecordings(
 		out[i].State = string(st.Status)
 	}
 	return out, nil
-}
-
-// fetchHeadshot consults stagemedia for a single performer, scoped to
-// the show id of the first recording in the detail. Returns "" when no
-// stagemedia client is configured, when the call errors, when it times
-// out, or when stagemedia has no headshot for the performer. The page
-// must always render — image side-quests never block the response.
-func (s *Server) fetchHeadshot(ctx context.Context, detail *PersonDetail) string {
-	client := s.Stagemedia()
-	if client == nil || detail == nil || len(detail.Recordings) == 0 {
-		return ""
-	}
-	showID := detail.Recordings[0].ShowID
-	if showID == 0 {
-		return ""
-	}
-
-	imgCtx, cancel := context.WithTimeout(ctx, stagemediaImageTimeout)
-	defer cancel()
-
-	imgs, err := client.Images(imgCtx, showID, []int64{detail.PerformerID})
-	if err != nil {
-		s.logger.Debug().
-			Err(err).
-			Int64("performer_id", detail.PerformerID).
-			Int64("show_id", showID).
-			Msg("stagemedia headshot fetch failed")
-		return ""
-	}
-	for _, p := range imgs.Performers {
-		if p.ID == detail.PerformerID && p.URL != "" {
-			return p.URL
-		}
-	}
-	return ""
 }

@@ -21,11 +21,12 @@ import { smartDate } from '../utils/format.js';
 import {
   uploadFile,
   errorMessageFromUpload,
-  renderUploadButton,
 } from '../utils/uploadPicker.js';
 import ImagePickerModal, {
   renderEditImagesButton,
   renderImageErrorToast,
+  renderImageInfoToast,
+  renderUpstreamPicker,
 } from './ImagePickerModal.js';
 
 // STATUS_META mirrors Library.js / Recording.js so badges stay
@@ -202,7 +203,15 @@ function renderHeader(detail) {
         ]),
         m('div', { class: 'shrink-0' },
           renderEditImagesButton({
-            onclick: () => { state.show.pickerOpen = true; },
+            onclick: () => {
+              state.show.pickerOpen = true;
+              // Kick the upstream options fetch on first open so the
+              // picker isn't a static skeleton until the user clicks
+              // around. Cached options stay between opens.
+              if (!Array.isArray(state.show.pickerOptions)) {
+                loadShowOptions(detail.id);
+              }
+            },
           })),
       ]),
       detail.description
@@ -229,36 +238,127 @@ function yearSpanText(detail) {
   return String(first != null ? first : last);
 }
 
-// renderPosterPicker shows the cached banner with an Upload button.
-// Single slot under v2 — no thumbnail strip, no green-ring index.
-// Phase 4 will add live upstream option browsing via a new "browse"
-// affordance; for now this is preview + upload.
+// errorMessage extracts a human-readable string from a thrown api
+// error. Mirrors the helper in Recording.js.
+function errorMessage(err) {
+  if (!err) return 'unknown error';
+  if (err.body) {
+    try {
+      const parsed = JSON.parse(err.body);
+      if (parsed && parsed.error) return String(parsed.error);
+      if (parsed && parsed.message) return String(parsed.message);
+    } catch (_) { /* not JSON; fall through. */ }
+    if (typeof err.body === 'string' && err.body.length < 240) return err.body;
+  }
+  return err.message || String(err);
+}
+
+// loadShowOptions fetches /api/v1/shows/:id/poster-options and
+// parks the result on state.show.pickerOptions. Errors land on
+// pickerOptionsError so the picker tab can render an inline alert.
+function loadShowOptions(id) {
+  state.show.pickerOptionsLoading = true;
+  state.show.pickerOptionsError = null;
+  m.redraw();
+  return api.get('/shows/' + encodeURIComponent(id) + '/poster-options')
+    .then((body) => {
+      state.show.pickerOptions =
+        (body && Array.isArray(body.options)) ? body.options : [];
+      state.show.pickerOptionsLoading = false;
+      m.redraw();
+    })
+    .catch((err) => {
+      state.show.pickerOptionsLoading = false;
+      if (err && err.status === 503) {
+        state.show.pickerOptionsError =
+          'Upstream client not configured on the server.';
+      } else {
+        state.show.pickerOptionsError = errorMessage(err);
+      }
+      m.redraw();
+    });
+}
+
+// runShowPick POSTs /shows/:id/banner-from-url with the chosen
+// upstream URL; on success re-fetches the detail so local_banner_url
+// picks up the new slot.
+function runShowPick(id, url) {
+  if (state.show.imageBusy) return;
+  state.show.imageBusy = true;
+  state.show.imageError = null;
+  m.redraw();
+  api.post('/shows/' + encodeURIComponent(id) + '/banner-from-url', { url })
+    .then((resp) => {
+      state.show.imageBusy = false;
+      if (resp && resp.ok) {
+        return loadShow(id);
+      }
+      state.show.imageError = (resp && resp.error) || 'unknown error';
+      m.redraw();
+      return null;
+    })
+    .catch((err) => {
+      state.show.imageBusy = false;
+      state.show.imageError = errorMessage(err);
+      m.redraw();
+    });
+}
+
+// runShowRefreshFromUpstream fires the per-entity refresh-show-images
+// job with force=true, then closes the modal and parks an info-toast
+// message so the user knows the work is queued.
+function runShowRefreshFromUpstream(id) {
+  state.show.imageBusy = true;
+  m.redraw();
+  api.post('/shows/' + encodeURIComponent(id) + '/refresh-images',
+    { force: true })
+    .then(() => {
+      state.show.imageBusy = false;
+      state.show.pickerOpen = false;
+      state.show.imageInfo =
+        'Refresh queued — page will update when the job completes.';
+      setTimeout(() => {
+        if (state.show.imageInfo) {
+          state.show.imageInfo = null;
+          m.redraw();
+        }
+      }, 5000);
+      m.redraw();
+    })
+    .catch((err) => {
+      state.show.imageBusy = false;
+      if (err && err.status === 503) {
+        state.show.imageError =
+          'Background jobs not configured on the server.';
+      } else if (err && err.status === 409) {
+        state.show.imageError =
+          'A refresh is already in flight — wait for it to finish.';
+      } else {
+        state.show.imageError = errorMessage(err);
+      }
+      m.redraw();
+    });
+}
+
+// renderPosterPicker is the show-banner tab body. Single slot under
+// v2 — clicking an upstream thumbnail downloads it into
+// shows/<id>/banner.jpg via /shows/:id/banner-from-url.
 function renderPosterPicker(detail) {
-  const url = detail.local_banner_url || '';
-  const busy = state.show.imageBusy;
-  return m('section', { class: 'space-y-3' }, [
-    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-      m('h3', { class: 'text-sm font-semibold' }, 'Show banner'),
-      renderUploadButton({
-        label: 'Upload banner',
-        disabled: busy,
-        onSelect: runBannerUpload,
-      }),
-    ]),
-    url
-      ? m('figure', {
-          class: 'rounded overflow-hidden bg-base-200 w-48 aspect-[2/3]',
-        }, m('img', {
-          src: url,
-          alt: (detail.name || 'show') + ' banner',
-          class: 'w-full h-full object-cover',
-          loading: 'lazy',
-        }))
-      : m('div', { class: 'opacity-60 text-sm' },
-          'No banner on disk yet — upload one, or wait for the next ' +
-          'refresh-show-images job. ' +
-          'A live picker for upstream options lands in Phase 4.'),
-  ]);
+  const id = detail.id;
+  return renderUpstreamPicker({
+    currentURL: detail.local_banner_url || '',
+    currentLabel: 'Current banner',
+    currentAlt: (detail.name || 'show') + ' banner',
+    aspect: 'poster',
+    options: state.show.pickerOptions,
+    loading: !!state.show.pickerOptionsLoading,
+    error: state.show.pickerOptionsError || null,
+    busy: !!state.show.imageBusy,
+    onPick: (url) => runShowPick(id, url),
+    onUpload: runBannerUpload,
+    onRefetch: () => loadShowOptions(id),
+    uploadLabel: 'Upload banner',
+  });
 }
 
 // renderImagePickerModal mounts the <dialog>-based modal that hosts
@@ -266,12 +366,21 @@ function renderPosterPicker(detail) {
 // "Edit images" header button. Single-section variant (no tabs) since
 // shows don't get burned-in backdrops or overlay text.
 function renderImagePickerModal(detail) {
+  const footerActions = [
+    {
+      label: 'Refresh from upstream',
+      primary: true,
+      disabled: !!state.show.imageBusy,
+      onClick: () => runShowRefreshFromUpstream(detail.id),
+    },
+  ];
   return m(ImagePickerModal, {
     open: !!state.show.pickerOpen,
     onClose: () => { state.show.pickerOpen = false; },
     title: 'Edit images',
     busy: !!state.show.imageBusy,
     render: () => renderPosterPicker(detail),
+    footerActions,
   });
 }
 
@@ -315,7 +424,11 @@ const Show = {
   oninit(vnode) {
     state.show.imageBusy = false;
     state.show.imageError = null;
+    state.show.imageInfo = null;
     state.show.pickerOpen = false;
+    state.show.pickerOptions = null;
+    state.show.pickerOptionsLoading = false;
+    state.show.pickerOptionsError = null;
     state.show.sortKey = DEFAULT_SORT.key;
     state.show.sortDir = DEFAULT_SORT.dir;
     const id = vnode.attrs && vnode.attrs.id;
@@ -332,7 +445,11 @@ const Show = {
     if (id && state.show.id !== id) {
       state.show.imageBusy = false;
       state.show.imageError = null;
+      state.show.imageInfo = null;
       state.show.pickerOpen = false;
+      state.show.pickerOptions = null;
+      state.show.pickerOptionsLoading = false;
+      state.show.pickerOptionsError = null;
       loadShow(id);
     }
   },
@@ -365,6 +482,10 @@ const Show = {
       renderImageErrorToast({
         error: state.show.imageError,
         onDismiss: () => { state.show.imageError = null; },
+      }),
+      renderImageInfoToast({
+        message: state.show.imageInfo,
+        onDismiss: () => { state.show.imageInfo = null; },
       }),
     ]);
   },

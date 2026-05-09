@@ -33,11 +33,12 @@ import { smartDate, humanSize, relativeTime, formatNFTDate } from '../utils/form
 import {
   uploadFile,
   errorMessageFromUpload,
-  renderUploadButton,
 } from '../utils/uploadPicker.js';
 import ImagePickerModal, {
   renderEditImagesButton,
   renderImageErrorToast,
+  renderImageInfoToast,
+  renderUpstreamPicker,
 } from './ImagePickerModal.js';
 
 // STATUS_META keys on the lowercase status tokens, matching Library.js.
@@ -418,6 +419,10 @@ function renderHeader(loaded) {
           onclick: () => {
             state.recording.pickerOpen = true;
             state.recording.pickerTab = 'poster';
+            // Kick the upstream options fetch for the default tab so
+            // the picker doesn't render a static skeleton until the
+            // user clicks something.
+            maybeLoadPickerOptions(loaded.Recording.id, 'poster');
           },
         }),
       ]),
@@ -654,64 +659,109 @@ function renderDangerZone(loaded) {
   ]);
 }
 
-// renderSlotPreview is the v2 picker tab body for a single slot
-// (poster / fanart). Shows the current cached image (if any) plus an
-// Upload button that posts to the matching slot endpoint. The browse-
-// upstream-options UI lands in Phase 4; this preview is the minimal
-// affordance the user needs to override the auto-fetched slot.
-function renderSlotPreview({ url, alt, aspect, uploadLabel, uploadPath, id }) {
-  const busy = state.recording.imageBusy;
-  const figureClass = 'rounded overflow-hidden bg-base-200 ' +
-    (aspect === 'backdrop' ? 'w-full aspect-video max-w-2xl' : 'w-48 aspect-[2/3]');
-  return m('section', { class: 'space-y-3' }, [
-    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-      m('h3', { class: 'text-sm font-semibold' }, uploadLabel),
-      renderUploadButton({
-        label: 'Upload ' + (aspect === 'backdrop' ? 'fanart' : 'poster'),
-        disabled: busy,
-        onSelect: (file) => runUpload(uploadPath, id, file),
-      }),
-    ]),
-    url
-      ? m('figure', { class: figureClass }, m('img', {
-          src: url,
-          alt,
-          class: 'w-full h-full object-cover',
-          loading: 'lazy',
-        }))
-      : m('div', { class: 'opacity-60 text-sm' },
-          'No image on disk yet — upload one, or wait for the next ' +
-          'refresh-encora job to populate this slot. ' +
-          'A live picker for upstream options lands in Phase 4.'),
-  ]);
+// loadOptions fetches /api/v1/<entity>/<id>/<kind>-options and parks
+// the result on state.recording.pickerOptions[kind]. Errors land on
+// pickerOptionsError[kind] so the picker tab can render an inline
+// alert. Loading flips pickerOptionsLoading[kind] for the duration.
+function loadOptions(id, kind) {
+  state.recording.pickerOptionsLoading = state.recording.pickerOptionsLoading || {};
+  state.recording.pickerOptions = state.recording.pickerOptions || {};
+  state.recording.pickerOptionsError = state.recording.pickerOptionsError || {};
+  state.recording.pickerOptionsLoading[kind] = true;
+  state.recording.pickerOptionsError[kind] = null;
+  // Don't clear pickerOptions on refetch — the user prefers seeing the
+  // stale strip while the new fetch flies than a flash to skeletons.
+  m.redraw();
+
+  return api.get('/recordings/' + encodeURIComponent(id) + '/' + kind + '-options')
+    .then((body) => {
+      state.recording.pickerOptions[kind] =
+        (body && Array.isArray(body.options)) ? body.options : [];
+      state.recording.pickerOptionsLoading[kind] = false;
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.pickerOptionsLoading[kind] = false;
+      if (err && err.status === 503) {
+        state.recording.pickerOptionsError[kind] =
+          'Upstream client not configured on the server.';
+      } else {
+        state.recording.pickerOptionsError[kind] = errorMessage(err);
+      }
+      m.redraw();
+    });
 }
 
-// renderPosterPicker is the poster tab. Single slot under v2 — no
-// thumbnail strip, no green-ring index. Phase 4 will add live upstream
-// option browsing; for now this is preview + upload.
-function renderPosterPicker(loaded) {
-  const id = loaded.Recording.id;
-  return renderSlotPreview({
-    url: loaded.local_poster_url || '',
-    alt: (loaded.Recording.show || 'recording') + ' poster',
-    aspect: 'poster',
-    uploadLabel: 'Poster',
-    uploadPath: '/api/v1/recordings/' + id + '/poster-upload',
-    id,
-  });
+// runRefreshFromUpstream fires POST /recordings/:id/refresh-images
+// (or /shows/:id/...). On success closes the modal + parks an info
+// message on state so the toast renders. The user pulls the page
+// down via m.route.set or wait for the runner to finish — this
+// helper does NOT poll.
+function runRefreshFromUpstream(id) {
+  state.recording.imageBusy = true;
+  m.redraw();
+  api.post('/recordings/' + encodeURIComponent(id) + '/refresh-images',
+    { force: true })
+    .then(() => {
+      state.recording.imageBusy = false;
+      state.recording.pickerOpen = false;
+      state.recording.imageInfo =
+        'Refresh queued — page will update when the job completes.';
+      // Auto-dismiss the info toast after 5s so the user isn't
+      // stuck dismissing it manually for a routine confirmation.
+      setTimeout(() => {
+        if (state.recording.imageInfo) {
+          state.recording.imageInfo = null;
+          m.redraw();
+        }
+      }, 5000);
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.imageBusy = false;
+      if (err && err.status === 503) {
+        state.recording.imageError =
+          'Background jobs not configured on the server.';
+      } else if (err && err.status === 409) {
+        state.recording.imageError =
+          'A refresh is already in flight — wait for it to finish.';
+      } else {
+        state.recording.imageError = errorMessage(err);
+      }
+      m.redraw();
+    });
 }
 
-// renderBackdropPicker is the fanart tab. Same shape as the poster
-// tab but the slot is fanart.jpg and the aspect is 16:9.
-function renderBackdropPicker(loaded) {
+// renderPickerTab renders one of the live picker tabs. kind is
+// 'poster' or 'fanart'; the helper resolves the right local URL,
+// upstream-options endpoint, and from-url POST path off the kind.
+function renderPickerTab(loaded, kind) {
   const id = loaded.Recording.id;
-  return renderSlotPreview({
-    url: loaded.local_fanart_url || '',
-    alt: (loaded.Recording.show || 'recording') + ' fanart',
-    aspect: 'backdrop',
-    uploadLabel: 'Fanart',
-    uploadPath: '/api/v1/recordings/' + id + '/fanart-upload',
-    id,
+  const localURL = kind === 'fanart'
+    ? (loaded.local_fanart_url || '')
+    : (loaded.local_poster_url || '');
+  const aspect = kind === 'fanart' ? 'fanart' : 'poster';
+  const uploadPath = '/api/v1/recordings/' + id + '/' + kind + '-upload';
+  const fromURLPath = '/recordings/' + id + '/' + kind + '-from-url';
+
+  const optionsByKind = state.recording.pickerOptions || {};
+  const loadingByKind = state.recording.pickerOptionsLoading || {};
+  const errorByKind = state.recording.pickerOptionsError || {};
+
+  return renderUpstreamPicker({
+    currentURL: localURL,
+    currentLabel: kind === 'fanart' ? 'Current fanart' : 'Current poster',
+    currentAlt: (loaded.Recording.show || 'recording') + ' ' + kind,
+    aspect,
+    options: optionsByKind[kind],
+    loading: !!loadingByKind[kind],
+    error: errorByKind[kind] || null,
+    busy: !!state.recording.imageBusy,
+    onPick: (url) => postPickerChoice(fromURLPath, { url },
+      () => loadRecording(id)),
+    onUpload: (file) => runUpload(uploadPath, id, file),
+    onRefetch: () => loadOptions(id, kind),
+    uploadLabel: kind === 'fanart' ? 'Upload fanart' : 'Upload poster',
   });
 }
 
@@ -822,13 +872,27 @@ function renderOverlayEditor(loaded) {
 // user sees the change immediately without us having to close the
 // dialog or re-fetch.
 function renderImagePickerModal(loaded) {
+  const id = loaded.Recording.id;
   const tabs = [
     { key: 'poster',   label: 'Poster',
-      render: () => renderPosterPicker(loaded) },
-    { key: 'backdrop', label: 'Backdrop',
-      render: () => renderBackdropPicker(loaded) },
+      render: () => renderPickerTab(loaded, 'poster') },
+    { key: 'fanart',   label: 'Fanart',
+      render: () => renderPickerTab(loaded, 'fanart') },
     { key: 'overlay',  label: 'Overlay text',
       render: () => renderOverlayEditor(loaded) },
+  ];
+  // The footer's Refresh-from-upstream action is only meaningful on
+  // the picker tabs (poster/fanart). The overlay tab gets a no-op
+  // footer so the button doesn't shift position when the user
+  // switches tabs — it's just disabled.
+  const activeTab = state.recording.pickerTab || 'poster';
+  const footerActions = [
+    {
+      label: 'Refresh from upstream',
+      primary: true,
+      disabled: !!state.recording.imageBusy,
+      onClick: () => runRefreshFromUpstream(id),
+    },
   ];
   return m(ImagePickerModal, {
     open: !!state.recording.pickerOpen,
@@ -836,9 +900,24 @@ function renderImagePickerModal(loaded) {
     title: 'Edit images',
     busy: !!state.recording.imageBusy,
     tabs,
-    activeTab: state.recording.pickerTab || 'poster',
-    onTabChange: (key) => { state.recording.pickerTab = key; },
+    activeTab,
+    onTabChange: (key) => {
+      state.recording.pickerTab = key;
+      maybeLoadPickerOptions(id, key);
+    },
+    footerActions,
   });
+}
+
+// maybeLoadPickerOptions kicks the options fetch on first switch to
+// a picker tab. Subsequent switches re-render against the cached
+// options; the user can hit "Re-fetch" in the picker body to force a
+// fresh fetch.
+function maybeLoadPickerOptions(id, tab) {
+  if (tab !== 'poster' && tab !== 'fanart') return;
+  const cache = state.recording.pickerOptions || {};
+  if (Array.isArray(cache[tab])) return; // already loaded.
+  loadOptions(id, tab);
 }
 
 // renderBody composes the two-column main grid. Left column gathers
@@ -875,8 +954,12 @@ const Recording = {
     state.recording.dangerError = '';
     state.recording.imageBusy = false;
     state.recording.imageError = null;
+    state.recording.imageInfo = null;
     state.recording.pickerOpen = false;
     state.recording.pickerTab = 'poster';
+    state.recording.pickerOptions = {};
+    state.recording.pickerOptionsLoading = {};
+    state.recording.pickerOptionsError = {};
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.recording.loading = false;
@@ -897,8 +980,12 @@ const Recording = {
       state.recording.dangerError = '';
       state.recording.imageBusy = false;
       state.recording.imageError = null;
+      state.recording.imageInfo = null;
       state.recording.pickerOpen = false;
       state.recording.pickerTab = 'poster';
+      state.recording.pickerOptions = {};
+      state.recording.pickerOptionsLoading = {};
+      state.recording.pickerOptionsError = {};
       loadRecording(id);
     }
   },
@@ -932,6 +1019,10 @@ const Recording = {
       renderImageErrorToast({
         error: state.recording.imageError,
         onDismiss: () => { state.recording.imageError = null; },
+      }),
+      renderImageInfoToast({
+        message: state.recording.imageInfo,
+        onDismiss: () => { state.recording.imageInfo = null; },
       }),
     ]);
   },

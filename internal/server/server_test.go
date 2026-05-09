@@ -573,7 +573,6 @@ func TestAPIPerson(t *testing.T) {
 		var body struct {
 			PerformerID int64  `json:"performer_id"`
 			Name        string `json:"name"`
-			HeadshotURL string `json:"headshot_url"`
 			Recordings  []struct {
 				ID    int64  `json:"id"`
 				Show  string `json:"show"`
@@ -584,11 +583,11 @@ func TestAPIPerson(t *testing.T) {
 		assert.Equal(t, int64(90001001), body.PerformerID)
 		assert.Equal(t, "Avery Morrison", body.Name)
 		assert.NotEmpty(t, body.Recordings, "Avery Morrison should have at least one recording")
-		// No stagemedia client is wired into fixtureBackedServer, so
-		// headshot_url must round-trip as the empty string (not
-		// omitted) so the JSON consumer can branch on truthy.
-		assert.Empty(t, body.HeadshotURL,
-			"headshot_url should be empty when no stagemedia client is configured")
+		// Phase 4 dropped the upstream headshot_url leak — detail
+		// responses now only carry local /images/... URLs. Confirm the
+		// raw payload no longer contains the field name.
+		assert.NotContains(t, rr.Body.String(), `"headshot_url"`,
+			"detail responses must not surface upstream stagemedia headshot_url")
 		for _, r := range body.Recordings {
 			assert.NotEmpty(t, r.State,
 				"every recording credit must carry a reconciled state")
@@ -618,14 +617,21 @@ func TestAPIPerson(t *testing.T) {
 // to exercise the headshot-resolution branch of /api/v1/people/{id}
 // without an httptest server. The mu/calls fields stay
 // concurrency-safe so the race detector is happy.
+//
+// postersByShow maps show_id to the Posters slice to return for that
+// show; nil means "empty Posters" so the picker tests can exercise
+// the no-options path. posterCalls records the show ids the picker
+// endpoints forwarded so tests can assert on the right show was hit.
 type fakeStagemediaImageClient struct {
-	mu    sync.Mutex
-	calls []fakeStagemediaCall
+	mu          sync.Mutex
+	calls       []fakeStagemediaCall
+	posterCalls []int64
 	// performers, when non-empty, is returned verbatim as the Images
 	// payload. err takes precedence: when non-nil it short-circuits the
 	// call before the recording is appended to calls.
-	performers []stagemedia.Performer
-	err        error
+	performers    []stagemedia.Performer
+	postersByShow map[int64][]string
+	err           error
 }
 
 // fakeStagemediaCall captures the arguments of one Images call so tests
@@ -646,7 +652,17 @@ func (f *fakeStagemediaImageClient) Images(
 	idsCopy := make([]int64, len(performerIDs))
 	copy(idsCopy, performerIDs)
 	f.calls = append(f.calls, fakeStagemediaCall{ShowID: showID, PerformerIDs: idsCopy})
-	return stagemedia.Images{Performers: f.performers}, nil
+	// When the test only set up posters for a given show, return them
+	// alongside the performers slice so the show-poster-options +
+	// recording-poster-options endpoints (which call Images with no
+	// performer ids) get the scripted strip.
+	posters := f.postersByShow[showID]
+	// Track this as a poster fan-out when no performer ids were
+	// requested — that's the calling pattern picker-options uses.
+	if len(performerIDs) == 0 {
+		f.posterCalls = append(f.posterCalls, showID)
+	}
+	return stagemedia.Images{Performers: f.performers, Posters: posters}, nil
 }
 
 // Posters satisfies the StagemediaImageClient interface. The headshot
@@ -662,6 +678,17 @@ func (f *fakeStagemediaImageClient) Calls() []fakeStagemediaCall {
 	defer f.mu.Unlock()
 	out := make([]fakeStagemediaCall, len(f.calls))
 	copy(out, f.calls)
+	return out
+}
+
+// PosterCalls returns the show ids the server forwarded to Images
+// when fetching posters (i.e. with an empty performer-id slice). Used
+// by picker-options tests that assert the right show was queried.
+func (f *fakeStagemediaImageClient) PosterCalls() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]int64, len(f.posterCalls))
+	copy(out, f.posterCalls)
 	return out
 }
 
@@ -706,16 +733,16 @@ func fixtureBackedServerWithStagemedia(
 	return srv
 }
 
-// TestAPIPersonHeadshot wires a stub stagemedia client into a
-// fixture-backed server and asserts the person-detail endpoint surfaces
-// the upstream headshot URL plus forwards the right (show_id, performer
-// id) tuple to stagemedia.
-func TestAPIPersonHeadshot(t *testing.T) {
+// TestAPIPersonNoUpstreamLeak confirms the detail endpoint never
+// surfaces an upstream headshot URL even when a stagemedia client is
+// wired — Phase 4 moved that surface to the picker options endpoint
+// so detail payloads carry only local /images/... URLs.
+func TestAPIPersonNoUpstreamLeak(t *testing.T) {
 	t.Parallel()
 
-	const wantURL = "https://stagemedia.example/headshots/90001001.jpg"
+	const upstreamURL = "https://stagemedia.example/headshots/90001001.jpg"
 	fake := &fakeStagemediaImageClient{
-		performers: []stagemedia.Performer{{ID: 90001001, URL: wantURL}},
+		performers: []stagemedia.Performer{{ID: 90001001, URL: upstreamURL}},
 	}
 	srv := fixtureBackedServerWithStagemedia(t, fake)
 
@@ -724,43 +751,16 @@ func TestAPIPersonHeadshot(t *testing.T) {
 	srv.Handler().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 
-	var body struct {
-		HeadshotURL string `json:"headshot_url"`
-	}
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.Equal(t, wantURL, body.HeadshotURL,
-		"headshot_url must round-trip the URL the stagemedia client returned")
+	body := rr.Body.String()
+	assert.NotContains(t, body, `"headshot_url"`,
+		"detail responses must not surface the headshot_url field at all")
+	assert.NotContains(t, body, upstreamURL,
+		"upstream stagemedia URLs must never leak into the detail payload")
 
-	calls := fake.Calls()
-	require.Len(t, calls, 1, "exactly one Images call should fire per detail load")
-	assert.NotZero(t, calls[0].ShowID,
-		"server must forward a non-zero show id from the performer's first recording")
-	assert.Equal(t, []int64{90001001}, calls[0].PerformerIDs,
-		"server must forward the requested performer id")
-}
-
-// TestAPIPersonHeadshotMissingClient confirms the detail endpoint stays
-// healthy when no stagemedia client is configured — headshot_url
-// rounds-trips as the empty string and the rest of the payload is
-// untouched.
-func TestAPIPersonHeadshotMissingClient(t *testing.T) {
-	t.Parallel()
-
-	srv := fixtureBackedServer(t)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people/90001001", nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-
-	var body struct {
-		PerformerID int64  `json:"performer_id"`
-		HeadshotURL string `json:"headshot_url"`
-	}
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.Equal(t, int64(90001001), body.PerformerID)
-	assert.Empty(t, body.HeadshotURL,
-		"headshot_url must be empty when no stagemedia client is wired")
+	// The detail load must not call upstream — the picker endpoint is
+	// the only path that hits stagemedia now.
+	assert.Empty(t, fake.Calls(),
+		"detail load must not fan out to stagemedia post-Phase-4")
 }
 
 // TestPagesPeople asserts the people-list and person-detail pages

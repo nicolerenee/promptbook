@@ -60,6 +60,17 @@ type StagemediaImageClient interface {
 	Posters(ctx context.Context, showID int64) ([]string, error)
 }
 
+// EncoraScreenshotClient is the read-only Encora surface the picker
+// uses to surface fanart options live. The real *encora.Client
+// satisfies this via its Screenshots method; tests can substitute a
+// fake without spinning up an httptest server. Kept distinct from
+// EncoraWriteClient + EncoraDestructiveClient so the apply pipeline
+// can't reach a read-only endpoint and the picker can't reach the
+// write surfaces.
+type EncoraScreenshotClient interface {
+	Screenshots(ctx context.Context, id int64) ([]string, encora.RateLimitInfo, error)
+}
+
 // Server is the HTTP entry point.
 type Server struct {
 	echo              *echo.Echo
@@ -68,6 +79,12 @@ type Server struct {
 	stagemedia        StagemediaImageClient
 	encora            EncoraWriteClient
 	encoraDestructive EncoraDestructiveClient
+	// encoraScreenshots is the read-only screenshots surface the picker
+	// hits when the user opens the fanart tab. nil when no Encora API
+	// key was configured; the picker-options handler 503s in that case
+	// so other endpoints stay alive. Production wiring passes the same
+	// *encora.Client the write/destructive surfaces use.
+	encoraScreenshots EncoraScreenshotClient
 	// imageCache is the on-disk poster/headshot cache. nil when no
 	// library.imageRoot was configured. Handlers nil-check before
 	// calling into it; the cache itself also has a Disabled() guard
@@ -128,6 +145,12 @@ type Options struct {
 	// split so the apply pipeline can never reach the remove/add-wants
 	// methods by accident.
 	EncoraDestructive EncoraDestructiveClient
+	// EncoraScreenshots is optional. When nil, the picker's
+	// fanart-options endpoint responds 503. Production wiring passes
+	// the same *encora.Client instance the apply pipeline uses; the
+	// surface is split so picker reads can't accidentally reach a
+	// write method.
+	EncoraScreenshots EncoraScreenshotClient
 	// IngestEngine is optional. When nil, POST /api/v1/queue/{id}/import
 	// responds 503 so read-only queue views still work without ingest
 	// wiring (e.g. when no library.root is configured). Tests pass a stub
@@ -209,6 +232,7 @@ func New(opts Options) (*Server, error) {
 		stagemedia:        opts.Stagemedia,
 		encora:            opts.Encora,
 		encoraDestructive: opts.EncoraDestructive,
+		encoraScreenshots: opts.EncoraScreenshots,
 		ingestEngine:      opts.IngestEngine,
 		imageCache:        opts.ImageCache,
 		imageRenderer:     opts.ImageRenderer,
@@ -267,6 +291,11 @@ func (s *Server) Version() string { return s.version }
 // without a wrapper. This isn't a runtime use; the underscore drops the
 // reference once the compiler is happy.
 var _ EncoraWriteClient = (*encora.Client)(nil)
+
+// Compile-time guard: the real *encora.Client must satisfy
+// EncoraScreenshotClient so production wiring can pass the same client
+// on Options.EncoraScreenshots.
+var _ EncoraScreenshotClient = (*encora.Client)(nil)
 
 // Compile-time guard: the real *stagemedia.Client must satisfy
 // StagemediaImageClient so production wiring can pass it on

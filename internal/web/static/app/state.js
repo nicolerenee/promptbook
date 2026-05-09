@@ -111,6 +111,19 @@ export const state = {
     // backdrop / overlay) is rendered inside the modal body.
     pickerOpen: false,
     pickerTab: 'poster',
+    // pickerOptions caches the upstream-options-endpoint responses
+    // keyed by tab kind ('poster' / 'fanart') so flipping tabs
+    // doesn't re-fetch. Populated lazily on first open / tab switch
+    // by Recording.js's loadOptions(). Reset to {} on recording-id
+    // change so a stale strip doesn't leak across navigations.
+    pickerOptions: {},
+    pickerOptionsLoading: {},
+    pickerOptionsError: {},
+    // imageInfo carries a transient confirmation message (e.g.
+    // "Refresh queued — page will update when complete.") rendered
+    // by renderImageInfoToast. Cleared by an explicit dismiss or a
+    // 5s setTimeout fired alongside the message.
+    imageInfo: null,
   },
   // show is the /shows/:id detail page view-model. detail holds the
   // ShowDetailResponse payload (lower-case JSON keys per the
@@ -131,6 +144,16 @@ export const state = {
     // the show poster picker modal. Same lifecycle pattern as the
     // recording picker — onupdate syncs <dialog>.showModal()/close().
     pickerOpen: false,
+    // pickerOptions caches the /api/v1/shows/:id/poster-options
+    // response. null means "not yet fetched"; an empty array means
+    // "fetched and upstream had nothing". Reset on show-id change so
+    // a stale strip doesn't leak across navigations.
+    pickerOptions: null,
+    pickerOptionsLoading: false,
+    pickerOptionsError: null,
+    // imageInfo carries a transient confirmation message rendered as
+    // an alert-info toast (mirrors recording.imageInfo).
+    imageInfo: null,
   },
   // queue mirrors the legacy /static/queue.js view-model. items holds
   // the current /api/v1/queue rows; importing tracks per-row buttons

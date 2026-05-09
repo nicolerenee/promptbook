@@ -104,6 +104,21 @@ func (s *Server) routes() {
 	api.POST("/recordings/:id/poster-from-url", s.handleSetRecordingPosterFromURL)
 	api.POST("/shows/:id/banner-from-url", s.handleSetShowBannerFromURL)
 	api.POST("/actors/:id/headshot-from-url", s.handleSetActorHeadshotFromURL)
+	// Picker "options" endpoints: the modal hits these on open to
+	// surface the live upstream URLs the user can pick from. These
+	// are the ONLY API surfaces that talk StageMedia / Encora at
+	// request time — every other endpoint serves the local DB +
+	// cached images on disk.
+	api.GET("/shows/:id/poster-options", s.handleListShowPosterOptions)
+	api.GET("/recordings/:id/poster-options", s.handleListRecordingPosterOptions)
+	api.GET("/recordings/:id/fanart-options", s.handleListRecordingFanartOptions)
+	api.GET("/actors/:id/headshot-options", s.handleListActorHeadshotOptions)
+	// "Refresh from upstream" endpoints: fire the per-entity
+	// refresh-images job with optional force=true. The picker modal
+	// footer calls these when the user wants to re-pull StageMedia /
+	// Encora and let the job's atomic write update the slot files.
+	api.POST("/recordings/:id/refresh-images", s.handleRefreshRecordingImages)
+	api.POST("/shows/:id/refresh-images", s.handleRefreshShowImages)
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
 	api.GET("/queue", s.handleListQueue)

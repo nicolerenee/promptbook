@@ -6,11 +6,12 @@
 // recordings the performer appears in. Clicking a row routes to
 // /recordings/:id.
 //
-// Avatar resolution: PersonDetail.HeadshotURL is best-effort. The
-// server populates it when stagemedia returns a hit; we fall back to
-// DaisyUI's avatar-placeholder rendering the performer's initials when
-// it's empty (or the image fails to load — `onerror` flips state.error
-// so the next render swaps to the placeholder).
+// Avatar resolution: PersonDetail.local_headshot_url is the cache
+// path under v2 — Phase 4 dropped the upstream stagemedia URL leak
+// from the API. The placeholder generator backstops a missing slot
+// with a generated SVG so the URL is safe to render unconditionally;
+// `onerror` flips state.imgError to the avatar-placeholder fallback
+// for total failures (cache disabled, network error, etc.).
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
@@ -158,7 +159,7 @@ function yearsActive(recs) {
 // state.person so a broken URL retreats to the placeholder on the
 // next render (rather than rendering a busted image icon).
 function Avatar(detail, sizeClass) {
-  const url = !state.person.imgError && detail.headshot_url ? detail.headshot_url : '';
+  const url = !state.person.imgError && detail.local_headshot_url ? detail.local_headshot_url : '';
   if (url) {
     return m('div', { class: 'avatar' },
       m('div', { class: 'rounded-full ' + sizeClass },

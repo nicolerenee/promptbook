@@ -104,17 +104,20 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	// server.Options.Encora and EncoraDestructive are interfaces; a nil
 	// *encora.Client must arrive as a true nil interface so the
-	// handlers' nil-checks fire correctly. Both fields point at the
-	// same concrete client when configured — the surface split is
+	// handlers' nil-checks fire correctly. All three fields point at
+	// the same concrete client when configured — the surface split is
 	// purely a compile-time guard against the apply pipeline calling
-	// into the remove/add-wants methods.
+	// into the remove/add-wants methods or the picker accidentally
+	// reaching a write surface.
 	var (
-		encOpt        server.EncoraWriteClient
-		encDestrucOpt server.EncoraDestructiveClient
+		encOpt           server.EncoraWriteClient
+		encDestrucOpt    server.EncoraDestructiveClient
+		encScreenshotOpt server.EncoraScreenshotClient
 	)
 	if encClient != nil {
 		encOpt = encClient
 		encDestrucOpt = encClient
+		encScreenshotOpt = encClient
 	}
 	// server.Options.Stagemedia is also an interface; same nil idiom
 	// applies so handlers' nil-check sees a true-nil interface and
@@ -155,6 +158,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Stagemedia:        smOpt,
 		Encora:            encOpt,
 		EncoraDestructive: encDestrucOpt,
+		EncoraScreenshots: encScreenshotOpt,
 		IngestEngine:      ingestOpt,
 		ImageCache:        imgCache,
 		ImageRenderer:     imgRenderer,
