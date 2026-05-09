@@ -393,6 +393,95 @@ func TestAPIRecordingsStatusFilter(t *testing.T) {
 	}
 }
 
+func TestAPIPeopleList(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people?limit=200", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.NotEmpty(t, body.Items, "expected at least one performer in fixture-backed library")
+
+	for _, item := range body.Items {
+		assert.NotEmpty(t, item["name"], "every person row must have a name")
+		assert.GreaterOrEqual(t, item["recording_count"], float64(1),
+			"every person row must have at least one recording credit")
+	}
+}
+
+func TestAPIPerson(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+
+	t.Run("found", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people/90001001", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+		var body struct {
+			PerformerID int64  `json:"performer_id"`
+			Name        string `json:"name"`
+			Recordings  []struct {
+				ID   int64  `json:"id"`
+				Show string `json:"show"`
+			} `json:"recordings"`
+		}
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+		assert.Equal(t, int64(90001001), body.PerformerID)
+		assert.Equal(t, "Avery Morrison", body.Name)
+		assert.NotEmpty(t, body.Recordings, "Avery Morrison should have at least one recording")
+	})
+
+	t.Run("not_found", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people/99999999", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusNotFound, rr.Code)
+	})
+
+	t.Run("bad_id", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people/brian", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+}
+
+func TestPagesPeople(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+
+	t.Run("list", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/people", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		assert.Contains(t, rr.Body.String(), "Avery Morrison")
+	})
+
+	t.Run("detail", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/people/90001001", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		assert.Contains(t, rr.Body.String(), "Marigold")
+	})
+}
+
 func TestPagesHomeStatusFilter(t *testing.T) {
 	t.Parallel()
 

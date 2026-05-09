@@ -65,11 +65,15 @@ func (s *Server) routes() {
 	api.GET("/recordings/:id", s.handleGetRecording)
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
+	api.GET("/people", s.handleListPeople)
+	api.GET("/people/:id", s.handleGetPerson)
 
 	s.echo.GET("/", s.handleHomePage)
 	s.echo.GET("/recordings/:id", s.handleRecordingPage)
 	s.echo.GET("/wants", s.handleWantsPage)
 	s.echo.GET("/sync", s.handleSyncPage)
+	s.echo.GET("/people", s.handlePeoplePage)
+	s.echo.GET("/people/:id", s.handlePersonPage)
 }
 
 func (s *Server) handleHealth(c echo.Context) error {
