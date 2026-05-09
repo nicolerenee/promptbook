@@ -30,8 +30,12 @@ var (
 	logPretty bool
 
 	showVersion bool
-	appConfig   config.Config
 )
+
+// appConfig holds the loaded configuration for use by subcommands.
+//
+//nolint:gochecknoglobals,unused // shared across cobra subcommand RunE funcs; wired in phase 2 sync.
+var appConfig config.Config
 
 // rootCmd represents the base command.
 //
@@ -64,10 +68,31 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: search $HOME, ., /config for promptbook.yaml or config.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "V", false, "print version information and exit")
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().BoolVar(&logPretty, "log-pretty", false, "enable pretty (human-readable) logging")
+	rootCmd.PersistentFlags().StringVar(
+		&cfgFile,
+		"config",
+		"",
+		"config file (default: search $HOME, ., /config for promptbook.yaml or config.yaml)",
+	)
+	rootCmd.PersistentFlags().BoolVarP(
+		&showVersion,
+		"version",
+		"V",
+		false,
+		"print version information and exit",
+	)
+	rootCmd.PersistentFlags().StringVar(
+		&logLevel,
+		"log-level",
+		"info",
+		"log level (debug, info, warn, error)",
+	)
+	rootCmd.PersistentFlags().BoolVar(
+		&logPretty,
+		"log-pretty",
+		false,
+		"enable pretty (human-readable) logging",
+	)
 }
 
 //nolint:forbidigo // CLI version output requires fmt.Printf

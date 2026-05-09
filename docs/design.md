@@ -104,7 +104,7 @@ For bootlegs, mirror Radarr's `[tmdbid-N]` pattern with `[encora-N]`:
 
 Examples:
 
-```
+```text
 Tideline Manor - First US National Tour - 2024-01-21 [encora-90118317]/
   Tideline Manor - First US National Tour - 2024-01-21 [Standard Master].mp4
 
@@ -136,7 +136,7 @@ naming; we don't touch them.
 
 ### Repo layout
 
-```
+```text
 kubernetes/apps/media-tools/promptbook/
   helmrelease.yaml          # app-template chart: Deployment + CronJob
   externalsecret.yaml       # ENCORA_API_KEY from 1Password
@@ -167,7 +167,7 @@ gethomepage.dev, anything similar.
 
 The PVC layout serves `/api/*` directly:
 
-```
+```text
 /data/api/collection.json
 /data/api/wants.json
 /data/api/profile.json
@@ -200,7 +200,7 @@ present-checked — anyone past the gateway is trusted.
 
 ### Sync log
 
-```
+```text
 /data/sync-log/2026-05-07T12-34-56Z.json    # one file per run
 /data/api/sync/latest.json                  # most recent run
 /data/api/sync/orphaned.json                # rolling list of 404'd IDs
@@ -214,7 +214,7 @@ runs.
 
 Mirrors Encora's own three-level navigation:
 
-```
+```text
 /                           → Shows grid (combined: anything in collection or wants)
 /shows/{slug}               → Show detail: tours/productions, owned + wanted
 /shows/{slug}/{tour}        → Tour detail: recordings list (date, master, cast preview)
@@ -380,6 +380,7 @@ NOT be added. So we can't enrich with "44 people own this recording"
 counts at scale; that data only appears on website pages.
 
 **Rate-limit headers** to honor:
+
 - `X-RateLimit-Limit` (per-minute total)
 - `X-RateLimit-Remaining`
 - `X-RateLimit-Reset` (epoch when limit resets)

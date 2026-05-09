@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -16,19 +17,28 @@ import (
 var migrationsFS embed.FS
 
 // Open opens the SQLite database at path and runs pending migrations.
-func Open(path string) (*sql.DB, error) {
+//
+// Foreign keys are enabled per-connection via PRAGMA. Because SQLite
+// serializes writes, the pool is capped at one connection so the PRAGMA
+// applies for the lifetime of the handle.
+func Open(ctx context.Context, path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	db.SetMaxOpenConns(1) // SQLite serializes writes; one writer is fine.
 
+	if _, err = db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
+
 	goose.SetBaseFS(migrationsFS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	if err = goose.SetDialect("sqlite3"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("set goose dialect: %w", err)
 	}
-	if err := goose.Up(db, "migrations"); err != nil {
+	if err = goose.UpContext(ctx, db, "migrations"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}

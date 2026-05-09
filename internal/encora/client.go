@@ -13,10 +13,15 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+// defaultHTTPTimeout is the timeout applied when callers don't pass an
+// HTTPClient.
+const defaultHTTPTimeout = 30 * time.Second
 
 // Errors returned by the client.
 var (
@@ -64,7 +69,7 @@ func New(opts Options) (*Client, error) {
 	}
 	hc := opts.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Timeout: 30 * time.Second}
+		hc = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 	return &Client{
 		baseURL:    u,
@@ -82,13 +87,102 @@ type RateLimitInfo struct {
 	Reset     time.Time
 }
 
-// do executes a request and decodes a JSON body. The caller is responsible for
-// constructing the path (relative to /api/).
+// Profile returns the authenticated user's Encora profile.
+func (c *Client) Profile(ctx context.Context) (Profile, RateLimitInfo, error) {
+	var p Profile
+	rl, err := c.do(ctx, http.MethodGet, "profile", &p)
+	return p, rl, err
+}
+
+// Collection returns one page of the user's owned recordings. Page is the
+// 1-indexed page number; pass 0 or 1 for the first page. The response includes
+// NextPageURL for paginating; callers should follow it via CollectionURL.
+func (c *Client) Collection(ctx context.Context, page int) (Page[CollectionEntry], RateLimitInfo, error) {
+	path := "collection"
+	if page > 1 {
+		path = fmt.Sprintf("collection?page=%d", page)
+	}
+	var p Page[CollectionEntry]
+	rl, err := c.do(ctx, http.MethodGet, path, &p)
+	return p, rl, err
+}
+
+// CollectionURL fetches a fully-qualified collection URL (used to follow
+// Page.NextPageURL across pages).
+func (c *Client) CollectionURL(ctx context.Context, fullURL string) (Page[CollectionEntry], RateLimitInfo, error) {
+	var p Page[CollectionEntry]
+	rl, err := c.doAbsolute(ctx, http.MethodGet, fullURL, &p)
+	return p, rl, err
+}
+
+// Wants returns one page of the user's wants list.
+func (c *Client) Wants(ctx context.Context, page int) (Page[WantEntry], RateLimitInfo, error) {
+	path := "wants"
+	if page > 1 {
+		path = fmt.Sprintf("wants?page=%d", page)
+	}
+	var p Page[WantEntry]
+	rl, err := c.do(ctx, http.MethodGet, path, &p)
+	return p, rl, err
+}
+
+// WantsURL fetches a fully-qualified wants URL (Page.NextPageURL).
+func (c *Client) WantsURL(ctx context.Context, fullURL string) (Page[WantEntry], RateLimitInfo, error) {
+	var p Page[WantEntry]
+	rl, err := c.doAbsolute(ctx, http.MethodGet, fullURL, &p)
+	return p, rl, err
+}
+
+// Recording fetches detail for a single recording by Encora ID. Works for any
+// ID, not just IDs in the user's collection.
+func (c *Client) Recording(ctx context.Context, id int64) (Recording, RateLimitInfo, error) {
+	var r Recording
+	rl, err := c.do(ctx, http.MethodGet, fmt.Sprintf("recording/%d", id), &r)
+	return r, rl, err
+}
+
+// Subtitles fetches the subtitle list for a recording. Empty array if none.
+func (c *Client) Subtitles(ctx context.Context, id int64) ([]Subtitle, RateLimitInfo, error) {
+	var subs []Subtitle
+	rl, err := c.do(ctx, http.MethodGet, fmt.Sprintf("recording/%d/subtitles", id), &subs)
+	return subs, rl, err
+}
+
+// AddToCollection POSTs to /collection/{id}/collect. The plan run defers
+// real exercise of this endpoint; it exists so library ingest can wire
+// --add-to-collection against a mock client.
+func (c *Client) AddToCollection(ctx context.Context, id int64) (RateLimitInfo, error) {
+	return c.do(ctx, http.MethodPost, fmt.Sprintf("collection/%d/collect", id), nil)
+}
+
+// do executes a request and decodes a JSON body. The path is relative to
+// /api/. Pass out=nil to discard the response body.
 func (c *Client) do(ctx context.Context, method, path string, out any) (RateLimitInfo, error) {
 	u := *c.baseURL
-	u.Path = "/api/" + path
+	// path may already contain a query string ("collection?page=2"), so
+	// split it back out so url.URL.RawQuery is set correctly.
+	if base, query, ok := strings.Cut(path, "?"); ok {
+		u.Path = "/api/" + base
+		u.RawQuery = query
+	} else {
+		u.Path = "/api/" + path
+	}
 
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), nil)
+	return c.doRequest(ctx, method, u.String(), out)
+}
+
+// doAbsolute is like do but takes a fully-qualified URL — used to follow
+// Laravel-style next_page_url values which are absolute.
+func (c *Client) doAbsolute(ctx context.Context, method, fullURL string, out any) (RateLimitInfo, error) {
+	return c.doRequest(ctx, method, fullURL, out)
+}
+
+func (c *Client) doRequest(
+	ctx context.Context,
+	method, fullURL string,
+	out any,
+) (RateLimitInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, nil)
 	if err != nil {
 		return RateLimitInfo{}, fmt.Errorf("build request: %w", err)
 	}
@@ -118,8 +212,8 @@ func (c *Client) do(ctx context.Context, method, path string, out any) (RateLimi
 	}
 
 	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-			return rl, fmt.Errorf("decode body: %w", err)
+		if decErr := json.NewDecoder(resp.Body).Decode(out); decErr != nil {
+			return rl, fmt.Errorf("decode body: %w", decErr)
 		}
 	}
 	return rl, nil
@@ -127,17 +221,17 @@ func (c *Client) do(ctx context.Context, method, path string, out any) (RateLimi
 
 func parseRateLimit(h http.Header) RateLimitInfo {
 	var rl RateLimitInfo
-	if v := h.Get("X-RateLimit-Limit"); v != "" {
+	if v := h.Get("X-Ratelimit-Limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			rl.Limit = n
 		}
 	}
-	if v := h.Get("X-RateLimit-Remaining"); v != "" {
+	if v := h.Get("X-Ratelimit-Remaining"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			rl.Remaining = n
 		}
 	}
-	if v := h.Get("X-RateLimit-Reset"); v != "" {
+	if v := h.Get("X-Ratelimit-Reset"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			rl.Reset = time.Unix(n, 0)
 		}

@@ -25,8 +25,18 @@ formats like [encora-NNN], {e-NNN}, or [e-NNN].`,
 
 //nolint:gochecknoinits // cobra requires init for command registration
 func init() {
-	renameCmd.Flags().IntVar(&renameEncoraID, "encora-id", 0, "explicit Encora recording ID (overrides sidecar/filename detection)")
-	renameCmd.Flags().BoolVar(&renameDryRun, "dry-run", false, "show what would change without touching the filesystem")
+	renameCmd.Flags().IntVar(
+		&renameEncoraID,
+		"encora-id",
+		0,
+		"explicit Encora recording ID (overrides sidecar/filename detection)",
+	)
+	renameCmd.Flags().BoolVar(
+		&renameDryRun,
+		"dry-run",
+		false,
+		"show what would change without touching the filesystem",
+	)
 	rootCmd.AddCommand(renameCmd)
 }
 
