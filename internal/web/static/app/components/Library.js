@@ -387,15 +387,16 @@ function yearSpan(first, last) {
   return first + '–' + last;
 }
 
-// PosterCard renders one recording-grid cell. Falls back to a
-// placeholder block (status-tinted) when no cached poster is on disk.
+// PosterCard renders one recording-grid cell. local_poster_url is
+// ALWAYS the canonical /images/... path when image caching is on —
+// the server falls through to the SVG placeholder generator on cache
+// miss, so the browser always gets a valid image. We only render a
+// caching-disabled placeholder when the URL is truly empty.
 // The status badge is corner-pinned via DaisyUI `indicator`.
 function PosterCard(it) {
   const meta = STATUS_META[it.status] || STATUS_META.orphan;
   const poster = it.local_poster_url || '';
   const onclick = () => m.route.set('/recordings/' + it.id);
-  // 2:3 aspect ratio matches a real movie poster; the empty
-  // placeholder uses the same ratio so the grid stays even.
   const placeholder = m('div', {
     class: 'aspect-[2/3] w-full bg-base-300 flex items-center justify-center text-xs opacity-60 px-2 text-center',
   }, m('span', { class: 'badge ' + meta.badge }, meta.label));

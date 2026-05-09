@@ -211,37 +211,43 @@ func (c *Cache) HasRecordingPosterSrc(recordingID int64) bool {
 	return c.fileExists(c.RecordingPosterSrcPath(recordingID))
 }
 
-// HeadshotURL returns the /images/... path the server exposes for the
-// cached headshot, or "" when disabled or missing. Always relative —
-// callers concatenate the host themselves.
+// HeadshotURL returns the canonical /images/... path for the actor's
+// headshot. ALWAYS returns the canonical path (even when the file
+// isn't on disk yet) — the server's /images/* route falls through to
+// the placeholder generator on miss, so the browser gets a valid
+// image either way. Empty only when the cache itself is disabled.
 func (c *Cache) HeadshotURL(actorID int64) string {
-	if c.Disabled() || !c.HasHeadshot(actorID) {
+	if c.Disabled() {
 		return ""
 	}
 	return "/images/" + actorsDir + "/" + strconv.FormatInt(actorID, 10) + fileExt
 }
 
-// ShowBannerURL returns the /images/... path for the cached show banner.
+// ShowBannerURL returns the canonical /images/... path for the show's
+// banner. Same fall-through-to-placeholder semantics as HeadshotURL.
 func (c *Cache) ShowBannerURL(showID int64) string {
-	if c.Disabled() || !c.HasShowBanner(showID) {
+	if c.Disabled() {
 		return ""
 	}
 	return "/images/" + showsDir + "/" + strconv.FormatInt(showID, 10) + "/" + bannerFile
 }
 
-// RecordingFanartURL returns the /images/... path for the cached fanart.
+// RecordingFanartURL returns the canonical /images/... path for the
+// recording's fanart. Same fall-through-to-placeholder semantics.
 func (c *Cache) RecordingFanartURL(recordingID int64) string {
-	if c.Disabled() || !c.HasRecordingFanart(recordingID) {
+	if c.Disabled() {
 		return ""
 	}
 	return "/images/" + recordingsDir + "/" +
 		strconv.FormatInt(recordingID, 10) + "/" + fanartFile
 }
 
-// RecordingPosterURL returns the /images/... path for the cached
-// burned-in poster.
+// RecordingPosterURL returns the canonical /images/... path for the
+// recording's burned-in poster. Same fall-through-to-placeholder
+// semantics — a recording missing poster.jpg renders the generated
+// placeholder card the SVG generator emits.
 func (c *Cache) RecordingPosterURL(recordingID int64) string {
-	if c.Disabled() || !c.HasRecordingPoster(recordingID) {
+	if c.Disabled() {
 		return ""
 	}
 	return "/images/" + recordingsDir + "/" +

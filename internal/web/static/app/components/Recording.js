@@ -431,14 +431,17 @@ function renderHeader(loaded) {
 }
 
 // renderPosterCard shows the cached poster.jpg (the burned-in render
-// output) or a neutral placeholder. Under v2 the chosen image is the
-// only image — no index dance, no upstream fallback (the picker UI
-// fetches options live in Phase 4).
+// output). Under v2 the chosen image is the only image — no index
+// dance, no upstream fallback. local_poster_url is ALWAYS the
+// canonical /images/... path; the server's /images/* route falls
+// through to the SVG placeholder generator on cache miss, so the
+// browser always gets a valid image. Empty url means image caching
+// is disabled at the server level — show a "caching disabled" card.
 function renderPosterCard(loaded) {
-  const chosen = (loaded && loaded.local_poster_url) || '';
-  const figure = chosen
+  const url = (loaded && loaded.local_poster_url) || '';
+  const figure = url
     ? m('figure', m('img', {
-        src: chosen,
+        src: url,
         alt: (loaded.Recording.show || 'recording') + ' poster',
         class: 'w-full h-auto object-cover',
         loading: 'lazy',
@@ -446,7 +449,7 @@ function renderPosterCard(loaded) {
     : m('figure', {
         class: 'aspect-[2/3] flex items-center justify-center ' +
                'bg-base-200 text-base-content/40 text-sm font-mono',
-      }, 'no poster');
+      }, 'image caching disabled');
   return m('div', { class: 'card bg-base-100 shadow-sm overflow-hidden' },
     figure);
 }

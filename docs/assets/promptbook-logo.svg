@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 220" role="img" aria-label="promptbook">
+  <title>promptbook</title>
+
+  <!-- Folder back panel with tab on upper-left -->
+  <path id="folder-back"
+        d="M 30 70 L 50 70 L 50 50 Q 50 45 55 45 L 125 45 Q 130 45 130 50 L 130 70 L 230 70 Q 240 70 240 80 L 240 205 Q 240 215 230 215 L 40 215 Q 30 215 30 205 Z"
+        fill="#3D6B85" stroke="#2C4858" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- Theater masks, sitting inside the folder -->
+  <g id="masks">
+    <!-- Comedy (left, smiling, tilted slightly left) -->
+    <g transform="translate(105 118) rotate(-8)">
+      <ellipse cx="0" cy="0" rx="32" ry="42" fill="#F4ECDD" stroke="#2C4858" stroke-width="3"/>
+      <!-- Eye triangles -->
+      <path d="M -13 -10 L -4 -10 L -8.5 -2 Z" fill="#2C4858"/>
+      <path d="M 4 -10 L 13 -10 L 8.5 -2 Z" fill="#2C4858"/>
+      <!-- Smile -->
+      <path d="M -13 12 Q 0 24 13 12" fill="none" stroke="#2C4858" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <!-- Tragedy (right, frowning, tilted slightly right) -->
+    <g transform="translate(165 124) rotate(8)">
+      <ellipse cx="0" cy="0" rx="32" ry="42" fill="#F4ECDD" stroke="#2C4858" stroke-width="3"/>
+      <path d="M -13 -10 L -4 -10 L -8.5 -2 Z" fill="#2C4858"/>
+      <path d="M 4 -10 L 13 -10 L 8.5 -2 Z" fill="#2C4858"/>
+      <!-- Frown -->
+      <path d="M -13 22 Q 0 10 13 22" fill="none" stroke="#2C4858" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Folder front cover (covers lower portions of the masks) -->
+  <path id="folder-front"
+        d="M 30 138 L 240 138 L 240 205 Q 240 215 230 215 L 40 215 Q 30 215 30 205 Z"
+        fill="#4F86A6" stroke="#2C4858" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- Wordmark -->
+  <g id="wordmark">
+    <text x="270" y="148"
+          font-family="'Helvetica Neue', 'Arial Black', Arial, sans-serif"
+          font-size="112" letter-spacing="-3">
+      <tspan fill="#1F3A52" font-weight="900">prompt</tspan><tspan fill="#3D7A99" font-weight="400">book</tspan>
+    </text>
+  </g>
+</svg>
