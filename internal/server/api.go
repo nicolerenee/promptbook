@@ -90,6 +90,15 @@ func (s *Server) routes() {
 	api.GET("/mismatches", s.handleListMismatches)
 	api.POST("/apply", s.handleAPIApply)
 
+	// Destructive Encora endpoints. These are user-initiated single-
+	// action POSTs (a click on the wants page or recording detail),
+	// deliberately separate from the apply pipeline so the reconciler
+	// can never trigger a remove. UI exposure lands in Wave 12 behind
+	// an explicit confirmation gate.
+	api.POST("/encora/collection/:id/remove", s.handleRemoveFromCollection)
+	api.POST("/encora/wants/:id/remove", s.handleRemoveFromWants)
+	api.POST("/encora/wants/:id/add", s.handleAddToWants)
+
 	s.echo.GET("/", s.handleHomePage)
 	s.echo.GET("/recordings/:id", s.handleRecordingPage)
 	s.echo.GET("/wants", s.handleWantsPage)

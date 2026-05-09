@@ -301,8 +301,8 @@ func recordEncoraPush(
 ) {
 	rid := action.RecordingID
 	details := map[string]any{
-		"mismatch_type": string(action.Type),
-		"recording_id":  action.RecordingID,
+		"mismatch_type":   string(action.Type),
+		recordingIDDetail: action.RecordingID,
 	}
 	if action.NewFormat != "" {
 		details["new_format"] = action.NewFormat

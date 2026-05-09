@@ -672,6 +672,14 @@ func (f *fakeStagemediaImageClient) Images(
 	return stagemedia.Images{Performers: f.performers}, nil
 }
 
+// Posters satisfies the StagemediaImageClient interface. The headshot
+// tests don't exercise this branch so it returns an empty slice.
+func (f *fakeStagemediaImageClient) Posters(
+	_ context.Context, _ int64,
+) ([]string, error) {
+	return nil, f.err
+}
+
 func (f *fakeStagemediaImageClient) Calls() []fakeStagemediaCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -2004,44 +2012,6 @@ func TestAPIRecordingByIDNFOMissing(t *testing.T) {
 	assert.Nil(t, body.NFOModifiedAt)
 }
 
-// fixtureBackedServerWithStagemedia mirrors fixtureBackedServer but
-// wires the supplied stagemedia client through Options.Stagemedia so
-// the recording-detail handler exercises its enrichment branch.
-func fixtureBackedServerWithStagemedia(t *testing.T, sm *stagemedia.Client) *server.Server {
-	t.Helper()
-
-	mux := http.NewServeMux()
-	for path, file := range map[string]string{
-		"/api/profile":    "profile.json",
-		"/api/collection": "collection.json",
-		"/api/wants":      "wants.json",
-	} {
-		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
-			b, err := os.ReadFile(filepath.Join(fixturesDir, file))
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("X-Ratelimit-Remaining", "25")
-			_, _ = w.Write(b)
-		})
-	}
-	upstream := httptest.NewServer(mux)
-	t.Cleanup(upstream.Close)
-
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-
-	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
-	require.NoError(t, err)
-	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
-	require.NoError(t, err)
-
-	srv, err := server.New(server.Options{DB: db, Stagemedia: sm})
-	require.NoError(t, err)
-	return srv
-}
 
 // fixtureBackedServerExposingDB returns the same fixture-seeded server
 // as fixtureBackedServer, plus the underlying *sql.DB so callers can
