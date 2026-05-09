@@ -21,6 +21,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/config"
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
@@ -72,6 +73,12 @@ type Server struct {
 	// calling into it; the cache itself also has a Disabled() guard
 	// so a non-nil-but-empty cache is safe.
 	imageCache *imagecache.Cache
+	// imageRenderer composites the burned-in backdrop (rendered.jpg)
+	// after a backdrop or overlay-text change. nil when image caching
+	// is disabled — the picker handlers' nil-check then 503s. The
+	// renderer is currently a stub; the call site is in place so the
+	// real renderer can drop in without churning callers.
+	imageRenderer *imagerender.Renderer
 	// ingestEngine drives `POST /api/v1/queue/{id}/import`. nil when the
 	// server was constructed without one (tests or no-encora-key wiring);
 	// the queue-import handler 503s in that case so other endpoints stay
@@ -154,6 +161,12 @@ type Options struct {
 	// route unregistered, so requests to /images/... fall through to
 	// the SPA shell (which renders 404s client-side).
 	ImageCache *imagecache.Cache
+	// ImageRenderer is optional. When non-nil, the recording-detail
+	// picker handlers call Regenerate after a backdrop or overlay-
+	// text change so rendered.jpg stays in sync with the user's
+	// selection. nil when image caching is disabled — the handlers
+	// 503 in that case rather than partially mutate state.
+	ImageRenderer *imagerender.Renderer
 }
 
 // New constructs a server with all routes registered and templates
@@ -197,6 +210,7 @@ func New(opts Options) (*Server, error) {
 		encoraDestructive: opts.EncoraDestructive,
 		ingestEngine:      opts.IngestEngine,
 		imageCache:        opts.ImageCache,
+		imageRenderer:     opts.ImageRenderer,
 		jobRunner:         opts.JobRunner,
 		sleeper:           sleeper,
 		version:           version,
@@ -234,6 +248,12 @@ func (s *Server) Encora() EncoraWriteClient { return s.encora }
 // into it; the cache's own Disabled() guard handles a non-nil-but-empty
 // cache safely.
 func (s *Server) ImageCache() *imagecache.Cache { return s.imageCache }
+
+// ImageRenderer returns the configured burned-in-backdrop renderer, or
+// nil when image caching is disabled. Picker handlers nil-check this
+// and 503 rather than mutating image_choices without a renderer to
+// honor the change.
+func (s *Server) ImageRenderer() *imagerender.Renderer { return s.imageRenderer }
 
 // Version returns the build-time version string the sidebar footer
 // renders. Defaults to "dev" when no Options.Version was configured.

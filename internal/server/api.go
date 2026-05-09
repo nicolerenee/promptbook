@@ -81,6 +81,14 @@ func (s *Server) routes() {
 	api.GET("/profile", s.handleProfile)
 	api.GET("/recordings", s.handleListRecordings)
 	api.GET("/recordings/:id", s.handleGetRecording)
+	// Per-recording image choice surfaces. POSTs persist the user's
+	// curated poster/backdrop selection or overlay-text override and
+	// (for backdrop/overlay) trigger a re-render of rendered.jpg via
+	// the imagerender stub. Bounds-checked against the cache's
+	// CountPosters/CountBackdrops; 503 when image caching is off.
+	api.POST("/recordings/:id/poster", s.handleSetPoster)
+	api.POST("/recordings/:id/backdrop", s.handleSetBackdrop)
+	api.POST("/recordings/:id/overlay", s.handleSetOverlay)
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
 	api.GET("/queue", s.handleListQueue)
@@ -192,6 +200,17 @@ type recordingDetailResponse struct {
 	Cast              []castEntryWithHeadshot `json:"cast"`
 	NFOContent        string                  `json:"nfo_content"`
 	NFOModifiedAt     *time.Time              `json:"nfo_modified_at"`
+
+	// SelectedPosterIndex / SelectedBackdropIndex carry the user's
+	// curated picks from recording_image_choices. Both nil when the
+	// row is absent or the column is null — the UI then falls back
+	// to highlighting index 0 to match storage.ImageChoice.Resolve*.
+	SelectedPosterIndex   *int `json:"selected_poster_index"`
+	SelectedBackdropIndex *int `json:"selected_backdrop_index"`
+	// OverlayTextOverride is the user-supplied burned-in label, or
+	// nil when no override has been saved (the renderer uses its own
+	// auto-derived "show · tour · date" string in that case).
+	OverlayTextOverride *string `json:"overlay_text_override"`
 }
 
 // castEntryWithHeadshot mirrors storage.ResolvedCastEntry but adds a
@@ -226,14 +245,31 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 
 	nfoContent, nfoModifiedAt := s.readNFOForRecording(loaded)
 
+	// Image choices are best-effort enrichment — a query failure
+	// shouldn't break the whole detail page. Log and serve a
+	// zero-valued ImageChoice; the UI then highlights the default
+	// (index 0) and shows no override, matching the resolve-fallback
+	// contract.
+	choice, choiceErr := storage.GetImageChoice(ctx, s.db, id)
+	if choiceErr != nil {
+		s.logger.Warn().
+			Err(choiceErr).
+			Int64("recording_id", id).
+			Msg("get image choice failed; serving defaults")
+		choice = storage.ImageChoice{}
+	}
+
 	return c.JSON(http.StatusOK, recordingDetailResponse{
-		LoadedRecording:   loaded,
-		Posters:           posters,
-		LocalPosterURLs:   localPosterURLs,
-		LocalBackdropURLs: localBackdropURLs,
-		Cast:              castWithHeadshots,
-		NFOContent:        nfoContent,
-		NFOModifiedAt:     nfoModifiedAt,
+		LoadedRecording:       loaded,
+		Posters:               posters,
+		LocalPosterURLs:       localPosterURLs,
+		LocalBackdropURLs:     localBackdropURLs,
+		Cast:                  castWithHeadshots,
+		NFOContent:            nfoContent,
+		NFOModifiedAt:         nfoModifiedAt,
+		SelectedPosterIndex:   choice.PosterIndex,
+		SelectedBackdropIndex: choice.BackdropIndex,
+		OverlayTextOverride:   choice.OverlayTextOverride,
 	})
 }
 

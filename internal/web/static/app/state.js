@@ -44,6 +44,16 @@ export const state = {
   // (posters, nfo_content, nfo_modified_at). `dangerBusy` flips on
   // while a destructive POST is in flight, and `dangerError` carries
   // the inline error string when one comes back.
+  //
+  // Image picker fields (selectedPosterIndex, selectedBackdropIndex,
+  // overlayOverride) mirror the server's persisted choice so the UI
+  // can render the green-ring highlight + the override-vs-fallback
+  // overlay-text input on first paint. overlayDraft is the
+  // controlled-input string the user is currently typing — kept
+  // separate so a half-typed label survives a redraw without
+  // committing to the server. imageBusy disables every picker button
+  // while a POST is in flight to prevent double-clicks; imageError
+  // carries the inline failure string from the most recent POST.
   recording: {
     id: null,
     loaded: null,
@@ -51,6 +61,12 @@ export const state = {
     error: null,
     dangerBusy: false,
     dangerError: '',
+    selectedPosterIndex: null,
+    selectedBackdropIndex: null,
+    overlayOverride: null,
+    overlayDraft: '',
+    imageBusy: false,
+    imageError: null,
   },
   // queue mirrors the legacy /static/queue.js view-model. items holds
   // the current /api/v1/queue rows; importing tracks per-row buttons

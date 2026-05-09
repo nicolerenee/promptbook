@@ -278,6 +278,39 @@ func TestCountBackdrops(t *testing.T) {
 	assert.Equal(t, 0, disabled.CountBackdrops(recA))
 }
 
+func TestCountPosters(t *testing.T) {
+	t.Parallel()
+	srv, _ := imageServer(t, "image/jpeg")
+
+	root := t.TempDir()
+	c := imagecache.New(root, srv.Client(), zerologTest(t))
+
+	const showA int64 = 4711
+	const showB int64 = 4712
+
+	// Empty tree → zero count even before any fetches.
+	assert.Equal(t, 0, c.CountPosters(showA))
+
+	// Populate two posters for showA, one for showB; they must be
+	// counted separately so the per-show bounds-check in the API
+	// doesn't bleed across shows.
+	_, err := c.FetchPoster(t.Context(), showA, 0, srv.URL+"/a0.jpg")
+	require.NoError(t, err)
+	_, err = c.FetchPoster(t.Context(), showA, 1, srv.URL+"/a1.jpg")
+	require.NoError(t, err)
+	_, err = c.FetchPoster(t.Context(), showB, 0, srv.URL+"/b0.jpg")
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, c.CountPosters(showA))
+	assert.Equal(t, 1, c.CountPosters(showB))
+	assert.Equal(t, 0, c.CountPosters(int64(99999)),
+		"a show with no cached posters returns 0")
+
+	// Disabled cache returns 0 without touching the filesystem.
+	disabled := imagecache.New("", nil, zerologTest(t))
+	assert.Equal(t, 0, disabled.CountPosters(showA))
+}
+
 func TestPathLayoutMatchesURL(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

@@ -130,20 +130,103 @@ function basename(p) {
 
 // loadRecording fetches /api/v1/recordings/:id and parks the response
 // on state.recording. Used both on initial mount and after a successful
-// danger-zone POST so the buttons reflect the new state.
+// danger-zone POST so the buttons reflect the new state. Also seeds
+// the picker view-model fields (selectedPosterIndex, ...) from the
+// payload so the picker UI lights up the green ring on first paint.
 function loadRecording(id) {
   state.recording.loading = true;
   state.recording.error = null;
   state.recording.id = id;
+  state.recording.imageError = null;
   return api.get('/recordings/' + encodeURIComponent(id))
     .then((body) => {
       state.recording.loaded = body;
       state.recording.loading = false;
+      state.recording.selectedPosterIndex =
+        body && body.selected_poster_index != null
+          ? body.selected_poster_index : null;
+      state.recording.selectedBackdropIndex =
+        body && body.selected_backdrop_index != null
+          ? body.selected_backdrop_index : null;
+      state.recording.overlayOverride =
+        body && body.overlay_text_override != null
+          ? body.overlay_text_override : null;
+      state.recording.overlayDraft =
+        state.recording.overlayOverride != null
+          ? state.recording.overlayOverride
+          : autoOverlayText(body);
     })
     .catch((err) => {
       state.recording.loaded = null;
       state.recording.error = err;
       state.recording.loading = false;
+    });
+}
+
+// autoOverlayText derives the fallback "show · tour · date" string the
+// renderer burns in when no override is set. Mirrors what the
+// imagerender package will compute server-side once the stub is
+// filled in — keeping it client-side too means the overlay-text
+// input shows the user the exact string that would render today
+// without first round-tripping through the server.
+function autoOverlayText(loaded) {
+  if (!loaded || !loaded.Recording) return '';
+  const r = loaded.Recording;
+  const parts = [];
+  if (r.Show) parts.push(r.Show);
+  if (r.Tour) parts.push(r.Tour);
+  const date = smartDate(
+    r.Date && r.Date.FullDate,
+    r.Date && r.Date.MonthKnown,
+    r.Date && r.Date.DayKnown,
+  );
+  if (date && date !== '—') parts.push(date);
+  return parts.join(' · ');
+}
+
+// posterIndexHighlight / backdropIndexHighlight return the index
+// currently rendered with the green selection ring. Both default to 0
+// when no choice has been saved — matching storage.ImageChoice's
+// Resolve* fallback so the UI agrees with what the renderer would
+// actually use for that recording.
+function posterIndexHighlight() {
+  return state.recording.selectedPosterIndex != null
+    ? state.recording.selectedPosterIndex : 0;
+}
+function backdropIndexHighlight() {
+  return state.recording.selectedBackdropIndex != null
+    ? state.recording.selectedBackdropIndex : 0;
+}
+
+// postPickerChoice issues a POST against the supplied path with the
+// JSON body. Locks state.recording.imageBusy for the duration so the
+// thumbnail buttons disable to prevent double-clicks; updates
+// imageError on failure. onSuccess fires after the round-trip lands
+// so each subsection can patch its own selectedX field.
+function postPickerChoice(path, body, onSuccess) {
+  if (state.recording.imageBusy) return;
+  state.recording.imageBusy = true;
+  state.recording.imageError = null;
+  api.post(path, body)
+    .then((resp) => {
+      state.recording.imageBusy = false;
+      if (resp && resp.ok) {
+        if (onSuccess) onSuccess();
+      } else {
+        state.recording.imageError =
+          (resp && resp.error) || 'unknown error';
+      }
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.imageBusy = false;
+      if (err && err.status === 503) {
+        state.recording.imageError =
+          'Image cache not configured — set library.imageRoot on the server.';
+      } else {
+        state.recording.imageError = errorMessage(err);
+      }
+      m.redraw();
     });
 }
 
@@ -525,23 +608,207 @@ function renderDangerZone(loaded) {
   ]);
 }
 
+// renderImageThumb is the per-thumbnail vnode used by both the poster
+// and backdrop strips. Renders an <img> wrapped in a button so the
+// selection is keyboard-reachable; the green ring lights up when the
+// supplied index matches the currently-selected one.
+function renderImageThumb({ url, alt, selected, busy, onclick, aspect }) {
+  const ringClass = selected ? ' ring-2 ring-success' : '';
+  const opacityClass = busy ? ' opacity-50' : '';
+  // Use inline width/height styles via tailwind classes — w-32 matches
+  // ~128px, balanced enough for both 2:3 posters and 16:9 backdrops.
+  const figureClass = 'rounded overflow-hidden bg-base-200 ' +
+    (aspect === 'backdrop' ? 'w-48 aspect-video' : 'w-32 aspect-[2/3]');
+  return m('button', {
+    type: 'button',
+    class: 'btn btn-ghost p-0 h-auto rounded' + ringClass + opacityClass,
+    disabled: busy,
+    onclick,
+    'aria-pressed': selected ? 'true' : 'false',
+  }, m('figure', { class: figureClass }, m('img', {
+    src: url,
+    alt,
+    class: 'w-full h-full object-cover',
+    loading: 'lazy',
+  })));
+}
+
+// renderPosterPicker is the poster thumbnail strip subsection. Empty
+// state nudges the user to sync; otherwise renders one thumb per
+// cached poster with the selected one highlighted.
+function renderPosterPicker(loaded) {
+  const urls = (loaded.local_poster_urls || []).filter((u) => !!u);
+  const id = loaded.Recording.ID;
+  const highlight = posterIndexHighlight();
+  const busy = state.recording.imageBusy;
+  return m('section', { class: 'space-y-2' }, [
+    m('h3', { class: 'text-sm font-semibold' },
+      'Posters · ' + urls.length + ' available'),
+    urls.length === 0
+      ? m('div', { class: 'opacity-60 text-sm' },
+          'No posters cached yet — sync to fetch.')
+      : m('div', { class: 'flex flex-wrap gap-3' },
+          urls.map((url, i) => renderImageThumb({
+            url,
+            alt: 'poster ' + (i + 1),
+            selected: i === highlight,
+            busy,
+            aspect: 'poster',
+            onclick: () => postPickerChoice(
+              '/recordings/' + id + '/poster',
+              { index: i },
+              () => { state.recording.selectedPosterIndex = i; },
+            ),
+          }))),
+  ]);
+}
+
+// renderBackdropPicker is the backdrop thumbnail strip subsection.
+// Visually wider than the poster strip because backdrops are 16:9.
+function renderBackdropPicker(loaded) {
+  const urls = loaded.local_backdrop_urls || [];
+  const id = loaded.Recording.ID;
+  const highlight = backdropIndexHighlight();
+  const busy = state.recording.imageBusy;
+  return m('section', { class: 'space-y-2' }, [
+    m('h3', { class: 'text-sm font-semibold' },
+      'Backdrops · ' + urls.length + ' available'),
+    urls.length === 0
+      ? m('div', { class: 'opacity-60 text-sm' },
+          'No backdrops cached yet — sync to fetch screen-grabs.')
+      : m('div', { class: 'flex flex-wrap gap-3' },
+          urls.map((url, i) => renderImageThumb({
+            url,
+            alt: 'backdrop ' + (i + 1),
+            selected: i === highlight,
+            busy,
+            aspect: 'backdrop',
+            onclick: () => postPickerChoice(
+              '/recordings/' + id + '/backdrop',
+              { index: i },
+              () => { state.recording.selectedBackdropIndex = i; },
+            ),
+          }))),
+  ]);
+}
+
+// renderOverlayEditor is the burned-in-text override subsection. The
+// input is always populated — with the override when set, otherwise
+// with the auto-derived fallback so the user can see what they're
+// changing from. Save persists the typed value (even if it matches
+// the fallback — explicit empty string allowed); Reset nulls the
+// override and the renderer falls back to its computed string.
+function renderOverlayEditor(loaded) {
+  const id = loaded.Recording.ID;
+  const fallback = autoOverlayText(loaded);
+  const isOverride = state.recording.overlayOverride != null;
+  const draft = state.recording.overlayDraft != null
+    ? state.recording.overlayDraft : '';
+  const busy = state.recording.imageBusy;
+  return m('section', { class: 'space-y-2' }, [
+    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+      m('h3', { class: 'text-sm font-semibold' }, 'Overlay text'),
+      isOverride
+        ? m('span', { class: 'badge badge-warning badge-sm' }, 'override')
+        : m('span', { class: 'badge badge-ghost badge-sm' }, 'auto'),
+    ]),
+    m('label', { class: 'input w-full' }, [
+      m('input', {
+        type: 'text',
+        class: 'grow',
+        value: draft,
+        placeholder: fallback || 'show · tour · date',
+        oninput: (ev) => {
+          state.recording.overlayDraft = ev.target.value;
+        },
+        disabled: busy,
+      }),
+    ]),
+    m('p', { class: 'text-xs opacity-60' },
+      'Burned into the backdrop · Jellyfin/Plex see this label.'),
+    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+      m('button', {
+        type: 'button',
+        class: 'btn btn-sm btn-primary',
+        disabled: busy,
+        onclick: () => postPickerChoice(
+          '/recordings/' + id + '/overlay',
+          { text: draft, clear: false },
+          () => { state.recording.overlayOverride = draft; },
+        ),
+      }, 'Save'),
+      m('button', {
+        type: 'button',
+        class: 'btn btn-sm btn-ghost',
+        disabled: busy || !isOverride,
+        onclick: () => postPickerChoice(
+          '/recordings/' + id + '/overlay',
+          { clear: true },
+          () => {
+            state.recording.overlayOverride = null;
+            state.recording.overlayDraft = autoOverlayText(loaded);
+          },
+        ),
+      }, 'Reset to default'),
+      isOverride
+        ? null
+        : m('span', { class: 'text-xs opacity-60' },
+            'Default: ' + (fallback || '—')),
+    ]),
+  ]);
+}
+
+// renderImagePickerCard wraps the three subsections in a single
+// DaisyUI card with dividers between them. Sits between the page
+// header and the two-column body so power users can curate poster /
+// backdrop / overlay text without scrolling past the metadata. When
+// neither posters nor backdrops are cached AND no override is saved,
+// the card still renders so the user can save an override against the
+// recording in advance.
+function renderImagePickerCard(loaded) {
+  const error = state.recording.imageError;
+  return m('div', { class: 'card bg-base-100 shadow-sm' },
+    m('div', { class: 'card-body gap-3' }, [
+      m('div', { class: 'flex items-center justify-between' }, [
+        m('h2', { class: 'card-title text-base' }, 'Images'),
+        state.recording.imageBusy
+          ? m('span', { class: 'loading loading-spinner loading-sm' })
+          : null,
+      ]),
+      error
+        ? m('div', { role: 'alert', class: 'alert alert-error alert-soft py-2' },
+            m('span', { class: 'text-sm' }, error))
+        : null,
+      renderPosterPicker(loaded),
+      m('div', { class: 'divider my-1' }),
+      renderBackdropPicker(loaded),
+      m('div', { class: 'divider my-1' }),
+      renderOverlayEditor(loaded),
+    ]));
+}
+
 // renderBody composes the two-column main grid. Left column gathers
 // the visual + reference cards (poster, metadata, NFT callout, NFO);
 // right column carries the bigger informational surfaces (cast,
-// versions). Falls back to a single column on small screens.
+// versions). Falls back to a single column on small screens. The
+// image picker card sits ABOVE the grid so it spans full width —
+// the thumbnail strips need horizontal room.
 function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
   const nfoCard = renderNFOCard(loaded);
-  return m('div', { class: 'grid gap-6 lg:grid-cols-3' }, [
-    m('div', { class: 'lg:col-span-1 space-y-6' }, [
-      renderPosterCard(loaded),
-      callout,
-      renderMetadataCard(loaded),
-    ]),
-    m('div', { class: 'lg:col-span-2 space-y-6' }, [
-      renderCastCard(loaded),
-      renderVersionsCard(loaded),
-      nfoCard,
+  return m('div', { class: 'space-y-6' }, [
+    renderImagePickerCard(loaded),
+    m('div', { class: 'grid gap-6 lg:grid-cols-3' }, [
+      m('div', { class: 'lg:col-span-1 space-y-6' }, [
+        renderPosterCard(loaded),
+        callout,
+        renderMetadataCard(loaded),
+      ]),
+      m('div', { class: 'lg:col-span-2 space-y-6' }, [
+        renderCastCard(loaded),
+        renderVersionsCard(loaded),
+        nfoCard,
+      ]),
     ]),
   ]);
 }
@@ -550,10 +817,12 @@ function renderBody(loaded) {
 
 const Recording = {
   oninit(vnode) {
-    // Reset transient danger-zone fields on every mount so a stale
-    // error from the previous recording doesn't bleed through.
+    // Reset transient danger-zone + picker fields on every mount so a
+    // stale error from the previous recording doesn't bleed through.
     state.recording.dangerBusy = false;
     state.recording.dangerError = '';
+    state.recording.imageBusy = false;
+    state.recording.imageError = null;
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.recording.loading = false;
@@ -572,6 +841,8 @@ const Recording = {
     if (id && state.recording.id !== id) {
       state.recording.dangerBusy = false;
       state.recording.dangerError = '';
+      state.recording.imageBusy = false;
+      state.recording.imageError = null;
       loadRecording(id);
     }
   },

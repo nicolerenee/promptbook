@@ -12,6 +12,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/jobs/builtin"
@@ -140,6 +141,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	ingestOpt := buildIngestEngine(db, encClient, imgCache)
 	runner := buildJobRunner(ctx, db, encClient)
 
+	// Renderer is nil when image caching is off so the picker
+	// handlers' nil-check 503s rather than half-mutating state. When
+	// caching is on, the same DB + cache instance the rest of the
+	// server uses powers Regenerate.
+	imgRenderer := imagerender.New(db, imgCache, log.Logger)
+
 	srv, err := server.New(server.Options{
 		DB:                db,
 		Logger:            log.Logger,
@@ -148,6 +155,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		EncoraDestructive: encDestrucOpt,
 		IngestEngine:      ingestOpt,
 		ImageCache:        imgCache,
+		ImageRenderer:     imgRenderer,
 		JobRunner:         runner,
 		Version:           Version,
 		Config:            appConfig,

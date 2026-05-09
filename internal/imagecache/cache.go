@@ -234,6 +234,19 @@ func (c *Cache) CountBackdrops(recordingID int64) int {
 		strconv.FormatInt(recordingID, 10)))
 }
 
+// CountPosters returns the number of cached poster files on disk for a
+// single show. Walks <Root>/posters/<show_id>/ — missing directory
+// returns 0, and a disabled cache returns 0 without touching the
+// filesystem. Mirrors CountBackdrops; used by the recording-detail
+// picker handlers to bounds-check incoming index values.
+func (c *Cache) CountPosters(showID int64) int {
+	if c.Disabled() {
+		return 0
+	}
+	return c.countTree(filepath.Join(c.Root, postersDir,
+		strconv.FormatInt(showID, 10)))
+}
+
 // Counts walks the cache root and tallies files per kind. Returns the
 // zero Counts when disabled or when the root doesn't exist yet (empty
 // cache, no failures).
