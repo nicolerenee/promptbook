@@ -1,0 +1,107 @@
+package nfo_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/nfo"
+)
+
+// updateGolden lets developers regenerate the checked-in golden NFO when
+// the writer's output intentionally changes. Run as
+// `go test ./internal/nfo -update` after the change, then re-commit the
+// golden alongside the diff.
+//
+//nolint:gochecknoglobals // standard golden-file pattern
+var updateGolden = flag.Bool("update", false, "regenerate golden NFO files")
+
+func loadMarigold(t *testing.T) encora.Recording {
+	t.Helper()
+	path := filepath.Join("..", "encora", "testdata", "recording_8222.json")
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var r encora.Recording
+	require.NoError(t, json.Unmarshal(b, &r))
+	return r
+}
+
+func TestWriteMarigoldGolden(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t)
+	model := nfo.FromRecording(rec)
+
+	var buf bytes.Buffer
+	require.NoError(t, nfo.Write(&buf, model))
+
+	goldenPath := filepath.Join("testdata", "recording_8222.nfo")
+	if *updateGolden {
+		require.NoError(t, os.MkdirAll(filepath.Dir(goldenPath), 0o755))
+		require.NoError(t, os.WriteFile(goldenPath, buf.Bytes(), 0o644))
+		t.Logf("regenerated golden at %s", goldenPath)
+		return
+	}
+
+	want, err := os.ReadFile(goldenPath)
+	require.NoError(t, err, "golden missing — run `go test -run TestWriteMarigoldGolden -update`")
+	assert.Equal(t, string(want), buf.String())
+}
+
+func TestFromRecordingPartialDate(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t) // Marigold's day is unknown → premiered should be empty.
+	model := nfo.FromRecording(rec)
+
+	assert.Empty(t, model.Premiered, "day_known=false ⇒ omit premiered")
+	assert.Equal(t, "2009", model.Year)
+	assert.Equal(t, "Marigold Junction — Broadway — December 2009", model.Title)
+	assert.Equal(t, "Marigold Junction", model.Set.Name)
+}
+
+func TestFromRecordingFullDate(t *testing.T) {
+	t.Parallel()
+
+	full := encora.Recording{
+		ID:   90118317,
+		Show: "Tideline Manor",
+		Tour: "First US National Tour",
+		Date: encora.Date{FullDate: "2024-01-21", MonthKnown: true, DayKnown: true},
+		Cast: []encora.CastEntry{
+			{
+				Performer: encora.Performer{Name: "Riley Chen"},
+				Character: encora.Character{Name: "Tideline Manor", Order: 1},
+			},
+		},
+		Notes: "Great recording.",
+	}
+	model := nfo.FromRecording(full)
+	assert.Equal(t, "2024-01-21", model.Premiered)
+	assert.Equal(t, "Tideline Manor — First US National Tour — 2024-01-21", model.Title)
+	require.Len(t, model.UniqueIDs, 1)
+	assert.Equal(t, "encora", model.UniqueIDs[0].Type)
+	assert.Equal(t, "90118317", model.UniqueIDs[0].Value)
+	assert.True(t, model.UniqueIDs[0].Default)
+}
+
+func TestWriteFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	rec := loadMarigold(t)
+	path, err := nfo.WriteFile(dir, nfo.FromRecording(rec))
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(got), `<?xml version="1.0"`)
+	assert.Contains(t, string(got), `<uniqueid type="encora" default="true">90100222</uniqueid>`)
+}
