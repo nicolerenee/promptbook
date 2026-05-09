@@ -92,6 +92,22 @@ export const state = {
     imageBusy: false,
     imageError: null,
   },
+  // show is the /shows/:id detail page view-model. detail holds the
+  // ShowDetailResponse payload (lower-case JSON keys per the
+  // server's struct tags). sortKey/sortDir drive the in-page
+  // recordings table sort. imageBusy disables the poster picker
+  // thumbnails while a POST is in flight; imageError carries the
+  // inline failure string from the most recent picker POST.
+  show: {
+    id: '',
+    detail: null,
+    loading: true,
+    error: null,
+    imageBusy: false,
+    imageError: null,
+    sortKey: 'date',
+    sortDir: 'asc',
+  },
   // queue mirrors the legacy /static/queue.js view-model. items holds
   // the current /api/v1/queue rows; importing tracks per-row buttons
   // disabled while a POST is in flight so a re-render doesn't lose

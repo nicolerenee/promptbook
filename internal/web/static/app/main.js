@@ -20,6 +20,7 @@ import Library from './components/Library.js';
 import Wants from './components/Wants.js';
 import Sync from './components/Sync.js';
 import Recording from './components/Recording.js';
+import Show from './components/Show.js';
 import Queue from './components/Queue.js';
 import History from './components/History.js';
 import People from './components/People.js';
@@ -66,6 +67,7 @@ if (!root) {
   m.route(root, '/', {
     '/':                wrap(Library),
     '/recordings/:id':  wrap(Recording),
+    '/shows/:id':       wrap(Show),
     '/wants':           wrap(Wants),
     '/sync':            wrap(Sync),
     '/queue':           wrap(Queue),

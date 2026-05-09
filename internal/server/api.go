@@ -111,10 +111,12 @@ func (s *Server) routes() {
 	api.POST("/queue/:id/import", s.handleImportQueue)
 	api.GET("/people", s.handleListPeople)
 	api.GET("/people/:id", s.handleGetPerson)
-	// By-show aggregate. Show detail (/shows/:id) is added by the
-	// detail-page agent in a sibling commit; the list endpoint is the
-	// only one this commit registers.
+	// Shows: by-show aggregate list + per-show detail + poster pick.
+	// No overlay text — shows don't get burned-in labels (only
+	// recordings do).
 	api.GET("/shows", s.handleListShows)
+	api.GET("/shows/:id", s.handleGetShow)
+	api.POST("/shows/:id/poster", s.handleSetShowPoster)
 	api.GET("/history", s.handleListHistory)
 	api.GET("/mismatches", s.handleListMismatches)
 	api.GET("/settings", s.handleSettings)

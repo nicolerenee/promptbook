@@ -1,15 +1,20 @@
 package server
 
-// shows.go owns the by-show aggregate endpoints that power the
-// Library "Shows" mode. The list endpoint (GET /api/v1/shows) lives
-// here; a sibling agent will add the show detail route
-// (GET /api/v1/shows/:id) to this same file in a follow-up commit.
-// Keep the handler boundaries small and table-driven so the merge
-// stays mechanical.
+// shows.go — JSON API surface for show-level views.
+//
+// Three endpoints registered here:
+//   - GET  /api/v1/shows              (list — by-show aggregate)
+//   - GET  /api/v1/shows/:id          (show detail page payload)
+//   - POST /api/v1/shows/:id/poster   (per-show poster picker)
+//
+// All three routes are registered together in api.go's routes(). Show
+// poster choice persists in the show_image_choices table — no overlay
+// text on shows (only recordings get burned-in labels).
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -244,4 +249,361 @@ func sortShowsByName(items []ShowListItem) {
 		}
 		return items[i].ID < items[j].ID
 	})
+}
+
+// ShowDetailResponse is the wire shape for GET /api/v1/shows/:id.
+//
+// Description is sourced from the first non-empty
+// recordings.show_description across the show's recordings (every
+// recording for a show carries the same value upstream). The field is
+// omitted entirely when no recording ships a description.
+//
+// FirstYear / LastYear are derived from the recordings' parsed date
+// years; nil when no recording in the set parses to a year.
+//
+// LocalPosterURLs enumerates every cached poster for the show in
+// index order (0..CountPosters). Empty slice when the image cache is
+// disabled or empty so the JSON renders [] rather than null.
+//
+// SelectedPosterIndex carries the user's curated pick from
+// show_image_choices. nil when no pick is saved — the SPA falls back
+// to highlighting index 0 to match ShowImageChoice.ResolvePoster.
+type ShowDetailResponse struct {
+	ID                  int64               `json:"id"`
+	Name                string              `json:"name"`
+	Description         string              `json:"description,omitempty"`
+	RecordingCount      int                 `json:"recording_count"`
+	FirstYear           *int                `json:"first_year"`
+	LastYear            *int                `json:"last_year"`
+	StateCounts         map[string]int      `json:"state_counts"`
+	Recordings          []RecordingListItem `json:"recordings"`
+	LocalPosterURLs     []string            `json:"local_poster_urls"`
+	SelectedPosterIndex *int                `json:"selected_poster_index"`
+}
+
+// showPosterChoiceRequest is the JSON body for
+// POST /api/v1/shows/:id/poster. Mirrors posterChoiceRequest in shape;
+// kept as a separate type so a future divergence (e.g. allow null to
+// clear) doesn't accidentally affect the per-recording picker.
+type showPosterChoiceRequest struct {
+	Index int `json:"index"`
+}
+
+// handleGetShow returns the show detail payload. 404 when no
+// recordings reference the show id (or no shows row exists).
+func (s *Server) handleGetShow(c echo.Context) error {
+	id, err := parseShowID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	ctx := c.Request().Context()
+
+	resp, err := s.loadShowDetail(ctx, id)
+	if errors.Is(err, errShowNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// handleSetShowPoster persists the user's curated poster pick for the
+// show after bounds-checking against CountPosters. 503 when image
+// cache is nil/disabled; 400 on bad index; 404 on unknown show.
+func (s *Server) handleSetShowPoster(c echo.Context) error {
+	id, err := parseShowID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.showExists(c.Request().Context(), id); existsErr != nil {
+		return existsErr
+	}
+
+	var req showPosterChoiceRequest
+	if bindErr := c.Bind(&req); bindErr != nil {
+		return echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("decode body: %s", bindErr.Error()))
+	}
+
+	count := s.ImageCache().CountPosters(id)
+	if req.Index < 0 || req.Index >= count {
+		return c.JSON(http.StatusBadRequest, imageChoiceResponse{
+			Error: fmt.Sprintf("poster index %d out of range [0, %d)", req.Index, count),
+		})
+	}
+
+	if setErr := storage.SetShowPosterIndex(c.Request().Context(), s.db, id, req.Index); setErr != nil {
+		return fmt.Errorf("set show poster index: %w", setErr)
+	}
+	return c.JSON(http.StatusOK, imageChoiceResponse{OK: true})
+}
+
+// errShowNotFound is the sentinel returned by loadShowDetail when no
+// shows row matches the requested id. Distinct from
+// storage.ErrRecordingNotFound so the handler can map it to 404
+// without conflating the two entities.
+var errShowNotFound = errors.New("show not found")
+
+// parseShowID validates a positive int show id from the URL.
+func parseShowID(s string) (int64, error) {
+	id, err := storage.ParseRecordingID(s)
+	if err != nil {
+		return 0, fmt.Errorf("parse show id: %w", err)
+	}
+	return id, nil
+}
+
+// showExists returns 404 when no shows row matches id, nil otherwise.
+// Used by the picker handler so an unknown id never silently writes a
+// show_image_choices row keyed on a nonexistent show (the FK would
+// cascade-block but we want to surface the failure cleanly).
+func (s *Server) showExists(ctx context.Context, id int64) error {
+	var marker int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM shows WHERE show_id = ?`, id).Scan(&marker)
+	if errors.Is(err, sql.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "show not found")
+	}
+	if err != nil {
+		return fmt.Errorf("query show %d: %w", id, err)
+	}
+	return nil
+}
+
+// loadShowDetail builds a ShowDetailResponse for the given show id.
+// Returns errShowNotFound when no shows row exists for the id.
+func (s *Server) loadShowDetail(ctx context.Context, id int64) (*ShowDetailResponse, error) {
+	name, err := loadShowName(ctx, s.db, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find recording ids for this show first, then resolve a state per
+	// id via LoadState. The library list endpoint uses ListStates
+	// (which unions collection/wants/recording_versions) — that
+	// excludes recordings that exist in the recordings table without
+	// any membership, which is exactly the case for a "show detail"
+	// payload showing every recording catalogued. We loop and call
+	// LoadState per id to get correct status (including "orphan" for
+	// rows we know about upstream but neither own nor want).
+	showRecIDs, err := loadRecordingIDsForShow(ctx, s.db, id)
+	if err != nil {
+		return nil, err
+	}
+	scoped := make([]storage.RecordingState, 0, len(showRecIDs))
+	for _, rid := range showRecIDs {
+		st, stErr := storage.LoadState(ctx, s.db, rid)
+		if stErr != nil {
+			return nil, fmt.Errorf("load state for recording %d: %w", rid, stErr)
+		}
+		scoped = append(scoped, *st)
+	}
+
+	meta, err := loadRecordingMeta(ctx, s.db, scoped)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]RecordingListItem, 0, len(scoped))
+	// Pre-size to the number of distinct storage.Status values so the
+	// map doesn't grow as the loop tallies. The five status tokens are
+	// enumerated in storage/state.go (synced / format_mismatch /
+	// missing / wanted / orphan).
+	const statusCardinality = 5
+	stateCounts := make(map[string]int, statusCardinality)
+	for _, st := range scoped {
+		m := meta[st.RecordingID]
+		items = append(items, RecordingListItem{
+			ID:             st.RecordingID,
+			Show:           m.show,
+			Tour:           m.tour,
+			DateFull:       m.dateFull,
+			DateMonthKnown: m.monthKnown,
+			DateDayKnown:   m.dayKnown,
+			Master:         m.master,
+			Status:         string(st.Status),
+			InCollection:   st.InCollection,
+			InWants:        st.InWants,
+			FileCount:      st.FileCount,
+			EncoraFormat:   st.EncoraFormat,
+			LocalFormat:    st.LocalFormat,
+		})
+		stateCounts[string(st.Status)]++
+	}
+
+	firstYear, lastYear := yearSpan(items)
+	description := loadShowDescription(ctx, s.db, id)
+
+	return &ShowDetailResponse{
+		ID:                  id,
+		Name:                name,
+		Description:         description,
+		RecordingCount:      len(items),
+		FirstYear:           firstYear,
+		LastYear:            lastYear,
+		StateCounts:         stateCounts,
+		Recordings:          items,
+		LocalPosterURLs:     s.showLocalPosterURLs(id),
+		SelectedPosterIndex: s.loadShowPosterIndex(ctx, id),
+	}, nil
+}
+
+// loadShowName returns the canonical show name from the shows table.
+// errShowNotFound when no row matches.
+func loadShowName(ctx context.Context, db *sql.DB, id int64) (string, error) {
+	var name string
+	err := db.QueryRowContext(ctx, `SELECT name FROM shows WHERE show_id = ?`, id).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errShowNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("query show name %d: %w", id, err)
+	}
+	return name, nil
+}
+
+// loadRecordingIDsForShow returns every recording_id whose recordings
+// row references the given show. Sorted by date ascending so callers
+// that consume the slice in order get chronological results.
+func loadRecordingIDsForShow(ctx context.Context, db *sql.DB, showID int64) ([]int64, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT recording_id FROM recordings
+		WHERE show_id = ?
+		ORDER BY date_full ASC, recording_id ASC
+	`, showID)
+	if err != nil {
+		return nil, fmt.Errorf("query show recordings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return nil, fmt.Errorf("scan show recording id: %w", scanErr)
+		}
+		out = append(out, id)
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return nil, fmt.Errorf("iterate show recordings: %w", rerr)
+	}
+	return out, nil
+}
+
+// loadShowDescription walks the show's recordings looking for the
+// first non-empty show_description on raw_json. Returns "" when no
+// description is present — the SPA omits the field via the omitempty
+// JSON tag in that case.
+//
+// The query asks SQLite to do the JSON probe via json_extract so we
+// don't have to materialize the full payload Go-side. Failures are
+// swallowed silently — the description is best-effort enrichment.
+func loadShowDescription(ctx context.Context, db *sql.DB, showID int64) string {
+	var description sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT json_extract(raw_json, '$.metadata.show_description')
+		FROM recordings
+		WHERE show_id = ?
+		  AND json_extract(raw_json, '$.metadata.show_description') IS NOT NULL
+		  AND json_extract(raw_json, '$.metadata.show_description') != ''
+		LIMIT 1
+	`, showID).Scan(&description)
+	if err != nil {
+		return ""
+	}
+	if !description.Valid {
+		return ""
+	}
+	return stripShowDescriptionHTML(description.String)
+}
+
+// stripShowDescriptionHTML mirrors the nfo package's stripHTML helper
+// (kept private there) so the API surface emits readable prose
+// without `<p>` / `&#039;` artifacts. The SPA renders the value as
+// plain text, so HTML tags would just leak into the page.
+func stripShowDescriptionHTML(s string) string {
+	if s == "" {
+		return ""
+	}
+	r := strings.NewReplacer(
+		"<p>", "",
+		"</p>", "\n\n",
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+		"&#039;", "'",
+		"&quot;", `"`,
+		"&amp;", "&",
+		"&lt;", "<",
+		"&gt;", ">",
+	)
+	return strings.TrimSpace(r.Replace(s))
+}
+
+// isoYearPrefixLen is the number of leading characters we read off
+// an ISO date to extract the year. Encora always emits ISO-8601, so
+// the four-digit prefix is reliable.
+const isoYearPrefixLen = 4
+
+// yearSpan walks RecordingListItems and returns the (min, max) year
+// across them. Returns (nil, nil) when no item has a parseable year.
+func yearSpan(items []RecordingListItem) (*int, *int) {
+	var first, last *int
+	for _, it := range items {
+		if len(it.DateFull) < isoYearPrefixLen {
+			continue
+		}
+		// We don't need full ISO parsing — the year prefix is enough,
+		// and Encora always emits ISO dates so the prefix is reliable.
+		var y int
+		_, err := fmt.Sscanf(it.DateFull[:isoYearPrefixLen], "%d", &y)
+		if err != nil {
+			continue
+		}
+		if first == nil || y < *first {
+			v := y
+			first = &v
+		}
+		if last == nil || y > *last {
+			v := y
+			last = &v
+		}
+	}
+	return first, last
+}
+
+// showLocalPosterURLs walks 0..CountPosters and returns the cached
+// /images/... URL for each present poster. Empty slice when the image
+// cache is disabled.
+func (s *Server) showLocalPosterURLs(showID int64) []string {
+	cache := s.ImageCache()
+	if cache == nil || cache.Disabled() {
+		return []string{}
+	}
+	count := cache.CountPosters(showID)
+	out := make([]string, 0, count)
+	for i := range count {
+		if u := cache.PosterURL(showID, i); u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// loadShowPosterIndex pulls the user's curated poster choice for the
+// show. Returns nil on a missing row or a query error — the SPA falls
+// back to highlighting index 0 in either case.
+func (s *Server) loadShowPosterIndex(ctx context.Context, showID int64) *int {
+	choice, err := storage.GetShowImageChoice(ctx, s.db, showID)
+	if err != nil {
+		s.logger.Warn().
+			Err(err).
+			Int64("show_id", showID).
+			Msg("get show image choice failed; serving default")
+		return nil
+	}
+	return choice.PosterIndex
 }
