@@ -3,7 +3,6 @@ package storage_test
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 
 	"github.com/brianvoe/gofakeit/v7"
@@ -13,47 +12,24 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// seedRecording inserts a minimal show + recording so child rows can be
-// attached without spinning up the sync package. Returns the recording_id.
-func seedRecording(ctx context.Context, t *testing.T, db *sql.DB) int64 {
+// seedRandomRecording wraps the canonical seedRecording with random IDs
+// so versions tests don't have to invent unique IDs at every call site.
+// Returns the recording_id.
+func seedRandomRecording(ctx context.Context, t *testing.T, db *sql.DB) int64 {
 	t.Helper()
-
 	gofakeit.Seed(0)
 	showID := int64(gofakeit.Number(1, 1_000_000))
 	recordingID := int64(gofakeit.Number(1_000_001, 2_000_000))
-
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO shows (show_id, name, description_html)
-		VALUES (?, ?, '')
-	`, showID, gofakeit.MovieName())
-	require.NoError(t, err)
-
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		)
-		VALUES (?, ?, ?, ?, '{}')
-	`, recordingID, showID, gofakeit.Word(), "2024-01-01")
-	require.NoError(t, err)
-
+	seedShow(ctx, t, db, showID, gofakeit.MovieName())
+	seedRecording(ctx, t, db, recordingID, showID)
 	return recordingID
-}
-
-func openTestDB(t *testing.T) (context.Context, *sql.DB) {
-	t.Helper()
-	ctx := t.Context()
-	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(ctx, dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	return ctx, db
 }
 
 func TestUpsertAndListVersions(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
-	recordingID := seedRecording(ctx, t, db)
+	recordingID := seedRandomRecording(ctx, t, db)
 
 	small := storage.RecordingVersion{
 		RecordingID:   recordingID,
@@ -96,7 +72,7 @@ func TestUpsertVersionIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
-	recordingID := seedRecording(ctx, t, db)
+	recordingID := seedRandomRecording(ctx, t, db)
 
 	first := storage.RecordingVersion{
 		RecordingID:   recordingID,
@@ -141,7 +117,7 @@ func TestCascadeDeleteOnRecording(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
-	recordingID := seedRecording(ctx, t, db)
+	recordingID := seedRandomRecording(ctx, t, db)
 
 	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
 		RecordingID:   recordingID,
@@ -169,7 +145,7 @@ func TestDeleteVersion(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
-	recordingID := seedRecording(ctx, t, db)
+	recordingID := seedRandomRecording(ctx, t, db)
 
 	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
 		RecordingID: recordingID,
@@ -206,7 +182,7 @@ func TestDeleteVersionsForRecording(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
-	recordingID := seedRecording(ctx, t, db)
+	recordingID := seedRandomRecording(ctx, t, db)
 
 	for _, p := range []string{"/a.mkv", "/b.mkv", "/c.mkv"} {
 		require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{

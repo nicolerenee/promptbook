@@ -1,9 +1,6 @@
 package storage_test
 
 import (
-	"context"
-	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,27 +11,11 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// openTestDB creates a fresh promptbook DB in t.TempDir and registers cleanup.
-func openTestDB(t *testing.T) *sql.DB {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(dbPath)
-	require.NoError(t, err, "open test db")
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-// recordingPtr returns a pointer to v for compactly setting RecordingID.
-//
-//nolint:modernize // newexpr: explicit helper reads better at table-driven call sites.
-func recordingPtr(v int64) *int64 { return &v }
-
 func TestRecordAndListHistory(t *testing.T) {
 	t.Parallel()
 	gofakeit.Seed(0)
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
 	events := []storage.HistoryEvent{
@@ -78,8 +59,7 @@ func TestRecordAndListHistory(t *testing.T) {
 func TestListHistoryFilterByKind(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	seed := []storage.HistoryEvent{
@@ -139,8 +119,7 @@ func TestListHistoryFilterByKind(t *testing.T) {
 func TestListHistoryFilterByRecordingID(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	for _, e := range []storage.HistoryEvent{
@@ -165,8 +144,7 @@ func TestListHistoryFilterByRecordingID(t *testing.T) {
 func TestListHistoryTimeRange(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 5 {
@@ -223,8 +201,7 @@ func TestListHistoryTimeRange(t *testing.T) {
 func TestListHistoryLimit(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 5 {
@@ -254,8 +231,7 @@ func TestListHistoryLimit(t *testing.T) {
 func TestPruneHistoryOlderThan(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	for i := range 5 {
@@ -284,8 +260,7 @@ func TestPruneHistoryOlderThan(t *testing.T) {
 func TestRecordEventDetailsRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	db := openTestDB(t)
+	ctx, db := openTestDB(t)
 
 	details := map[string]any{
 		"src":         "/store01/incoming/foo.mkv",

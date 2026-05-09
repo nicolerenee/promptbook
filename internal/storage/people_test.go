@@ -3,7 +3,6 @@ package storage_test
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,8 +17,8 @@ func TestUpsertAndLoadPerformer(t *testing.T) {
 	t.Parallel()
 
 	gofakeit.Seed(0)
-	ctx := t.Context()
-	db := openTestDB(ctx, t)
+
+	ctx, db := openTestDB(t)
 
 	want := storage.Performer{
 		PerformerID: gofakeit.Int64(),
@@ -43,8 +42,7 @@ func TestUpsertAndLoadPerformer(t *testing.T) {
 func TestUpsertPerformerOverwrites(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
-	db := openTestDB(ctx, t)
+	ctx, db := openTestDB(t)
 
 	const id int64 = 90004242
 	first := storage.Performer{
@@ -76,8 +74,7 @@ func TestUpsertPerformerOverwrites(t *testing.T) {
 func TestLoadPerformerNotFound(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
-	db := openTestDB(ctx, t)
+	ctx, db := openTestDB(t)
 
 	_, err := storage.LoadPerformer(ctx, db, 99999999)
 	require.Error(t, err)
@@ -88,8 +85,8 @@ func TestUpsertAndLoadCharacter(t *testing.T) {
 	t.Parallel()
 
 	gofakeit.Seed(0)
-	ctx := t.Context()
-	db := openTestDB(ctx, t)
+
+	ctx, db := openTestDB(t)
 
 	want := storage.Character{
 		CharacterID: gofakeit.Int64(),
@@ -113,8 +110,7 @@ func TestUpsertAndLoadCharacter(t *testing.T) {
 func TestLoadCharacterNotFound(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
-	db := openTestDB(ctx, t)
+	ctx, db := openTestDB(t)
 
 	_, err := storage.LoadCharacter(ctx, db, 99999999)
 	require.Error(t, err)
@@ -124,8 +120,7 @@ func TestLoadCharacterNotFound(t *testing.T) {
 func TestListRecordingsForPerformer(t *testing.T) {
 	t.Parallel()
 
-	ctx := t.Context()
-	db := openTestDB(ctx, t)
+	ctx, db := openTestDB(t)
 
 	const (
 		showID         int64 = 1
@@ -154,36 +149,6 @@ func TestListRecordingsForPerformer(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, emptyIDs)
 	assert.Empty(t, emptyIDs)
-}
-
-// openTestDB opens a fresh on-disk SQLite database under t.TempDir and runs
-// every embedded migration. Using a file (rather than ":memory:") matches the
-// production code path exercised by storage.Open.
-func openTestDB(ctx context.Context, t *testing.T) *sql.DB {
-	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(ctx, dbPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	return db
-}
-
-func seedShow(ctx context.Context, t *testing.T, db *sql.DB, id int64, name string) {
-	t.Helper()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO shows (show_id, name) VALUES (?, ?)
-	`, id, name)
-	require.NoError(t, err)
-}
-
-func seedRecording(ctx context.Context, t *testing.T, db *sql.DB, id, showID int64) {
-	t.Helper()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		) VALUES (?, ?, '', '', '{}')
-	`, id, showID)
-	require.NoError(t, err)
 }
 
 func seedCastEntry(

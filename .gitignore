@@ -29,6 +29,12 @@ build/
 # Taskfile cache
 .task/
 
+# Claude Code agent worktrees (live inside the repo as embedded git dirs)
+.claude/
+
+# Local test/scratch tree where user drops video files for ingest experiments
+tmp/
+
 # Local config
 config.yaml
 .promptbook.yaml

@@ -207,12 +207,3 @@ func scanQueueEntry(row scanRow) (QueueEntry, error) {
 	}
 	return entry, nil
 }
-
-// nullableInt64 converts an optional id pointer into the form
-// database/sql needs for nullable INTEGER columns.
-func nullableInt64(p *int64) any {
-	if p == nil {
-		return nil
-	}
-	return *p
-}
