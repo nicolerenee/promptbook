@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"context"
+	gosql "database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,26 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 	syncpkg "github.com/nicolerenee/promptbook/internal/sync"
 )
+
+// seedRecording inserts a minimal recordings row with the given encora
+// payload as raw_json so LoadRecording round-trips it back. Used by the
+// detail-page tests that need to control the NFT block / cast directly
+// instead of going through the fixture sync path.
+func seedRecording(t *testing.T, db *gosql.DB, r encora.Recording) {
+	t.Helper()
+	_, err := db.ExecContext(t.Context(),
+		`INSERT OR IGNORE INTO shows (show_id, name) VALUES (?, ?)`,
+		r.Metadata.ShowID, r.Show)
+	require.NoError(t, err)
+	rawJSON, err := json.Marshal(r)
+	require.NoError(t, err)
+	_, err = db.ExecContext(t.Context(), `
+		INSERT INTO recordings (
+			recording_id, show_id, tour, date_full, raw_json
+		) VALUES (?, ?, ?, ?, ?)
+	`, r.ID, r.Metadata.ShowID, r.Tour, r.Date.FullDate, string(rawJSON))
+	require.NoError(t, err)
+}
 
 const fixturesDir = "../encora/testdata"
 
@@ -410,4 +431,79 @@ func TestPagesHomeStatusFilter(t *testing.T) {
 		"synced recording's show name should not render under ?status=missing")
 	assert.NotContains(t, body, names[storage.StatusWanted],
 		"wanted recording's show name should not render under ?status=missing")
+}
+
+// TestRecordingPageNFTWarning seeds a recording with NFT.NFTForever set
+// and asserts the detail page renders the human-readable callout.
+func TestRecordingPageNFTWarning(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	rec := encora.Recording{
+		ID:    424242,
+		Show:  "Greenwich BeaconShow",
+		Tour:  "Broadway",
+		Date:  encora.Date{FullDate: "2024-09-01", MonthKnown: true, DayKnown: true},
+		NFT:   encora.NFT{NFTForever: true},
+		Notes: "private collection only",
+		Metadata: encora.RecordingMeta{
+			ShowID:        9100,
+			RecordingType: "pro-shot",
+		},
+	}
+	seedRecording(t, db, rec)
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/recordings/424242", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "NFT forever",
+		"expected NFT-forever callout to render in body")
+}
+
+// TestRecordingPagePosterEmpty asserts the detail page renders cleanly
+// when the server has no stagemedia client configured. Exercises both
+// the placeholder fallback and the nil-client short-circuit in
+// handleRecordingPage.
+func TestRecordingPagePosterEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	rec := encora.Recording{
+		ID:   424243,
+		Show: "PlaceholderShow",
+		Tour: "Tour 1",
+		Date: encora.Date{FullDate: "2025-01-15", MonthKnown: true, DayKnown: true},
+		Metadata: encora.RecordingMeta{
+			ShowID:        9101,
+			RecordingType: "pro-shot",
+		},
+	}
+	seedRecording(t, db, rec)
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+	require.Nil(t, srv.Stagemedia(), "stagemedia client should be nil when not configured")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/recordings/424243", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	body := rr.Body.String()
+	assert.Contains(t, body, "no poster",
+		"expected poster placeholder copy when stagemedia is disabled")
+	assert.NotContains(t, body, "<img class=\"poster\"",
+		"poster img tag should not render when no posters are loaded")
 }

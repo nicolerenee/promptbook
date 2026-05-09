@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
 
+	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
 )
 
@@ -31,15 +32,20 @@ const (
 
 // Server is the HTTP entry point.
 type Server struct {
-	echo   *echo.Echo
-	db     *sql.DB
-	logger zerolog.Logger
+	echo       *echo.Echo
+	db         *sql.DB
+	logger     zerolog.Logger
+	stagemedia *stagemedia.Client
 }
 
 // Options configures a new server.
 type Options struct {
 	DB     *sql.DB
 	Logger zerolog.Logger
+	// Stagemedia is the optional StageMedia.me client used to enrich the
+	// recording detail page with curated posters. When nil, detail pages
+	// fall back to a placeholder.
+	Stagemedia *stagemedia.Client
 }
 
 // New constructs a server with all routes registered and templates
@@ -62,7 +68,12 @@ func New(opts Options) (*Server, error) {
 	e.Use(middleware.Recover())
 	e.Use(zerologMiddleware(opts.Logger))
 
-	srv := &Server{echo: e, db: opts.DB, logger: opts.Logger}
+	srv := &Server{
+		echo:       e,
+		db:         opts.DB,
+		logger:     opts.Logger,
+		stagemedia: opts.Stagemedia,
+	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
 	return srv, nil
@@ -71,6 +82,11 @@ func New(opts Options) (*Server, error) {
 // Handler exposes the underlying http.Handler so tests can drive the
 // server without binding a real socket.
 func (s *Server) Handler() http.Handler { return s.echo }
+
+// Stagemedia returns the optional stagemedia client. Nil when the
+// server was constructed without one, in which case poster lookups
+// short-circuit.
+func (s *Server) Stagemedia() *stagemedia.Client { return s.stagemedia }
 
 // Start binds to addr and serves until the context is cancelled. Returns
 // nil on graceful shutdown.
