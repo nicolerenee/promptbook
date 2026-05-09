@@ -4,13 +4,17 @@
 <header>
   <h1>{{.Title}}</h1>
   <p>
-    {{if eq .OwnedFilter "true"}}Owned recordings{{else if eq .OwnedFilter "false"}}Not yet owned{{else}}All recordings{{end}}
-    — {{len .Recordings}} total
+    {{if .ActiveStatus}}Filter: {{.ActiveStatus}}{{else}}All recordings{{end}}
+    — {{len .Recordings}} shown
   </p>
-  <nav>
-    <a href="/?owned=true">Owned</a> ·
-    <a href="/?owned=false">Not owned</a> ·
-    <a href="/?owned=any">All</a>
+  <nav class="status-tabs">
+    {{range .Tabs}}
+      {{if .Active}}
+        <a class="status-tab status-tab-active" href="{{if .Key}}/?status={{.Key}}{{else}}/{{end}}">{{.Label}} <small>({{.Count}})</small></a>
+      {{else}}
+        <a class="status-tab" href="{{if .Key}}/?status={{.Key}}{{else}}/{{end}}">{{.Label}} <small>({{.Count}})</small></a>
+      {{end}}
+    {{end}}
   </nav>
 </header>
 
@@ -18,24 +22,25 @@
 <table>
   <thead>
     <tr>
+      <th>Status</th>
       <th>Show</th>
       <th>Tour</th>
       <th>Date</th>
       <th>Master</th>
-      <th></th>
+      <th>Local format</th>
+      <th>Encora format</th>
     </tr>
   </thead>
   <tbody>
   {{range .Recordings}}
     <tr>
+      <td><span class="status-badge status-{{.Status}}">{{.Status}}</span></td>
       <td><a href="/recordings/{{.ID}}">{{.Show}}</a></td>
       <td>{{.Tour}}</td>
       <td>{{smartDate .DateFull .DateMonthKnown .DateDayKnown}}</td>
       <td>{{.Master}}</td>
-      <td>
-        {{if .InCollection}}<small>owned</small>{{end}}
-        {{if .InWants}}<small>wanted</small>{{end}}
-      </td>
+      <td>{{if .LocalFormat}}{{.LocalFormat}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if .EncoraFormat}}{{.EncoraFormat}}{{else}}<small>—</small>{{end}}</td>
     </tr>
   {{end}}
   </tbody>
