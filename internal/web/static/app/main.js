@@ -17,6 +17,8 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import Layout from './components/Layout.js';
 import Library from './components/Library.js';
+import People from './components/People.js';
+import Person from './components/Person.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -59,8 +61,8 @@ if (!root) {
     '/wants':           wrap(stubPage('Wants')),
     '/sync':            wrap(stubPage('Sync')),
     '/queue':           wrap(stubPage('Manual import queue')),
-    '/people':          wrap(stubPage('People')),
-    '/people/:id':      wrap(stubPage('Person detail')),
+    '/people':          wrap(People),
+    '/people/:id':      wrap(Person),
     '/history':         wrap(stubPage('History')),
     '/mismatches':      wrap(stubPage('Mismatches')),
     '/apply':           wrap(stubPage('Apply')),
