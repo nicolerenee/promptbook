@@ -8,6 +8,26 @@
   <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <script type="module" src="/static/app/main.js" defer></script>
+  <style>
+    /* Brand palette — fixed regardless of DaisyUI theme.
+       "book" is always sky blue; "prompt" swaps between deep navy
+       (light themes) and cream (dark themes). The DaisyUI dark themes
+       we ship today are "night" and "dark"; extend the [data-theme=]
+       selector list when more dark themes get added. */
+    .pb-prompt { color: #13284A; }
+    .pb-book   { color: #7FA8C9; }
+    [data-theme="night"] .pb-prompt,
+    [data-theme="dark"]  .pb-prompt { color: #E8E4DA; }
+    /* Icon variant swap: render only the matching SVG for the active
+       theme. Both <img>s ship in the DOM so toggling theme is purely
+       a CSS change — no Mithril redraw needed. */
+    .pb-mark-light { display: inline-block; }
+    .pb-mark-dark  { display: none; }
+    [data-theme="night"] .pb-mark-light,
+    [data-theme="dark"]  .pb-mark-light { display: none; }
+    [data-theme="night"] .pb-mark-dark,
+    [data-theme="dark"]  .pb-mark-dark  { display: inline-block; }
+  </style>
 </head>
 <body class="min-h-screen bg-base-100">
   <div id="app"></div>

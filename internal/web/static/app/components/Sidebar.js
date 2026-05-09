@@ -13,41 +13,27 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 
 // BrandIcon renders the playbill app-mark from the static brand
-// directory. Two source files swap based on the current DaisyUI
-// theme: light mode shows the navy-on-cream variant, dark mode the
-// cream-on-navy. Theme detection reads the live `data-theme` attr
-// from <html>, the same source theme.js writes when the user toggles.
+// directory. Both light and dark variants ship in the DOM; CSS in
+// index.html toggles `display` based on the live `data-theme` attr,
+// so swapping themes is instant + Mithril-redraw-free.
 function BrandIcon() {
-  const theme = document.documentElement.getAttribute('data-theme') || 'night';
-  // DaisyUI's "light" / "cream" / similar light themes use the
-  // light asset; everything else (night, dark, dracula, ...) gets
-  // the dark variant. Trivial heuristic — extend with an explicit
-  // allowlist if we add more themes later.
-  const isLight = /^(light|cream|cupcake|emerald|garden)$/i.test(theme);
-  const src = isLight
-    ? '/static/brand/appmark-light.svg'
-    : '/static/brand/appmark-dark.svg';
-  return m('img', {
-    src,
-    width: 28,
-    height: 28,
-    alt: '',
-    'aria-hidden': 'true',
-    class: 'block',
-  });
+  const common = { width: 28, height: 28, alt: '', 'aria-hidden': 'true' };
+  return m('span', { class: 'inline-flex shrink-0' }, [
+    m('img', { ...common, class: 'pb-mark-light', src: '/static/brand/appmark-light.svg' }),
+    m('img', { ...common, class: 'pb-mark-dark',  src: '/static/brand/appmark-dark.svg' }),
+  ]);
 }
 
-// BrandWordmark renders the two-color "promptbook" lockup. "prompt"
-// uses the dark/outline color, "book" uses the accent. CSS handles
-// the theme swap via a custom-property-driven class so we don't have
-// to special-case it here.
+// BrandWordmark renders the two-color "promptbook" lockup. "book" is
+// always sky blue (#7FA8C9); "prompt" swaps between deep navy (light
+// themes) and cream (dark themes). The actual color rules live in
+// index.html's <style> block keyed off [data-theme] — the same hook
+// the icon swap uses — so theme toggles update immediately without
+// any JS redraw.
 function BrandWordmark() {
-  return m('span', {
-    class: 'font-serif text-lg leading-none tracking-tight ' +
-           'text-base-content',
-  }, [
-    m('span', { class: 'font-medium' }, 'prompt'),
-    m('span', { class: 'font-bold text-primary' }, 'book'),
+  return m('span', { class: 'font-serif text-lg leading-none tracking-tight' }, [
+    m('span', { class: 'pb-prompt font-medium' }, 'prompt'),
+    m('span', { class: 'pb-book font-bold' }, 'book'),
   ]);
 }
 
@@ -109,9 +95,9 @@ const Sidebar = {
     return m('div', { class: 'flex min-h-full flex-col bg-base-200 w-64' }, [
       // Brand row.
       m('div', {
-        class: 'flex items-center gap-2.5 px-4 py-4 text-base-content',
+        class: 'flex items-center gap-2.5 px-4 py-4',
       }, [
-        m('span', { class: 'inline-flex shrink-0' }, BrandIcon()),
+        BrandIcon(),
         BrandWordmark(),
       ]),
 
