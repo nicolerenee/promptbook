@@ -12,26 +12,42 @@
 
 import m from 'https://esm.sh/mithril@2.2.2';
 
-// Brand SVG carried over from the legacy _sidebar.html so the visual
-// identity stays consistent across the migration.
+// BrandIcon renders the playbill app-mark from the static brand
+// directory. Two source files swap based on the current DaisyUI
+// theme: light mode shows the navy-on-cream variant, dark mode the
+// cream-on-navy. Theme detection reads the live `data-theme` attr
+// from <html>, the same source theme.js writes when the user toggles.
 function BrandIcon() {
-  return m('svg', {
-    width: 22, height: 22, viewBox: '0 0 24 24', 'aria-hidden': 'true',
+  const theme = document.documentElement.getAttribute('data-theme') || 'night';
+  // DaisyUI's "light" / "cream" / similar light themes use the
+  // light asset; everything else (night, dark, dracula, ...) gets
+  // the dark variant. Trivial heuristic — extend with an explicit
+  // allowlist if we add more themes later.
+  const isLight = /^(light|cream|cupcake|emerald|garden)$/i.test(theme);
+  const src = isLight
+    ? '/static/brand/appmark-light.svg'
+    : '/static/brand/appmark-dark.svg';
+  return m('img', {
+    src,
+    width: 28,
+    height: 28,
+    alt: '',
+    'aria-hidden': 'true',
+    class: 'block',
+  });
+}
+
+// BrandWordmark renders the two-color "promptbook" lockup. "prompt"
+// uses the dark/outline color, "book" uses the accent. CSS handles
+// the theme swap via a custom-property-driven class so we don't have
+// to special-case it here.
+function BrandWordmark() {
+  return m('span', {
+    class: 'font-serif text-lg leading-none tracking-tight ' +
+           'text-base-content',
   }, [
-    m('path', {
-      d: 'M3.5 9.5 C 3.5 5.5, 7 3, 12 3 S 20.5 5.5, 20.5 9.5 V 20 H 3.5 Z',
-      fill: 'currentColor', opacity: '0.13',
-    }),
-    m('path', {
-      d: 'M3.5 9.5 C 3.5 5.5, 7 3, 12 3 S 20.5 5.5, 20.5 9.5 V 20 H 3.5 Z',
-      fill: 'none', stroke: 'currentColor',
-      'stroke-width': '1.5', 'stroke-linejoin': 'round',
-    }),
-    m('path', {
-      d: 'M9 6.5 V 20 M15 6.5 V 20',
-      stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linecap': 'round',
-    }),
-    m('circle', { cx: 12, cy: 20, r: 0.9, fill: 'currentColor' }),
+    m('span', { class: 'font-medium' }, 'prompt'),
+    m('span', { class: 'font-bold text-primary' }, 'book'),
   ]);
 }
 
@@ -93,10 +109,10 @@ const Sidebar = {
     return m('div', { class: 'flex min-h-full flex-col bg-base-200 w-64' }, [
       // Brand row.
       m('div', {
-        class: 'flex items-center gap-2 px-4 py-4 text-base-content',
+        class: 'flex items-center gap-2.5 px-4 py-4 text-base-content',
       }, [
-        m('span', { class: 'inline-flex' }, BrandIcon()),
-        m('span', { class: 'font-semibold tracking-tight' }, 'promptbook'),
+        m('span', { class: 'inline-flex shrink-0' }, BrandIcon()),
+        BrandWordmark(),
       ]),
 
       // Nav groups, each its own DaisyUI menu so the title/spacing
