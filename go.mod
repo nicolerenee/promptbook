@@ -3,6 +3,7 @@ module github.com/nicolerenee/promptbook
 go 1.26.3
 
 require (
+	github.com/brianvoe/gofakeit/v7 v7.14.1
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
