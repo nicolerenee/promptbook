@@ -176,25 +176,38 @@ function loadRecording(id) {
     });
 }
 
-// autoOverlayText derives the fallback "show · tour · date" string the
-// renderer burns in when no override is set. Mirrors what the
-// imagerender package will compute server-side once the stub is
-// filled in — keeping it client-side too means the overlay-text
-// input shows the user the exact string that would render today
-// without first round-tripping through the server.
+// autoOverlayText derives the fallback overlay string the renderer
+// burns in when no override is set. Mirrors imagerender.autoOverlayText
+// server-side: line 1 is "Tour - Date", line 2 is "Venue, City". Show
+// name is the title fallback when both tour and date are absent so the
+// band never renders empty.
 function autoOverlayText(loaded) {
   if (!loaded || !loaded.Recording) return '';
   const r = loaded.Recording;
-  const parts = [];
-  if (r.show) parts.push(r.show);
-  if (r.tour) parts.push(r.tour);
+  const tour = (r.tour || '').trim();
   const date = smartDate(
     r.date && r.date.full_date,
     r.date && r.date.month_known,
     r.date && r.date.day_known,
   );
-  if (date && date !== '—') parts.push(date);
-  return parts.join(' · ');
+  const dateStr = date && date !== '—' ? date : '';
+  let title = joinSep(tour, dateStr, ' - ');
+  if (!title) title = (r.show || '').trim();
+  const meta = r.metadata || {};
+  const venue = (meta.venue || '').trim();
+  const city = (meta.city || '').trim();
+  const subtitle = joinSep(venue, city, ', ');
+  if (!title && !subtitle) return '';
+  if (!subtitle) return title;
+  if (!title) return subtitle;
+  return title + '\n' + subtitle;
+}
+
+function joinSep(a, b, sep) {
+  if (!a && !b) return '';
+  if (!a) return b;
+  if (!b) return a;
+  return a + sep + b;
 }
 
 // postPickerChoice issues a POST against the supplied path with the
@@ -830,7 +843,7 @@ function renderOverlayEditor(loaded) {
         type: 'text',
         class: 'grow',
         value: draft,
-        placeholder: fallback || 'show · tour · date',
+        placeholder: fallback || 'Tour - Date\nVenue, City',
         oninput: (ev) => {
           state.recording.overlayDraft = ev.target.value;
         },

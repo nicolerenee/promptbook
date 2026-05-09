@@ -50,19 +50,17 @@ const (
 	defaultTitleSizePx        = 48
 	defaultSubtitleSizePx     = 24
 
-	// Default band: near-black at 0xF0 alpha — slightly translucent so
-	// the underlying art breathes.
-	defaultBandR uint8 = 0x14
-	defaultBandG uint8 = 0x14
-	defaultBandB uint8 = 0x14
-	defaultBandA uint8 = 0xF0
+	// Brand palette. Band is sky blue (#7FA8C9); text is deep navy
+	// (#13284A). Solid alpha so the band reads as a real plate against
+	// any underlying art. Matches the wordmark + app-mark colors so the
+	// burned-in poster identifies as part of the same product family.
+	defaultBandR uint8 = 0x7F
+	defaultBandG uint8 = 0xA8
+	defaultBandB uint8 = 0xC9
+	defaultBandA uint8 = 0xFF
 
-	// Default text: muted gold (#c8a14a). The real Playbill uses pure
-	// yellow which reads as too aggressive on a TV-sized fanart card;
-	// the muted gold lands closer to a vintage marquee. Easy to swap
-	// once the user picks their final palette.
-	defaultTextR uint8 = 0xC8
-	defaultTextG uint8 = 0xA1
+	defaultTextR uint8 = 0x13
+	defaultTextG uint8 = 0x28
 	defaultTextB uint8 = 0x4A
 	defaultTextA uint8 = 0xFF
 )

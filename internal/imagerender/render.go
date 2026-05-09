@@ -132,27 +132,32 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	return nil
 }
 
-// autoOverlayText returns the default "Show · Tour · Date · Master"
-// label burned into rendered.jpg when the user hasn't supplied an
-// override. Returns the empty string when loaded is nil so the caller
-// can fall through to whatever text the choice has.
+// autoOverlayText returns the default label burned into the recording
+// poster when the user hasn't supplied an override.
+//
+// Layout (per the brand spec):
+//
+//	Line 1 (large): "Tour - Date"
+//	Line 2 (smaller): "Venue, City"
+//
+// Empty fields collapse cleanly — a recording without a tour falls
+// back to just the date on line 1, etc. If both halves of the title
+// are empty (no tour AND no date) the show name is used so the band
+// never renders blank. Returns "" only when loaded is nil.
 func autoOverlayText(loaded *storage.LoadedRecording) string {
 	if loaded == nil {
 		return ""
 	}
 	r := loaded.Recording
-	title := strings.TrimSpace(r.Show)
-	parts := []string{}
-	if t := strings.TrimSpace(r.Tour); t != "" {
-		parts = append(parts, t)
+	tour := strings.TrimSpace(r.Tour)
+	date := smartDate(r.Date)
+	title := joinSep(tour, date, " - ")
+	if title == "" {
+		title = strings.TrimSpace(r.Show)
 	}
-	if d := smartDate(r.Date); d != "" {
-		parts = append(parts, d)
-	}
-	if m := strings.TrimSpace(r.Master); m != "" {
-		parts = append(parts, m)
-	}
-	subtitle := strings.Join(parts, " · ")
+	venue := strings.TrimSpace(r.Metadata.Venue)
+	city := strings.TrimSpace(r.Metadata.City)
+	subtitle := joinSep(venue, city, ", ")
 	switch {
 	case title == "" && subtitle == "":
 		return ""
@@ -162,6 +167,23 @@ func autoOverlayText(loaded *storage.LoadedRecording) string {
 		return title
 	default:
 		return title + "\n" + subtitle
+	}
+}
+
+// joinSep returns "a<sep>b" when both parts are non-empty, the
+// non-empty one alone when the other is, or "" when both are. Used
+// to format the two-field title and subtitle without leaving stray
+// separators on partial data.
+func joinSep(a, b, sep string) string {
+	switch {
+	case a == "" && b == "":
+		return ""
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + sep + b
 	}
 }
 
