@@ -75,11 +75,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if encClient != nil {
 		encOpt = encClient
 	}
+	// server.Options.Stagemedia is also an interface; same nil idiom
+	// applies so handlers' nil-check sees a true-nil interface and
+	// gracefully degrades when no API key is configured.
+	var smOpt server.StagemediaImageClient
+	if smClient != nil {
+		smOpt = smClient
+	}
 
 	srv, err := server.New(server.Options{
 		DB:         db,
 		Logger:     log.Logger,
-		Stagemedia: smClient,
+		Stagemedia: smOpt,
 		Encora:     encOpt,
 		Version:    Version,
 	})

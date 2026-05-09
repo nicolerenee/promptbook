@@ -29,17 +29,22 @@ const peopleListLimit = 50
 // PersonListItem is one row in the JSON list of people that appear in
 // the user's library. RecordingCount counts distinct recordings the
 // performer is credited on, scoped to recordings the user owns OR
-// wants.
+// wants. StateCounts breaks that count down by reconciled status (e.g.
+// "synced", "missing", "wanted", ...) so the list page can surface
+// per-performer aggregates without N+1 detail fetches.
 type PersonListItem struct {
-	PerformerID    int64  `json:"performer_id"`
-	Name           string `json:"name"`
-	Slug           string `json:"slug"`
-	RecordingCount int    `json:"recording_count"`
+	PerformerID    int64          `json:"performer_id"`
+	Name           string         `json:"name"`
+	Slug           string         `json:"slug"`
+	RecordingCount int            `json:"recording_count"`
+	StateCounts    map[string]int `json:"state_counts"`
 }
 
 // PersonRecording is a recording credit on the people-detail JSON. The
 // shape mirrors what the home/recordings list pages use so the same
-// smartDate template helper formats it on the HTML side.
+// smartDate template helper formats it on the HTML side. State is the
+// per-recording reconciled status string (one of storage.Status) so the
+// detail page can render the same status pill the library page uses.
 type PersonRecording struct {
 	ID             int64  `json:"id"`
 	Show           string `json:"show"`
@@ -48,18 +53,21 @@ type PersonRecording struct {
 	DateMonthKnown bool   `json:"date_month_known"`
 	DateDayKnown   bool   `json:"date_day_known"`
 	ShowID         int64  `json:"show_id"`
+	State          string `json:"state"`
 }
 
-// PersonDetail is the JSON payload for /api/v1/people/{id}. Headshot
-// is optional — populated only when a stagemedia client is configured
-// AND the API call succeeds within the timeout.
+// PersonDetail is the JSON payload for /api/v1/people/{id}. HeadshotURL
+// is best-effort — populated when a stagemedia client is configured AND
+// the API call succeeds within the timeout, otherwise an empty string
+// so the field is always present in the response (the JS frontend
+// branches on truthy vs falsy rather than presence).
 type PersonDetail struct {
 	PerformerID int64             `json:"performer_id"`
 	Name        string            `json:"name"`
 	Slug        string            `json:"slug"`
 	URL         string            `json:"url"`
 	Recordings  []PersonRecording `json:"recordings"`
-	HeadshotURL string            `json:"headshot_url,omitempty"`
+	HeadshotURL string            `json:"headshot_url"`
 }
 
 func (s *Server) handleListPeople(c echo.Context) error {
@@ -139,7 +147,13 @@ func parsePerformerID(s string) (int64, error) {
 
 // loadPeopleList returns performers that appear on at least one cast
 // entry tied to a recording in either the collection or wants table.
-// Sorted by name ascending so the page is alphabetical.
+// Sorted by name ascending so the page is alphabetical. StateCounts is
+// filled per-performer by walking the performer's recording credits and
+// asking storage.LoadState for each — the page-size cap (peopleListLimit
+// performers, each with a small number of credits) keeps the cost
+// bounded; the alternative single-pass SQL is awkward because
+// LocalFormat needs ordered version data ComputeFormatString can chew
+// on.
 func loadPeopleList(
 	ctx context.Context,
 	db *sql.DB,
@@ -174,7 +188,39 @@ func loadPeopleList(
 	if rerr := rows.Err(); rerr != nil {
 		return nil, fmt.Errorf("iterate people rows: %w", rerr)
 	}
+
+	for i := range out {
+		counts, countErr := loadPerformerStateCounts(ctx, db, out[i].PerformerID)
+		if countErr != nil {
+			return nil, countErr
+		}
+		out[i].StateCounts = counts
+	}
 	return out, nil
+}
+
+// loadPerformerStateCounts walks the recordings credited to a performer
+// and tallies them by reconciled storage.Status. Returns a non-nil empty
+// map when the performer has no recordings — JSON consumers can iterate
+// without a nil-check.
+func loadPerformerStateCounts(
+	ctx context.Context,
+	db *sql.DB,
+	performerID int64,
+) (map[string]int, error) {
+	recIDs, err := storage.ListRecordingsForPerformer(ctx, db, performerID)
+	if err != nil {
+		return nil, fmt.Errorf("list recordings for performer %d: %w", performerID, err)
+	}
+	counts := make(map[string]int, len(recIDs))
+	for _, id := range recIDs {
+		st, stErr := storage.LoadState(ctx, db, id)
+		if stErr != nil {
+			return nil, fmt.Errorf("load state for recording %d: %w", id, stErr)
+		}
+		counts[string(st.Status)]++
+	}
+	return counts, nil
 }
 
 // loadPersonDetail loads the performer + the recordings they appear in.
@@ -210,7 +256,10 @@ func loadPersonDetail(
 
 // loadPersonRecordings resolves a slice of recording ids into the
 // PersonRecording shape used by the JSON + HTML detail views. Sorted
-// by show name, tour, date so the table reads alphabetically.
+// by show name, tour, date so the table reads alphabetically. Each row
+// is decorated with the reconciled storage.Status via storage.LoadState
+// — the N+1 cost is acceptable here because N is the number of
+// performances a single performer is in (typically under 10).
 func loadPersonRecordings(
 	ctx context.Context,
 	db *sql.DB,
@@ -257,6 +306,13 @@ func loadPersonRecordings(
 	}
 	if rerr := rows.Err(); rerr != nil {
 		return nil, fmt.Errorf("iterate person recordings: %w", rerr)
+	}
+	for i := range out {
+		st, stErr := storage.LoadState(ctx, db, out[i].ID)
+		if stErr != nil {
+			return nil, fmt.Errorf("load state for recording %d: %w", out[i].ID, stErr)
+		}
+		out[i].State = string(st.Status)
 	}
 	return out, nil
 }

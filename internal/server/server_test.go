@@ -555,11 +555,30 @@ func TestAPIPeopleList(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.NotEmpty(t, body.Items, "expected at least one performer in fixture-backed library")
 
+	// Sweep the list, asserting both the legacy fields and the new
+	// state_counts breakdown. At least one performer must have a
+	// non-zero count for some status (the fixture-seeded library has
+	// recordings in collection / wants but no local files, so all
+	// counts will land in "missing" or "wanted").
+	sawNonZero := false
 	for _, item := range body.Items {
 		assert.NotEmpty(t, item["name"], "every person row must have a name")
 		assert.GreaterOrEqual(t, item["recording_count"], float64(1),
 			"every person row must have at least one recording credit")
+
+		counts, ok := item["state_counts"].(map[string]any)
+		require.True(t, ok, "state_counts must be a map")
+		assert.NotNil(t, counts, "state_counts must always be present (non-nil)")
+		for status, n := range counts {
+			if v, isNum := n.(float64); isNum && v > 0 {
+				sawNonZero = true
+				assert.NotEmpty(t, status,
+					"state_counts keys should be storage.Status strings")
+			}
+		}
 	}
+	assert.True(t, sawNonZero,
+		"expected at least one performer with a non-zero state count given fixture data")
 }
 
 func TestAPIPerson(t *testing.T) {
@@ -577,15 +596,26 @@ func TestAPIPerson(t *testing.T) {
 		var body struct {
 			PerformerID int64  `json:"performer_id"`
 			Name        string `json:"name"`
+			HeadshotURL string `json:"headshot_url"`
 			Recordings  []struct {
-				ID   int64  `json:"id"`
-				Show string `json:"show"`
+				ID    int64  `json:"id"`
+				Show  string `json:"show"`
+				State string `json:"state"`
 			} `json:"recordings"`
 		}
 		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
 		assert.Equal(t, int64(90001001), body.PerformerID)
 		assert.Equal(t, "Avery Morrison", body.Name)
 		assert.NotEmpty(t, body.Recordings, "Avery Morrison should have at least one recording")
+		// No stagemedia client is wired into fixtureBackedServer, so
+		// headshot_url must round-trip as the empty string (not
+		// omitted) so the JSON consumer can branch on truthy.
+		assert.Empty(t, body.HeadshotURL,
+			"headshot_url should be empty when no stagemedia client is configured")
+		for _, r := range body.Recordings {
+			assert.NotEmpty(t, r.State,
+				"every recording credit must carry a reconciled state")
+		}
 	})
 
 	t.Run("not_found", func(t *testing.T) {
@@ -603,6 +633,149 @@ func TestAPIPerson(t *testing.T) {
 		srv.Handler().ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusBadRequest, rr.Code)
 	})
+}
+
+// fakeStagemediaImageClient is a deterministic stand-in for
+// stagemedia.Client that satisfies server.StagemediaImageClient. It
+// records each call and returns a scripted Performers slice — enough
+// to exercise the headshot-resolution branch of /api/v1/people/{id}
+// without an httptest server. The mu/calls fields stay
+// concurrency-safe so the race detector is happy.
+type fakeStagemediaImageClient struct {
+	mu    sync.Mutex
+	calls []fakeStagemediaCall
+	// performers, when non-empty, is returned verbatim as the Images
+	// payload. err takes precedence: when non-nil it short-circuits the
+	// call before the recording is appended to calls.
+	performers []stagemedia.Performer
+	err        error
+}
+
+// fakeStagemediaCall captures the arguments of one Images call so tests
+// can verify the show id + performer id batch the server forwarded.
+type fakeStagemediaCall struct {
+	ShowID       int64
+	PerformerIDs []int64
+}
+
+func (f *fakeStagemediaImageClient) Images(
+	_ context.Context, showID int64, performerIDs []int64,
+) (stagemedia.Images, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return stagemedia.Images{}, f.err
+	}
+	idsCopy := make([]int64, len(performerIDs))
+	copy(idsCopy, performerIDs)
+	f.calls = append(f.calls, fakeStagemediaCall{ShowID: showID, PerformerIDs: idsCopy})
+	return stagemedia.Images{Performers: f.performers}, nil
+}
+
+func (f *fakeStagemediaImageClient) Calls() []fakeStagemediaCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]fakeStagemediaCall, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
+// fixtureBackedServerWithStagemedia wires the fixture sync exactly like
+// fixtureBackedServer and additionally hands the server a stub
+// stagemedia client. Used by the headshot-resolution tests.
+func fixtureBackedServerWithStagemedia(
+	t *testing.T, sm server.StagemediaImageClient,
+) *server.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	for path, file := range map[string]string{
+		"/api/profile":    "profile.json",
+		"/api/collection": "collection.json",
+		"/api/wants":      "wants.json",
+	} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			b, err := os.ReadFile(filepath.Join(fixturesDir, file))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("X-Ratelimit-Remaining", "25")
+			_, _ = w.Write(b)
+		})
+	}
+	upstream := httptest.NewServer(mux)
+	t.Cleanup(upstream.Close)
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
+	require.NoError(t, err)
+	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
+	require.NoError(t, err)
+
+	srv, err := server.New(server.Options{DB: db, Stagemedia: sm})
+	require.NoError(t, err)
+	return srv
+}
+
+// TestAPIPersonHeadshot wires a stub stagemedia client into a
+// fixture-backed server and asserts the person-detail endpoint surfaces
+// the upstream headshot URL plus forwards the right (show_id, performer
+// id) tuple to stagemedia.
+func TestAPIPersonHeadshot(t *testing.T) {
+	t.Parallel()
+
+	const wantURL = "https://stagemedia.example/headshots/90001001.jpg"
+	fake := &fakeStagemediaImageClient{
+		performers: []stagemedia.Performer{{ID: 90001001, URL: wantURL}},
+	}
+	srv := fixtureBackedServerWithStagemedia(t, fake)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people/90001001", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		HeadshotURL string `json:"headshot_url"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(t, wantURL, body.HeadshotURL,
+		"headshot_url must round-trip the URL the stagemedia client returned")
+
+	calls := fake.Calls()
+	require.Len(t, calls, 1, "exactly one Images call should fire per detail load")
+	assert.NotZero(t, calls[0].ShowID,
+		"server must forward a non-zero show id from the performer's first recording")
+	assert.Equal(t, []int64{90001001}, calls[0].PerformerIDs,
+		"server must forward the requested performer id")
+}
+
+// TestAPIPersonHeadshotMissingClient confirms the detail endpoint stays
+// healthy when no stagemedia client is configured — headshot_url
+// rounds-trips as the empty string and the rest of the payload is
+// untouched.
+func TestAPIPersonHeadshotMissingClient(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/people/90001001", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		PerformerID int64  `json:"performer_id"`
+		HeadshotURL string `json:"headshot_url"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(t, int64(90001001), body.PerformerID)
+	assert.Empty(t, body.HeadshotURL,
+		"headshot_url must be empty when no stagemedia client is wired")
 }
 
 // TestPagesPeople asserts the people-list and person-detail pages
