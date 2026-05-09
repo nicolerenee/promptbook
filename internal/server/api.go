@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -27,6 +31,12 @@ const (
 	// a shared constant because goconst flags the duplication once
 	// three or more sibling tab tables exist.
 	allTabLabel = "All"
+
+	// stagemediaPosterTimeout caps how long the recording-detail
+	// handler will wait for the StageMedia poster fetch before
+	// continuing without posters. The handler logs a warning and
+	// returns an empty slice on timeout so the page still renders.
+	stagemediaPosterTimeout = 5 * time.Second
 )
 
 // RecordingListItem is the shape returned by /api/v1/recordings and
@@ -139,19 +149,119 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 	})
 }
 
+// recordingDetailResponse wraps storage.LoadedRecording with the
+// server-side enrichment fields (StageMedia posters, on-disk NFO
+// content + mtime). The embedded *storage.LoadedRecording flattens its
+// PascalCase fields into the same JSON object so existing consumers see
+// no shape change beyond the new lower-case keys.
+type recordingDetailResponse struct {
+	*storage.LoadedRecording
+
+	Posters       []string   `json:"posters"`
+	NFOContent    string     `json:"nfo_content"`
+	NFOModifiedAt *time.Time `json:"nfo_modified_at"`
+}
+
 func (s *Server) handleGetRecording(c echo.Context) error {
 	id, err := storage.ParseRecordingID(c.Param("id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	loaded, err := storage.LoadRecording(c.Request().Context(), s.db, id)
+	ctx := c.Request().Context()
+	loaded, err := storage.LoadRecording(ctx, s.db, id)
 	if errors.Is(err, storage.ErrRecordingNotFound) {
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	}
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, loaded)
+
+	posters := s.fetchPostersForRecording(ctx, loaded)
+
+	nfoContent, nfoModifiedAt := s.readNFOForRecording(loaded)
+
+	return c.JSON(http.StatusOK, recordingDetailResponse{
+		LoadedRecording: loaded,
+		Posters:         posters,
+		NFOContent:      nfoContent,
+		NFOModifiedAt:   nfoModifiedAt,
+	})
+}
+
+// fetchPostersForRecording asks StageMedia for poster URLs for the
+// recording's show, with a hard 5-second timeout. Returns an empty
+// (non-nil) slice when StageMedia is unconfigured, the recording has
+// no show id, or the upstream call fails. Failures log a warning so
+// operators can spot a misconfigured key without poisoning the page.
+func (s *Server) fetchPostersForRecording(
+	ctx context.Context, loaded *storage.LoadedRecording,
+) []string {
+	if s.Stagemedia() == nil {
+		return []string{}
+	}
+	showID := loaded.Recording.Metadata.ShowID
+	if showID == 0 {
+		return []string{}
+	}
+	timedCtx, cancel := context.WithTimeout(ctx, stagemediaPosterTimeout)
+	defer cancel()
+	posters, err := s.Stagemedia().Posters(timedCtx, showID)
+	if err != nil {
+		s.logger.Warn().
+			Err(err).
+			Int64("recording_id", loaded.Recording.ID).
+			Int64("show_id", showID).
+			Msg("stagemedia: posters fetch failed; returning empty list")
+		return []string{}
+	}
+	if posters == nil {
+		return []string{}
+	}
+	return posters
+}
+
+// readNFOForRecording reads the movie.nfo sitting next to the
+// recording's first version on disk. Returns ("", nil) when there are
+// no versions, the file is absent, or any read/stat error occurs —
+// callers don't need to distinguish "no nfo" from "bad nfo" because
+// both render as the synthetic preview on the page.
+func (s *Server) readNFOForRecording(loaded *storage.LoadedRecording) (string, *time.Time) {
+	if len(loaded.Versions) == 0 {
+		return "", nil
+	}
+	nfoPath := filepath.Join(filepath.Dir(loaded.Versions[0].FilePath), "movie.nfo")
+	content, modifiedAt, err := readNFO(nfoPath)
+	if err != nil {
+		// fs.ErrNotExist is the common path; logging only when a real
+		// error happens keeps the per-request output quiet for the
+		// overwhelming majority of recordings that haven't been
+		// renamed/written yet.
+		if !errors.Is(err, fs.ErrNotExist) {
+			s.logger.Warn().
+				Err(err).
+				Int64("recording_id", loaded.Recording.ID).
+				Str("nfo_path", nfoPath).
+				Msg("nfo: read failed; returning empty content")
+		}
+		return "", nil
+	}
+	return content, modifiedAt
+}
+
+// readNFO reads the file at path and returns its content + ModTime.
+// Errors from ReadFile or Stat are returned verbatim so callers can
+// branch on os.IsNotExist if needed.
+func readNFO(path string) (string, *time.Time, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("read nfo %s: %w", path, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("stat nfo %s: %w", path, err)
+	}
+	mod := info.ModTime()
+	return string(b), &mod, nil
 }
 
 func (s *Server) handleListWants(c echo.Context) error {
