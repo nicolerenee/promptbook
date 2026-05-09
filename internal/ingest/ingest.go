@@ -21,11 +21,13 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// videoExtensions are recognized as ingestable. Lower-case, includes
+// VideoExtensions are recognized as ingestable. Lower-case, includes
 // dot. Case-insensitive comparison via strings.EqualFold at call site.
+// Exported so sibling packages (e.g. scanner) can share the same set
+// without re-declaring it.
 //
 //nolint:gochecknoglobals // immutable lookup table
-var videoExtensions = map[string]struct{}{
+var VideoExtensions = map[string]struct{}{
 	".mp4":  {},
 	".mkv":  {},
 	".mov":  {},
@@ -122,7 +124,7 @@ func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result,
 		if d.IsDir() {
 			return nil
 		}
-		if _, ok := videoExtensions[strings.ToLower(filepath.Ext(path))]; !ok {
+		if _, ok := VideoExtensions[strings.ToLower(filepath.Ext(path))]; !ok {
 			return nil
 		}
 		res.Items = append(res.Items, e.ingestOne(ctx, path, opts))
