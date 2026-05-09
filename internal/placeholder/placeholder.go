@@ -70,14 +70,22 @@ const (
 
 	// Banner layout tunables. lineHeightTenths ≈ 1.2 of font-size,
 	// stored as tenths so the integer arithmetic stays exact.
+	//
+	// startFontPercent is the upper bound the auto-fit pass starts
+	// from — 9% of slot height. The previous 14% was too aggressive
+	// for short labels: a "Compass Theatre / Broadway / 2023" placeholder
+	// fit easily at 14% and rendered with the text consuming most
+	// of the canvas. Starting at 9% leaves a comfortable margin for
+	// short labels while the shrink loop still tightens further when
+	// content overflows.
 	lineHeightTenths    = 12
 	tenthsDenominator   = 10
-	startFontPercent    = 14
-	maxLineWidthFrac    = 0.85
-	maxStackHeightFrac  = 0.80
+	startFontPercent    = 9
+	maxLineWidthFrac    = 0.78
+	maxStackHeightFrac  = 0.55
 	avgGlyphAdvanceEms  = 0.55
 	verticalLineFactor  = 1.2
-	minBannerFontSizePx = 16
+	minBannerFontSizePx = 14
 	fontShrinkRatio     = 9
 
 	// Color helpers. darkScale + lightScale derive gradient stops

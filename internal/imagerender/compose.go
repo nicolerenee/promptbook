@@ -52,11 +52,16 @@ type faceKey struct {
 // pixel, which lets callers think in pixels without a unit dance.
 const renderDPI = 72
 
-// titleShrinkFloor caps how aggressively the title font may shrink when
-// the show name would otherwise overflow the band. 0.7 means we'll go
-// down to 70 % of the configured size; beyond that, we accept overflow
-// rather than drawing illegible 14 px text.
-const titleShrinkFloor = 0.7
+// titleShrinkFloor caps how aggressively a row's font may shrink when
+// the text would otherwise overflow the band. 0.5 means we'll go down
+// to 50 % of the configured size; below that pickFittingFace falls
+// back to ellipsis truncation so long tour names + dates still read.
+const titleShrinkFloor = 0.5
+
+// ellipsis is the suffix appended when text won't fit even at the
+// minimum font size. Single character so MeasureString predicts width
+// correctly across the embedded serif.
+const ellipsis = "…"
 
 // loadFont parses one of the embedded TTFs and caches the result.
 func loadFont(weight string) (*opentype.Font, error) {
@@ -150,15 +155,18 @@ func (r *Renderer) compose(src image.Image, title, subtitle string, style Style)
 
 	titleSpec := FontSpec{SizePx: resolved.TitleSizePx, Weight: style.Title.Weight}
 	titleFace := pickFittingFace(titleUpper, titleSpec, maxTextWidth)
+	titleDraw := truncateToFit(titleFace, titleUpper, maxTextWidth)
+
 	subtitleSpec := FontSpec{SizePx: resolved.SubtitleSizePx, Weight: style.Subtitle.Weight}
 	subtitleFace := pickFittingFace(subtitleUpper, subtitleSpec, maxTextWidth)
+	subtitleDraw := truncateToFit(subtitleFace, subtitleUpper, maxTextWidth)
 
 	// Layout: title centered on the upper third of the band, subtitle on
 	// the lower third. When subtitle is empty, the title takes the
 	// vertical center.
-	drawCenteredText(dst, titleUpper, titleFace, style.TextColor, bandRect, subtitleUpper != "", true)
+	drawCenteredText(dst, titleDraw, titleFace, style.TextColor, bandRect, subtitleUpper != "", true)
 	if subtitleUpper != "" {
-		drawCenteredText(dst, subtitleUpper, subtitleFace, style.TextColor, bandRect, true, false)
+		drawCenteredText(dst, subtitleDraw, subtitleFace, style.TextColor, bandRect, true, false)
 	}
 
 	return dst
@@ -179,16 +187,20 @@ const hPadFactor = 2
 // zero (the default) so the user can still pin an absolute value via
 // the per-recording overlay_style_json blob if they want.
 const (
-	titleSizeBandFraction    = 0.50
-	subtitleSizeBandFraction = 0.28
-	// 7% per side ≈ 14% total horizontal margin. The previous 4% (8%
-	// total) read as edge-to-edge once the subtitle text was long
-	// enough to use most of the width. The shrink-to-fit logic still
-	// scales fonts down when content overflows, but the visual breathing
-	// room around even a fitted line wants more than a thin sliver.
-	padXImageFraction = 0.07
+	// Starting font sizes as fractions of band height. The shrink-
+	// to-fit pass tightens further when content overflows. Title at
+	// 0.42 means a ~14%-of-image band gets a font ≈ 6% of the image
+	// height — looks proportionate at both 230x345 posters and
+	// 1920x1080 fanart. Subtitle stays under the title.
+	titleSizeBandFraction    = 0.42
+	subtitleSizeBandFraction = 0.24
+	// 9% per side = 18% total horizontal margin. The previous 7% still
+	// read as edge-to-edge once a long date or venue used the interior
+	// width fully — leaving real visual breathing room around even
+	// a fitted line wants ~20% total.
+	padXImageFraction = 0.09
 	minFontSizePx     = 8
-	minPadXPx         = 6
+	minPadXPx         = 8
 )
 
 // resolved bundles the post-fraction-resolution sizes the compose
@@ -260,6 +272,34 @@ func pickFittingFace(text string, spec FontSpec, maxWidth int) font.Face {
 func measureWidth(f font.Face, s string) int {
 	d := &font.Drawer{Face: f}
 	return d.MeasureString(s).Round()
+}
+
+// truncateToFit drops trailing runes from text and appends an
+// ellipsis until the rendered string fits maxWidth in face f. Used as
+// a last resort after pickFittingFace has shrunk the font to its
+// floor — a 35-character "FIRST US NATIONAL TOUR - 2024-09-22" would
+// otherwise clip on a narrow poster. Returns the original text
+// unchanged when it already fits.
+func truncateToFit(f font.Face, text string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return text
+	}
+	if measureWidth(f, text) <= maxWidth {
+		return text
+	}
+	// Walk runes from the end. Cheaper than shrinking by bytes which
+	// would cut multibyte characters mid-codepoint.
+	runes := []rune(text)
+	for len(runes) > 1 {
+		runes = runes[:len(runes)-1]
+		candidate := strings.TrimRight(string(runes), " -·,.") + ellipsis
+		if measureWidth(f, candidate) <= maxWidth {
+			return candidate
+		}
+	}
+	// Single rune still won't fit (vanishingly small band). Return
+	// the ellipsis alone rather than overflow.
+	return ellipsis
 }
 
 // drawCenteredText renders s horizontally centered inside band, with
