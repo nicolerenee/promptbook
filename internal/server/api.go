@@ -89,6 +89,7 @@ func (s *Server) routes() {
 	api.GET("/people/:id", s.handleGetPerson)
 	api.GET("/history", s.handleListHistory)
 	api.GET("/mismatches", s.handleListMismatches)
+	api.GET("/settings", s.handleSettings)
 	api.POST("/apply", s.handleAPIApply)
 
 	// Destructive Encora endpoints. These are user-initiated single-
@@ -109,6 +110,7 @@ func (s *Server) routes() {
 	s.echo.GET("/people/:id", s.handlePersonPage)
 	s.echo.GET("/history", s.handleHistoryPage)
 	s.echo.GET("/mismatches", s.handleMismatchesPage)
+	s.echo.GET("/settings", s.handleSettingsPage)
 	s.echo.GET("/apply", s.handleApplyGet)
 	s.echo.POST("/apply", s.handleHTMLApply)
 }

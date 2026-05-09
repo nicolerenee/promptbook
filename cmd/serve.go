@@ -127,6 +127,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		EncoraDestructive: encDestrucOpt,
 		IngestEngine:      ingestOpt,
 		Version:           Version,
+		Config:            appConfig,
+		// ConfigSource intentionally left empty — viper.ConfigFileUsed
+		// would require plumbing the *viper.Viper out of config.Load to
+		// retrieve. The settings page falls back to "<not exposed>"
+		// rather than block on the detail. Plumb through internal/config
+		// when the source path becomes worth surfacing.
+		ConfigSource: "",
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)

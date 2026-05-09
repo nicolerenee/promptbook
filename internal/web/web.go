@@ -28,6 +28,7 @@ var pageNames = []string{ //nolint:gochecknoglobals // immutable lookup table
 	"person.html",
 	"queue.html",
 	"recording.html",
+	"settings.html",
 	"wants.html",
 	"sync.html",
 }

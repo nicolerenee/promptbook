@@ -1,0 +1,13 @@
+{{define "settings.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "head"}}<script src="/static/settings.js" defer></script>{{end}}
+
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Settings<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Read-only view of the loaded configuration.</div>
+  </div>
+</div>
+<div id="page-root" data-page="settings"></div>
+{{end}}

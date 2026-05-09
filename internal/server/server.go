@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
 
+	"github.com/nicolerenee/promptbook/internal/config"
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
@@ -78,6 +79,15 @@ type Server struct {
 	// renders. "dev" when not configured. Plumbed via Options so the
 	// server package doesn't need to import cmd (which would cycle).
 	version string
+	// config is a buttonshot of the loaded config.Config the read-only
+	// /settings page surfaces via /api/v1/settings. Stored by value so
+	// later mutation in the caller can't bleed into the JSON response.
+	// Direct import of internal/config is safe — config has no inbound
+	// internal/* imports, so no cycle.
+	config config.Config
+	// configSource is the file path viper used (or a sentinel like
+	// "defaults + env") for display on the settings page.
+	configSource string
 }
 
 // Options configures a new server.
@@ -114,6 +124,15 @@ type Options struct {
 	// Version is the build-time version string surfaced in the sidebar
 	// footer. Empty falls back to "dev".
 	Version string
+	// Config is a buttonshot of the loaded application configuration the
+	// read-only /settings page surfaces. Secrets (api keys) are redacted
+	// at JSON-render time; the raw struct is held here so server-side
+	// callers don't accidentally see the redacted shape.
+	Config config.Config
+	// ConfigSource describes where the config was loaded from (a file
+	// path from viper.ConfigFileUsed, or a sentinel string like
+	// "defaults + env"). Empty falls back to "<not exposed>".
+	ConfigSource string
 }
 
 // New constructs a server with all routes registered and templates
@@ -144,6 +163,10 @@ func New(opts Options) (*Server, error) {
 	if version == "" {
 		version = "dev"
 	}
+	configSource := opts.ConfigSource
+	if configSource == "" {
+		configSource = "<not exposed>"
+	}
 	srv := &Server{
 		echo:              e,
 		db:                opts.DB,
@@ -154,6 +177,8 @@ func New(opts Options) (*Server, error) {
 		ingestEngine:      opts.IngestEngine,
 		sleeper:           sleeper,
 		version:           version,
+		config:            opts.Config,
+		configSource:      configSource,
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
