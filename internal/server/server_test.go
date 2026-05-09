@@ -794,6 +794,183 @@ func TestPagesHomeStatusFilter(t *testing.T) {
 		"wanted recording's show name should not render under ?status=missing")
 }
 
+// seedMismatchRecording inserts a minimal recordings row plus the
+// optional collection/wants/version rows the four-cases mismatch
+// fixture exercises. It mirrors fourStatusServer's local seed helper
+// but is reusable from the mismatch test suite.
+func seedMismatchRecording(
+	t *testing.T,
+	db *gosql.DB,
+	showID, recordingID int64,
+	showName string,
+	inCollection, inWants, hasFile bool,
+	encoraFormat, localFormat string,
+) {
+	t.Helper()
+	ctx := t.Context()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, showName)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO recordings (
+			recording_id, show_id, tour, date_full, raw_json
+		) VALUES (?, ?, '', '', '{}')
+	`, recordingID, showID)
+	require.NoError(t, err)
+	if inCollection {
+		_, err = db.ExecContext(ctx,
+			`INSERT INTO collection (recording_id, format) VALUES (?, ?)`,
+			recordingID, encoraFormat)
+		require.NoError(t, err)
+	}
+	if inWants {
+		_, err = db.ExecContext(ctx,
+			`INSERT INTO wants (recording_id) VALUES (?)`, recordingID)
+		require.NoError(t, err)
+	}
+	if hasFile {
+		require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+			RecordingID: recordingID,
+			FilePath:    "/store/" + showName + ".mkv",
+			FormatLabel: localFormat,
+		}))
+	}
+}
+
+func TestAPIMismatchesEmpty(t *testing.T) {
+	t.Parallel()
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/mismatches", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(t, body.Items)
+}
+
+// TestAPIMismatchesEnumerates seeds four recordings — one synced, one
+// orphan (file present, not in collection or wants), one in-collection
+// without a backing file, and one wants-without-file — and asserts the
+// endpoint returns exactly the three non-Synced rows.
+func TestAPIMismatchesEnumerates(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// synced: in collection + matching local format.
+	seedMismatchRecording(t, db, 9101, 91001, "SyncedShow",
+		true, false, true, "MKV 1080p", "MKV 1080p")
+	// orphan: file present, not in collection or wants.
+	seedMismatchRecording(t, db, 9102, 91002, "OrphanShow",
+		false, false, true, "", "MKV 720p")
+	// missing: in collection, no local file.
+	seedMismatchRecording(t, db, 9103, 91003, "MissingShow",
+		true, false, false, "MKV 1080p", "")
+	// wanted: in wants, no local file.
+	seedMismatchRecording(t, db, 9104, 91004, "WantedShow",
+		false, true, false, "", "")
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/mismatches", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []struct {
+			Type        string `json:"type"`
+			RecordingID int64  `json:"recording_id"`
+			Show        string `json:"show"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Items, 3)
+
+	byType := make(map[string]int64, len(body.Items))
+	for _, item := range body.Items {
+		byType[item.Type] = item.RecordingID
+	}
+	assert.Equal(t, int64(91002), byType["add_to_collection"])
+	assert.Equal(t, int64(91003), byType["missing_file"])
+	assert.Equal(t, int64(91004), byType["wanted_file"])
+}
+
+// TestAPIMismatchesFilterByType seeds the same four-case fixture and
+// asserts ?type=add_to_collection narrows the response to just the
+// orphan row.
+func TestAPIMismatchesFilterByType(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	seedMismatchRecording(t, db, 9201, 92001, "SyncedShow",
+		true, false, true, "MKV 1080p", "MKV 1080p")
+	seedMismatchRecording(t, db, 9202, 92002, "OrphanShow",
+		false, false, true, "", "MKV 720p")
+	seedMismatchRecording(t, db, 9203, 92003, "MissingShow",
+		true, false, false, "MKV 1080p", "")
+	seedMismatchRecording(t, db, 9204, 92004, "WantedShow",
+		false, true, false, "", "")
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet,
+		"/api/v1/mismatches?type=add_to_collection", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []struct {
+			Type        string `json:"type"`
+			RecordingID int64  `json:"recording_id"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, "add_to_collection", body.Items[0].Type)
+	assert.Equal(t, int64(92002), body.Items[0].RecordingID)
+}
+
+// TestPagesMismatches asserts the HTML page renders 200 and contains
+// the type-tab nav copy.
+func TestPagesMismatches(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/mismatches", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	body := rr.Body.String()
+	assert.Contains(t, body, "Add to collection")
+	assert.Contains(t, body, "Format mismatch")
+	assert.Contains(t, body, "Missing file")
+	assert.Contains(t, body, "Wanted file")
+}
+
 // TestRecordingPageNFTWarning seeds a recording with NFT.NFTForever set
 // and asserts the detail page renders the human-readable callout.
 func TestRecordingPageNFTWarning(t *testing.T) {

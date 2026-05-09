@@ -25,7 +25,7 @@ var historyKindLabels = []struct {
 	Key   string
 	Label string
 }{
-	{Key: "", Label: "All"},
+	{Key: "", Label: allTabLabel},
 	{Key: storage.HistoryKindIngest, Label: "Ingest"},
 	{Key: storage.HistoryKindRename, Label: "Rename"},
 	{Key: storage.HistoryKindNFOWrite, Label: "NFO Write"},

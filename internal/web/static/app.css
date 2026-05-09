@@ -124,6 +124,52 @@ nav.kind-tabs .kind-tab-active {
 .kind-sync          { color: #6e7781; }
 .kind-manual_import { color: #cf222e; }
 
+/* Mismatches page type-filter tabs. Same shape as the home page status
+   tabs and the history page kind tabs so the navigation reads as a
+   related taxonomy. */
+nav.mismatch-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+}
+nav.mismatch-tabs .mismatch-tab {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+nav.mismatch-tabs .mismatch-tab small {
+  color: inherit;
+  opacity: 0.7;
+}
+nav.mismatch-tabs .mismatch-tab-active {
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+  border-color: var(--pico-primary);
+}
+
+/* Per-type badges on the mismatches table. Colors picked from the same
+   palette used by status-badge / kind-badge so the three review surfaces
+   read as siblings. */
+.mismatch-badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+  line-height: 1.4;
+}
+.mismatch-add_to_collection { color: #1a7f37; }
+.mismatch-format_mismatch   { color: #9a6700; }
+.mismatch-missing_file      { color: #cf222e; }
+.mismatch-wanted_file       { color: #0969da; }
+
 /* Recording detail page layout. */
 .detail-grid {
   display: grid;

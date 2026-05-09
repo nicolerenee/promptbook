@@ -37,7 +37,7 @@ var homeStatuses = []struct {
 	Key   storage.Status
 	Label string
 }{
-	{Key: "", Label: "All"},
+	{Key: "", Label: allTabLabel},
 	{Key: storage.StatusSynced, Label: "Synced"},
 	{Key: storage.StatusFormatMismatch, Label: "Format mismatch"},
 	{Key: storage.StatusMissing, Label: "Missing"},
