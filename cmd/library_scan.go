@@ -1,6 +1,13 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/storage"
+)
 
 //nolint:gochecknoglobals // cobra requires package-level command variable
 var libraryScanCmd = &cobra.Command{
@@ -18,6 +25,46 @@ func init() {
 	libraryCmd.AddCommand(libraryScanCmd)
 }
 
-func runLibraryScan(_ *cobra.Command, _ []string) error {
-	return errNotImplemented
+func runLibraryScan(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	src := args[0]
+
+	db, err := storage.Open(ctx, appConfig.Storage.DatabasePath)
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	client, err := buildEncoraClientForIngest()
+	if err != nil {
+		return err
+	}
+
+	engine := &ingest.Engine{
+		DB:             db,
+		Client:         client,
+		LibraryRoot:    appConfig.Library.Root,
+		FolderTemplate: appConfig.Library.FolderTemplate,
+		FileTemplate:   appConfig.Library.FileTemplate,
+	}
+
+	res, err := engine.Ingest(ctx, src, ingest.Options{DryRun: true})
+	if err != nil {
+		return fmt.Errorf("scan: %w", err)
+	}
+
+	out := cmd.OutOrStdout()
+	for _, item := range res.Items {
+		_, _ = fmt.Fprintf(out, "%s\n  encora id: %d (from %s)\n",
+			item.Source, item.EncoraID, item.ResolvedFrom)
+		if item.Plan != nil {
+			_, _ = fmt.Fprintf(out, "  → %s\n", item.Plan.AbsoluteFile())
+		}
+		_, _ = fmt.Fprintf(out, "  action: %s", item.Action)
+		if item.SkippedReason != "" {
+			_, _ = fmt.Fprintf(out, " (%s)", item.SkippedReason)
+		}
+		_, _ = fmt.Fprintln(out)
+	}
+	return nil
 }
