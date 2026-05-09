@@ -263,6 +263,72 @@ func TestSyncBailsOnRateLimitFloor(t *testing.T) {
 	}
 }
 
+// TestSyncPopulatesPeopleTables verifies the sync writer keeps the
+// first-class performers and characters tables in step with cast_entries —
+// upserting one row per Encora id so LoadPerformer / LoadCharacter work
+// against the same data the cast_entries denormalization carries.
+//
+// The Marigold fixture (recording 90100222) lists Avery Morrison (performer id
+// 90001001) playing Marigold (character id 90002001); both must land and round-trip.
+func TestSyncPopulatesPeopleTables(t *testing.T) {
+	t.Parallel()
+
+	srv := newSyncFixtureServer(t, 25)
+	t.Cleanup(srv.Close)
+
+	db := newTestDB(t)
+	c := newTestClient(t, srv.URL)
+
+	velvet-antlersNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
+	_, err := sync.Sync(context.Background(), c, db, sync.Options{
+		BurstReserve: 2,
+		Now:          func() time.Time { return velvet-antlersNow },
+	})
+	require.NoError(t, err)
+
+	t.Run("performers_populated", func(t *testing.T) {
+		t.Parallel()
+		var n int
+		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM performers`).Scan(&n))
+		assert.Positive(t, n, "performers table should have rows")
+	})
+
+	t.Run("characters_populated", func(t *testing.T) {
+		t.Parallel()
+		var n int
+		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM characters`).Scan(&n))
+		assert.Positive(t, n, "characters table should have rows")
+	})
+
+	t.Run("brian_darcy_james_round_trips", func(t *testing.T) {
+		t.Parallel()
+		const performerID int64 = 90001001
+		got, lerr := storage.LoadPerformer(context.Background(), db, performerID)
+		require.NoError(t, lerr)
+		assert.Equal(t, "Avery Morrison", got.Name)
+		assert.Equal(t, "avery-morrison", got.Slug)
+		assert.WithinDuration(t, velvet-antlersNow, got.LastSeenAt, time.Second)
+	})
+
+	t.Run("marigold_character_round_trips", func(t *testing.T) {
+		t.Parallel()
+		const characterID int64 = 90002001
+		got, lerr := storage.LoadCharacter(context.Background(), db, characterID)
+		require.NoError(t, lerr)
+		assert.Equal(t, "Marigold", got.Name)
+		assert.WithinDuration(t, velvet-antlersNow, got.LastSeenAt, time.Second)
+	})
+
+	t.Run("brian_darcy_james_recording_join", func(t *testing.T) {
+		t.Parallel()
+		const performerID int64 = 90001001
+		ids, lerr := storage.ListRecordingsForPerformer(context.Background(), db, performerID)
+		require.NoError(t, lerr)
+		assert.Contains(t, ids, int64(90100222),
+			"Avery Morrison must be wired to the Marigold recording 90100222")
+	})
+}
+
 // TestSyncSurfaces500 verifies upstream errors abort sync and the run row
 // captures the failure text.
 func TestSyncSurfaces500(t *testing.T) {

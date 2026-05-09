@@ -37,10 +37,28 @@ type Character struct {
 	LastSeenAt  time.Time
 }
 
+// sqlExecutor is the minimum surface that the people upserts need. Both
+// *sql.DB and *sql.Tx satisfy it, so the same SQL backs the public DB-taking
+// helpers and the transaction-scoped variants used by the sync writer.
+type sqlExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // UpsertPerformer inserts the performer or refreshes an existing row, keeping
 // the latest name/slug/url and bumping last_seen_at to the supplied value.
 func UpsertPerformer(ctx context.Context, db *sql.DB, p Performer) error {
-	_, err := db.ExecContext(ctx, `
+	return upsertPerformer(ctx, db, p)
+}
+
+// UpsertPerformerTx is the transaction-scoped sibling of UpsertPerformer for
+// callers that already hold a *sql.Tx (e.g. the sync writer batching cast
+// upserts inside the per-page transaction).
+func UpsertPerformerTx(ctx context.Context, tx *sql.Tx, p Performer) error {
+	return upsertPerformer(ctx, tx, p)
+}
+
+func upsertPerformer(ctx context.Context, x sqlExecutor, p Performer) error {
+	_, err := x.ExecContext(ctx, `
 		INSERT INTO performers (performer_id, name, slug, url, last_seen_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(performer_id) DO UPDATE SET
@@ -58,7 +76,17 @@ func UpsertPerformer(ctx context.Context, db *sql.DB, p Performer) error {
 // UpsertCharacter inserts the character or refreshes an existing row, keeping
 // the latest name/slug/url and bumping last_seen_at to the supplied value.
 func UpsertCharacter(ctx context.Context, db *sql.DB, c Character) error {
-	_, err := db.ExecContext(ctx, `
+	return upsertCharacter(ctx, db, c)
+}
+
+// UpsertCharacterTx is the transaction-scoped sibling of UpsertCharacter for
+// callers that already hold a *sql.Tx.
+func UpsertCharacterTx(ctx context.Context, tx *sql.Tx, c Character) error {
+	return upsertCharacter(ctx, tx, c)
+}
+
+func upsertCharacter(ctx context.Context, x sqlExecutor, c Character) error {
+	_, err := x.ExecContext(ctx, `
 		INSERT INTO characters (character_id, name, slug, url, last_seen_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(character_id) DO UPDATE SET
