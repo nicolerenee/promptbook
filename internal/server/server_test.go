@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,7 +63,7 @@ func fixtureBackedServer(t *testing.T) *server.Server {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			w.Header().Set("X-RateLimit-Remaining", "25")
+			w.Header().Set("X-Ratelimit-Remaining", "25")
 			_, _ = w.Write(b)
 		})
 	}
@@ -1044,4 +1046,252 @@ func TestRecordingPagePosterEmpty(t *testing.T) {
 		"expected poster placeholder copy when stagemedia is disabled")
 	assert.NotContains(t, body, "<img class=\"poster\"",
 		"poster img tag should not render when no posters are loaded")
+}
+
+// stubEncoraClient is a minimal in-memory implementation of the
+// EncoraWriteClient interface used by the apply tests. It records each
+// call so assertions can verify the right endpoint fired with the right
+// arguments, and lets each test slot a per-call response (success or
+// sentinel error) into the queue.
+type stubEncoraClient struct {
+	mu                sync.Mutex
+	addCalls          []int64
+	formatCalls       []stubFormatCall
+	addErr            error
+	formatErr         error
+	addRateLimit      encora.RateLimitInfo
+	formatRateLimit   encora.RateLimitInfo
+	updateCallCounter int
+}
+
+type stubFormatCall struct {
+	ID     int64
+	Format string
+}
+
+func (s *stubEncoraClient) AddToCollection(_ context.Context, id int64) (encora.RateLimitInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addCalls = append(s.addCalls, id)
+	return s.addRateLimit, s.addErr
+}
+
+func (s *stubEncoraClient) UpdateCollectionFormat(
+	_ context.Context, id int64, format string,
+) (encora.RateLimitInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.formatCalls = append(s.formatCalls, stubFormatCall{ID: id, Format: format})
+	s.updateCallCounter++
+	return s.formatRateLimit, s.formatErr
+}
+
+// applyTestServer wires a fresh DB + stub encora client into a server
+// and returns both so tests can assert on history rows + recorded
+// upstream calls without the fixture-backed sync.
+func applyTestServer(t *testing.T) (*server.Server, *gosql.DB, *stubEncoraClient) {
+	t.Helper()
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	stub := &stubEncoraClient{}
+	srv, err := server.New(server.Options{DB: db, Encora: stub})
+	require.NoError(t, err)
+	return srv, db, stub
+}
+
+func TestAPIApplyHandlesAddToCollection(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "add_to_collection", "recording_id": 12345},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		Results []struct {
+			OK         bool   `json:"ok"`
+			Error      string `json:"error"`
+			HTTPStatus int    `json:"http_status"`
+		} `json:"results"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Results, 1)
+	assert.True(t, resp.Results[0].OK, "expected ok=true; got error %q", resp.Results[0].Error)
+	assert.Equal(t, http.StatusOK, resp.Results[0].HTTPStatus)
+
+	assert.Equal(t, []int64{12345}, stub.addCalls,
+		"AddToCollection should be invoked exactly once with the supplied id")
+
+	// History event must be written for successful pushes so the audit
+	// log captures every change the server made upstream.
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindEncoraPush},
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, storage.HistoryKindEncoraPush, events[0].Kind)
+	require.NotNil(t, events[0].RecordingID)
+	assert.Equal(t, int64(12345), *events[0].RecordingID)
+	assert.Contains(t, events[0].Summary, "12345")
+}
+
+func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{
+				"type":         "format_mismatch",
+				"recording_id": 90100222,
+				"new_format":   "MKV 1080p",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	require.Len(t, stub.formatCalls, 1, "UpdateCollectionFormat should fire once")
+	assert.Equal(t, int64(90100222), stub.formatCalls[0].ID)
+	assert.Equal(t, "MKV 1080p", stub.formatCalls[0].Format,
+		"format string must be forwarded as-is to the encora client")
+
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindEncoraPush},
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Contains(t, events[0].Summary, "MKV 1080p")
+}
+
+func TestAPIApplyMissingFileShortCircuits(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "missing_file", "recording_id": 99},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		Results []struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Results, 1)
+	assert.False(t, resp.Results[0].OK)
+	assert.Contains(t, resp.Results[0].Error, "requires a downloaded file")
+
+	assert.Empty(t, stub.addCalls, "encora client must not be called for missing_file")
+	assert.Empty(t, stub.formatCalls, "encora client must not be called for missing_file")
+
+	// No history row should be written for a non-push.
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindEncoraPush},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, events)
+}
+
+func TestAPIApplyWithoutEncoraClient(t *testing.T) {
+	t.Parallel()
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "add_to_collection", "recording_id": 1},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "encora client not configured")
+}
+
+func TestAPIApplySurfacesEncoraError(t *testing.T) {
+	t.Parallel()
+	srv, db, stub := applyTestServer(t)
+	stub.addErr = encora.ErrRateLimited
+	stub.addRateLimit = encora.RateLimitInfo{RetryAfter: 60 * time.Second}
+
+	body, err := json.Marshal(map[string]any{
+		"actions": []map[string]any{
+			{"type": "add_to_collection", "recording_id": 7},
+		},
+	})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/api/v1/apply", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	srv.Handler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var resp struct {
+		Results []struct {
+			OK         bool   `json:"ok"`
+			Error      string `json:"error"`
+			HTTPStatus int    `json:"http_status"`
+		} `json:"results"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Results, 1)
+	assert.False(t, resp.Results[0].OK)
+	assert.Contains(t, strings.ToLower(resp.Results[0].Error), "rate limited")
+	assert.Equal(t, http.StatusTooManyRequests, resp.Results[0].HTTPStatus)
+
+	// Failure means no history row — the server only logs successful
+	// pushes so the audit trail isn't polluted with non-events.
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindEncoraPush},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, events,
+		"failed pushes must not produce HistoryKindEncoraPush events")
 }

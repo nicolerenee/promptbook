@@ -20,6 +20,7 @@ var staticFS embed.FS
 // pageNames are the page template files (excluding the underscore-
 // prefixed shared layout).
 var pageNames = []string{ //nolint:gochecknoglobals // immutable lookup table
+	"apply_result.html",
 	"history.html",
 	"home.html",
 	"mismatches.html",

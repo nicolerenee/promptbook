@@ -19,9 +19,11 @@
 </header>
 
 {{if .Items}}
+<form method="post" action="/apply" id="apply-form">
 <table>
   <thead>
     <tr>
+      <th></th>
       <th>Type</th>
       <th>Show</th>
       <th>Tour</th>
@@ -31,21 +33,53 @@
     </tr>
   </thead>
   <tbody>
-  {{range .Items}}
+  {{range $i, $item := .Items}}
     <tr>
-      <td><span class="mismatch-badge mismatch-{{.Type}}">{{.Type}}</span></td>
-      <td>{{if .Show}}{{.Show}}{{else}}<small>—</small>{{end}}</td>
-      <td>{{if .Tour}}{{.Tour}}{{else}}<small>—</small>{{end}}</td>
-      <td>{{if .DateFull}}{{.DateFull}}{{else}}<small>—</small>{{end}}</td>
-      <td><a href="/recordings/{{.RecordingID}}">{{.RecordingID}}</a></td>
-      <td>{{.Description}}</td>
+      <td>
+        {{if or (eq (printf "%s" $item.Type) "missing_file") (eq (printf "%s" $item.Type) "wanted_file")}}
+          <small>—</small>
+        {{else}}
+          <input type="checkbox" name="action[{{$i}}].type" value="{{$item.Type}}" class="apply-check" id="apply-check-{{$i}}">
+          <input type="hidden" name="action[{{$i}}].recording_id" value="{{$item.RecordingID}}">
+          {{if eq (printf "%s" $item.Type) "format_mismatch"}}
+            <input type="hidden" name="action[{{$i}}].new_format" value="{{$item.LocalFormat}}">
+          {{end}}
+        {{end}}
+      </td>
+      <td><span class="mismatch-badge mismatch-{{$item.Type}}">{{$item.Type}}</span></td>
+      <td>{{if $item.Show}}{{$item.Show}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if $item.Tour}}{{$item.Tour}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if $item.DateFull}}{{$item.DateFull}}{{else}}<small>—</small>{{end}}</td>
+      <td><a href="/recordings/{{$item.RecordingID}}">{{$item.RecordingID}}</a></td>
+      <td>{{$item.Description}}</td>
     </tr>
   {{end}}
   </tbody>
 </table>
+
+<div class="apply-bar">
+  <span><strong id="apply-count">0</strong> selected</span>
+  <button type="submit" id="apply-submit" disabled>Apply selected</button>
+</div>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('apply-form');
+  if (!form) { return; }
+  var btn = document.getElementById('apply-submit');
+  var count = document.getElementById('apply-count');
+  function refresh() {
+    var n = form.querySelectorAll('input[name^="action["]:checked').length;
+    count.textContent = String(n);
+    if (n === 0) { btn.setAttribute('disabled', 'disabled'); }
+    else         { btn.removeAttribute('disabled'); }
+  }
+  form.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
 {{else}}
   <p><em>Everything synced.</em></p>
 {{end}}
-
-<p><small>Use <code>promptbook</code> CLI or the future Apply page to push these changes to Encora.</small></p>
 {{end}}

@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
 
+	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
 )
@@ -36,6 +37,7 @@ type Server struct {
 	db         *sql.DB
 	logger     zerolog.Logger
 	stagemedia *stagemedia.Client
+	encora     EncoraWriteClient
 }
 
 // Options configures a new server.
@@ -45,6 +47,11 @@ type Options struct {
 	// Stagemedia is optional. When nil, poster + headshot fetching is
 	// disabled; handlers that depend on it must nil-check.
 	Stagemedia *stagemedia.Client
+	// Encora is optional. When nil, the apply endpoints respond 503 so
+	// read-only views still work without an API key configured. Tests
+	// pass a stub satisfying EncoraWriteClient; production wiring passes
+	// a real *encora.Client.
+	Encora EncoraWriteClient
 }
 
 // New constructs a server with all routes registered and templates
@@ -72,6 +79,7 @@ func New(opts Options) (*Server, error) {
 		db:         opts.DB,
 		logger:     opts.Logger,
 		stagemedia: opts.Stagemedia,
+		encora:     opts.Encora,
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
@@ -85,6 +93,17 @@ func (s *Server) Handler() http.Handler { return s.echo }
 // Stagemedia returns the configured StageMedia client, or nil when
 // stagemedia is disabled. Handlers must nil-check before use.
 func (s *Server) Stagemedia() *stagemedia.Client { return s.stagemedia }
+
+// Encora returns the configured Encora write client, or nil when no
+// API key was supplied. Apply handlers nil-check this and return 503
+// rather than crashing the server.
+func (s *Server) Encora() EncoraWriteClient { return s.encora }
+
+// Compile-time guard: the real *encora.Client must satisfy
+// EncoraWriteClient so production wiring can pass it on Options.Encora
+// without a wrapper. This isn't a runtime use; the underscore drops the
+// reference once the compiler is happy.
+var _ EncoraWriteClient = (*encora.Client)(nil)
 
 // Start binds to addr and serves until the context is cancelled. Returns
 // nil on graceful shutdown.

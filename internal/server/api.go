@@ -78,6 +78,7 @@ func (s *Server) routes() {
 	api.GET("/people/:id", s.handleGetPerson)
 	api.GET("/history", s.handleListHistory)
 	api.GET("/mismatches", s.handleListMismatches)
+	api.POST("/apply", s.handleAPIApply)
 
 	s.echo.GET("/", s.handleHomePage)
 	s.echo.GET("/recordings/:id", s.handleRecordingPage)
@@ -88,6 +89,8 @@ func (s *Server) routes() {
 	s.echo.GET("/people/:id", s.handlePersonPage)
 	s.echo.GET("/history", s.handleHistoryPage)
 	s.echo.GET("/mismatches", s.handleMismatchesPage)
+	s.echo.GET("/apply", s.handleApplyGet)
+	s.echo.POST("/apply", s.handleHTMLApply)
 }
 
 func (s *Server) handleHealth(c echo.Context) error {

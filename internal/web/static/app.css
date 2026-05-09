@@ -239,3 +239,41 @@ nav.mismatch-tabs .mismatch-tab-active {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.25rem 1rem;
 }
+
+/* Sticky bottom bar that anchors the "Apply selected" button on the
+   mismatches page. Sits above page content so a long table can scroll
+   under it without hiding the action. */
+.apply-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  margin-block-start: 1rem;
+  background: var(--pico-card-background-color, #fff);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.4rem;
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.06);
+}
+.apply-bar button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Status pills on the apply_result page. Mirrors the status-badge
+   shape so the result table reads as a sibling of mismatches. */
+.apply-result-ok,
+.apply-result-err {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid currentColor;
+  line-height: 1.4;
+}
+.apply-result-ok  { color: #1a7f37; }
+.apply-result-err { color: #cf222e; }

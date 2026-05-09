@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -51,7 +52,35 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		log.Info().Msg("stagemedia disabled (no api key configured)")
 	}
 
-	srv, err := server.New(server.Options{DB: db, Logger: log.Logger, Stagemedia: smClient})
+	var encClient *encora.Client
+	if appConfig.Encora.APIKey != "" {
+		encClient, err = encora.New(encora.Options{
+			BaseURL:   appConfig.Encora.BaseURL,
+			APIKey:    appConfig.Encora.APIKey,
+			UserAgent: appConfig.Encora.UserAgent,
+			Logger:    log.Logger,
+		})
+		if err != nil {
+			return fmt.Errorf("build encora client: %w", err)
+		}
+	} else {
+		log.Info().Msg("encora disabled (no api key configured)")
+	}
+
+	// server.Options.Encora is an interface; nil *encora.Client must
+	// arrive as a true nil interface so the apply handlers' nil-check
+	// fires correctly.
+	var encOpt server.EncoraWriteClient
+	if encClient != nil {
+		encOpt = encClient
+	}
+
+	srv, err := server.New(server.Options{
+		DB:         db,
+		Logger:     log.Logger,
+		Stagemedia: smClient,
+		Encora:     encOpt,
+	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}

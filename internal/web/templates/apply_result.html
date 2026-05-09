@@ -1,0 +1,57 @@
+{{define "apply_result.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<header>
+  <h1>{{.Title}}</h1>
+  <p>{{.Succeeded}} of {{.Total}} succeeded.</p>
+</header>
+
+{{if .Rows}}
+<table>
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Type</th>
+      <th>Show</th>
+      <th>Tour</th>
+      <th>Date</th>
+      <th>Recording</th>
+      <th>Detail</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Rows}}
+    <tr>
+      <td>
+        {{if .OK}}
+          <span class="apply-result-ok" title="OK">OK</span>
+        {{else}}
+          <span class="apply-result-err" title="Error">Error</span>
+        {{end}}
+      </td>
+      <td><span class="mismatch-badge mismatch-{{.Type}}">{{.Type}}</span></td>
+      <td>{{if .Show}}{{.Show}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if .Tour}}{{.Tour}}{{else}}<small>—</small>{{end}}</td>
+      <td>{{if .DateFull}}{{.DateFull}}{{else}}<small>—</small>{{end}}</td>
+      <td><a href="/recordings/{{.RecordingID}}">{{.RecordingID}}</a></td>
+      <td>
+        {{if .OK}}
+          {{if .NewFormat}}<small>format → {{.NewFormat}}</small>{{else}}<small>pushed</small>{{end}}
+        {{else}}
+          <small>{{.Error}}</small>
+        {{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+  <p><em>No actions submitted.</em></p>
+{{end}}
+
+<p>
+  <a href="/mismatches">Back to mismatches</a>
+  &nbsp;·&nbsp;
+  <a href="/history">View history</a>
+</p>
+{{end}}
