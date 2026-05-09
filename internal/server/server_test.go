@@ -735,6 +735,132 @@ func TestAPIHistoryFilterByKind(t *testing.T) {
 	assert.Equal(t, "ingested foo", body.Items[0].Summary)
 }
 
+func TestAPIHistoryFilterByRecordingID(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	rec42 := int64(42)
+	rec99 := int64(99)
+	for _, e := range []storage.HistoryEvent{
+		{
+			OccurredAt:  base.Add(1 * time.Hour),
+			Kind:        storage.HistoryKindIngest,
+			RecordingID: &rec42,
+			Summary:     "ingested 42",
+		},
+		{
+			OccurredAt:  base.Add(2 * time.Hour),
+			Kind:        storage.HistoryKindRename,
+			RecordingID: &rec99,
+			Summary:     "renamed 99",
+		},
+		{
+			OccurredAt: base.Add(3 * time.Hour),
+			Kind:       storage.HistoryKindSync,
+			Summary:    "global sync",
+		},
+	} {
+		_, recErr := storage.RecordEvent(ctx, db, e)
+		require.NoError(t, recErr)
+	}
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	t.Run("matches", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/history?recording_id=42", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+		var body struct {
+			Items []struct {
+				Kind        string `json:"kind"`
+				Summary     string `json:"summary"`
+				RecordingID *int64 `json:"recording_id"`
+			} `json:"items"`
+		}
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+		require.Len(t, body.Items, 1)
+		assert.Equal(t, storage.HistoryKindIngest, body.Items[0].Kind)
+		assert.Equal(t, "ingested 42", body.Items[0].Summary)
+		require.NotNil(t, body.Items[0].RecordingID)
+		assert.Equal(t, int64(42), *body.Items[0].RecordingID)
+	})
+
+	t.Run("no_match", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/history?recording_id=12345", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+		var body struct {
+			Items []map[string]any `json:"items"`
+		}
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+		assert.Empty(t, body.Items)
+	})
+
+	t.Run("malformed_400", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/history?recording_id=abc", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("zero_400", func(t *testing.T) {
+		t.Parallel()
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/history?recording_id=0", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+}
+
+// TestAPIWantsIncludesAddedTimestamp asserts the /api/v1/wants response
+// surfaces each wants row's last_synced_at as the user-facing
+// "wants_added" field. The fixture-backed sync writes the timestamp via
+// upsertWant, so a freshly-seeded server should always have it populated.
+func TestAPIWantsIncludesAddedTimestamp(t *testing.T) {
+	t.Parallel()
+
+	srv := fixtureBackedServer(t)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/wants", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []struct {
+			ID         int64   `json:"id"`
+			InWants    bool    `json:"in_wants"`
+			WantsAdded *string `json:"wants_added"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.NotEmpty(t, body.Items, "fixture sync should populate wants list")
+
+	first := body.Items[0]
+	assert.True(t, first.InWants, "wants endpoint should only return wants rows")
+	require.NotNil(t, first.WantsAdded, "wants_added should be populated for every wants row")
+	_, parseErr := time.Parse(time.RFC3339, *first.WantsAdded)
+	if parseErr != nil {
+		// SQLite default DATETIME format isn't RFC3339; the upsert in
+		// sync writes time.Now().UTC() as a Go time.Time which the
+		// driver renders without the timezone. Accept either.
+		_, parseErr = time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", *first.WantsAdded)
+	}
+	assert.NoError(t, parseErr, "wants_added (%q) should parse as a timestamp", *first.WantsAdded)
+}
+
 // TestPagesHistory asserts the history page renders the empty shell.
 // The actual events are populated client-side by /static/history.js.
 func TestPagesHistory(t *testing.T) {
