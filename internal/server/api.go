@@ -43,8 +43,14 @@ const (
 // embedded in the home page view-model. Status and the per-recording
 // format strings come from the storage.RecordingState reconciler so the
 // JSON and HTML pages render the same five-status taxonomy.
+//
+// LocalPosterURL is the /images/... path of the user-curated poster
+// for the recording's show, or empty when the cache is disabled or
+// no poster is on disk yet. The grid view in Library.js prefers it
+// over reaching for an upstream URL we don't trust to stay reachable.
 type RecordingListItem struct {
 	ID             int64  `json:"id"`
+	ShowID         int64  `json:"show_id"`
 	Show           string `json:"show"`
 	Tour           string `json:"tour"`
 	DateFull       string `json:"date_full"`
@@ -57,6 +63,7 @@ type RecordingListItem struct {
 	FileCount      int    `json:"file_count"`
 	EncoraFormat   string `json:"encora_format"`
 	LocalFormat    string `json:"local_format"`
+	LocalPosterURL string `json:"local_poster_url"`
 }
 
 // wantsListItem is the JSON shape returned by /api/v1/wants. It surfaces
@@ -96,6 +103,10 @@ func (s *Server) routes() {
 	api.POST("/queue/:id/import", s.handleImportQueue)
 	api.GET("/people", s.handleListPeople)
 	api.GET("/people/:id", s.handleGetPerson)
+	// By-show aggregate. Show detail (/shows/:id) is added by the
+	// detail-page agent in a sibling commit; the list endpoint is the
+	// only one this commit registers.
+	api.GET("/shows", s.handleListShows)
 	api.GET("/history", s.handleListHistory)
 	api.GET("/mismatches", s.handleListMismatches)
 	api.GET("/settings", s.handleSettings)
@@ -164,17 +175,100 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 		ownedFilter = ""
 	}
 
-	items, err := loadStatefulRecordings(
-		c.Request().Context(), s.db, statuses, ownedFilter, limit, offset,
-	)
+	ctx := c.Request().Context()
+	items, err := loadStatefulRecordings(ctx, s.db, statuses, ownedFilter, limit, offset)
 	if err != nil {
 		return err
 	}
+
+	// Decorate each row with the on-disk poster URL keyed off the
+	// show's curated poster index. Bulk-load show choices once per
+	// request to avoid N+1 queries — for the unique-show subset of a
+	// typical 50-row page this is a single SQL roundtrip.
+	if posterErr := s.decorateLocalPosters(ctx, items); posterErr != nil {
+		s.logger.Warn().Err(posterErr).Msg("decorate local poster urls failed; serving without")
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{
 		itemsKey:  items,
 		limitKey:  limit,
 		offsetKey: offset,
 	})
+}
+
+// decorateLocalPosters sets LocalPosterURL on every item that maps to a
+// cached poster on disk. Bulk-loads show_image_choices for the unique
+// show ids in the page so the cost is one SQL query regardless of page
+// size. Cache disabled / no rows yields a no-op (every URL stays "").
+func (s *Server) decorateLocalPosters(ctx context.Context, items []RecordingListItem) error {
+	cache := s.ImageCache()
+	if cache == nil || cache.Disabled() || len(items) == 0 {
+		return nil
+	}
+	showIDs := make(map[int64]struct{}, len(items))
+	for _, it := range items {
+		if it.ShowID != 0 {
+			showIDs[it.ShowID] = struct{}{}
+		}
+	}
+	choices, err := loadShowPosterChoices(ctx, s.db, showIDs)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		showID := items[i].ShowID
+		if showID == 0 {
+			continue
+		}
+		idx := choices[showID] // 0 when not in map (default).
+		items[i].LocalPosterURL = cache.PosterURL(showID, idx)
+	}
+	return nil
+}
+
+// loadShowPosterChoices returns a {show_id: poster_index} map populated
+// from show_image_choices for the supplied show ids. Shows without a
+// row are absent from the map — callers should treat absence as
+// "fallback to index 0".
+func loadShowPosterChoices(
+	ctx context.Context, db *sql.DB, showIDs map[int64]struct{},
+) (map[int64]int, error) {
+	out := make(map[int64]int, len(showIDs))
+	if len(showIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, 0, len(showIDs))
+	args := make([]any, 0, len(showIDs))
+	for id := range showIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	//nolint:gosec // G202: placeholders are "?" markers, not user input.
+	q := `
+		SELECT show_id, poster_index
+		FROM show_image_choices
+		WHERE poster_index IS NOT NULL
+		  AND show_id IN (` + strings.Join(placeholders, ",") + `)
+	`
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query show poster choices: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var (
+			showID int64
+			idx    int
+		)
+		if scanErr := rows.Scan(&showID, &idx); scanErr != nil {
+			return nil, fmt.Errorf("scan show poster choice: %w", scanErr)
+		}
+		out[showID] = idx
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return nil, fmt.Errorf("iterate show poster choices: %w", rerr)
+	}
+	return out, nil
 }
 
 // recordingDetailResponse wraps storage.LoadedRecording with the
@@ -538,6 +632,7 @@ func loadStatefulRecordings(
 		m := meta[st.RecordingID]
 		out = append(out, RecordingListItem{
 			ID:             st.RecordingID,
+			ShowID:         m.showID,
 			Show:           m.show,
 			Tour:           m.tour,
 			DateFull:       m.dateFull,
@@ -588,6 +683,7 @@ func applyOwnedFilter(states []storage.RecordingState, owned string) []storage.R
 // recordingMeta is the per-row recording display metadata loaded
 // alongside a RecordingState.
 type recordingMeta struct {
+	showID     int64
 	show       string
 	tour       string
 	dateFull   string
@@ -619,7 +715,7 @@ func loadRecordingMeta(
 	// QueryContext.
 	//nolint:gosec // G202: placeholders are "?" markers, not user input.
 	q := `
-		SELECT r.recording_id, COALESCE(s.name, ''), r.tour, r.date_full,
+		SELECT r.recording_id, r.show_id, COALESCE(s.name, ''), r.tour, r.date_full,
 		       r.date_month_known, r.date_day_known, r.master
 		FROM recordings r
 		LEFT JOIN shows s ON s.show_id = r.show_id
@@ -639,7 +735,7 @@ func loadRecordingMeta(
 			monthKnown, dayKnown int
 		)
 		if scanErr := rows.Scan(
-			&id, &m.show, &m.tour, &m.dateFull,
+			&id, &m.showID, &m.show, &m.tour, &m.dateFull,
 			&monthKnown, &dayKnown, &m.master,
 		); scanErr != nil {
 			return nil, fmt.Errorf("scan recording meta: %w", scanErr)
