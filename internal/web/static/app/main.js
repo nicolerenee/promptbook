@@ -17,6 +17,8 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import Layout from './components/Layout.js';
 import Library from './components/Library.js';
+import Mismatches from './components/Mismatches.js';
+import Settings from './components/Settings.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -62,8 +64,8 @@ if (!root) {
     '/people':          wrap(stubPage('People')),
     '/people/:id':      wrap(stubPage('Person detail')),
     '/history':         wrap(stubPage('History')),
-    '/mismatches':      wrap(stubPage('Mismatches')),
+    '/mismatches':      wrap(Mismatches),
     '/apply':           wrap(stubPage('Apply')),
-    '/settings':        wrap(stubPage('Settings')),
+    '/settings':        wrap(Settings),
   });
 }
