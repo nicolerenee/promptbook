@@ -427,6 +427,115 @@ func TestEngineIngestDirectoryWalk(t *testing.T) {
 	assert.ElementsMatch(t, []int64{90100222, 90001143}, ids)
 }
 
+func TestIngestRecordsHistoryOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	db, err := storage.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "Marigold [encora-90100222].mp4")
+	require.NoError(t, os.WriteFile(src, []byte("video"), 0o644))
+
+	libRoot := filepath.Join(t.TempDir(), "library")
+	engine := &ingest.Engine{
+		DB:             db,
+		Client:         &stubClient{},
+		LibraryRoot:    libRoot,
+		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
+		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	require.NoError(t, res.Items[0].Err)
+	assert.Equal(t, ingest.ActionMoved, res.Items[0].Action)
+
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, events, "ingest must persist at least one history event")
+
+	// Find the ingest event that matches our recording id.
+	var found *storage.HistoryEvent
+	for i := range events {
+		ev := events[i]
+		if ev.Kind != storage.HistoryKindIngest {
+			continue
+		}
+		if ev.RecordingID != nil && *ev.RecordingID == 90100222 {
+			found = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, found, "expected an ingest history event for recording 90100222")
+	assert.Contains(t, found.Summary, "Moved")
+	assert.Equal(t, "moved", found.Details["action"])
+}
+
+func TestIngestSkipsHistoryForDryRun(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	db, err := storage.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "Marigold [encora-90100222].mp4")
+	require.NoError(t, os.WriteFile(src, []byte("video"), 0o644))
+
+	libRoot := filepath.Join(t.TempDir(), "library")
+	engine := &ingest.Engine{
+		DB:             db,
+		Client:         &stubClient{},
+		LibraryRoot:    libRoot,
+		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
+		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{DryRun: true})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, ingest.ActionWouldMove, res.Items[0].Action)
+
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, events, "dry-run ingest must not persist history events")
+}
+
+func TestIngestSkipsHistoryForNoEncoraIDSkip(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	db, err := storage.Open(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	src := filepath.Join(t.TempDir(), "video-no-id.mp4")
+	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
+
+	engine := &ingest.Engine{
+		DB:             db,
+		Client:         &stubClient{},
+		LibraryRoot:    t.TempDir(),
+		FolderTemplate: "x",
+		FileTemplate:   "y",
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, ingest.ActionSkipped, res.Items[0].Action)
+	assert.Equal(t, "no encora id", res.Items[0].SkippedReason)
+
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, events, "skipped-because-no-encora-id ingests must not persist history events")
+}
+
 func TestHTTPSubtitleFetcher(t *testing.T) {
 	t.Parallel()
 
