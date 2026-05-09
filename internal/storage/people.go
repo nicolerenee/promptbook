@@ -76,7 +76,7 @@ func UpsertCharacter(ctx context.Context, db *sql.DB, c Character) error {
 // LoadPerformer fetches a single performer by Encora id, returning
 // ErrPerformerNotFound when the row is missing.
 func LoadPerformer(ctx context.Context, db *sql.DB, id int64) (*Performer, error) {
-	p := Performer{PerformerID: id} //nolint:exhaustruct // remaining fields filled by Scan.
+	p := Performer{PerformerID: id}
 	err := db.QueryRowContext(ctx, `
 		SELECT name, slug, url, last_seen_at
 		FROM performers
@@ -94,7 +94,7 @@ func LoadPerformer(ctx context.Context, db *sql.DB, id int64) (*Performer, error
 // LoadCharacter fetches a single character by Encora id, returning
 // ErrCharacterNotFound when the row is missing.
 func LoadCharacter(ctx context.Context, db *sql.DB, id int64) (*Character, error) {
-	c := Character{CharacterID: id} //nolint:exhaustruct // remaining fields filled by Scan.
+	c := Character{CharacterID: id}
 	err := db.QueryRowContext(ctx, `
 		SELECT name, slug, url, last_seen_at
 		FROM characters
