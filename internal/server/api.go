@@ -161,12 +161,35 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 // content + mtime). The embedded *storage.LoadedRecording flattens its
 // PascalCase fields into the same JSON object so existing consumers see
 // no shape change beyond the new lower-case keys.
+//
+// LocalPosterURLs is a sibling of Posters, same length and same index
+// order. Each entry is a /images/... path when the matching poster is
+// in the on-disk cache, "" otherwise — the frontend prefers local URLs
+// when non-empty so the user doesn't hot-link StageMedia for content
+// that's already on the server's filesystem.
+//
+// Cast performers grow a parallel local_headshot_url field on
+// LoadedRecording.Cast at JSON marshal time via castWithLocalHeadshots.
+// The legacy fields stay for callers that haven't migrated.
 type recordingDetailResponse struct {
 	*storage.LoadedRecording
 
-	Posters       []string   `json:"posters"`
-	NFOContent    string     `json:"nfo_content"`
-	NFOModifiedAt *time.Time `json:"nfo_modified_at"`
+	Posters         []string                `json:"posters"`
+	LocalPosterURLs []string                `json:"local_poster_urls"`
+	Cast            []castEntryWithHeadshot `json:"cast"`
+	NFOContent      string                  `json:"nfo_content"`
+	NFOModifiedAt   *time.Time              `json:"nfo_modified_at"`
+}
+
+// castEntryWithHeadshot mirrors storage.ResolvedCastEntry but adds a
+// local_headshot_url string sourced from the image cache. The shape
+// stays decode-compatible with the JSON the SPA already consumes —
+// JSON marshal of a Go struct emits fields in declared order, but the
+// frontend keys off field names, so the new column is purely additive.
+type castEntryWithHeadshot struct {
+	storage.ResolvedCastEntry
+
+	LocalHeadshotURL string `json:"local_headshot_url"`
 }
 
 func (s *Server) handleGetRecording(c echo.Context) error {
@@ -184,15 +207,52 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 	}
 
 	posters := s.fetchPostersForRecording(ctx, loaded)
+	localPosterURLs := s.localPosterURLs(loaded.Recording.Metadata.ShowID, posters)
+	castWithHeadshots := s.castWithLocalHeadshots(loaded.Cast)
 
 	nfoContent, nfoModifiedAt := s.readNFOForRecording(loaded)
 
 	return c.JSON(http.StatusOK, recordingDetailResponse{
 		LoadedRecording: loaded,
 		Posters:         posters,
+		LocalPosterURLs: localPosterURLs,
+		Cast:            castWithHeadshots,
 		NFOContent:      nfoContent,
 		NFOModifiedAt:   nfoModifiedAt,
 	})
+}
+
+// localPosterURLs returns a slice the same length as posters where
+// each entry is the cached /images/... URL when the matching index is
+// on disk, "" otherwise. Returns an empty (but length-matched) slice
+// when caching is disabled so the JSON shape is stable.
+func (s *Server) localPosterURLs(showID int64, posters []string) []string {
+	out := make([]string, len(posters))
+	cache := s.ImageCache()
+	if cache == nil || cache.Disabled() || showID == 0 {
+		return out
+	}
+	for i := range posters {
+		out[i] = cache.PosterURL(showID, i)
+	}
+	return out
+}
+
+// castWithLocalHeadshots wraps each ResolvedCastEntry with the local
+// headshot URL (when cached). Returns a non-nil empty slice when the
+// input is empty so the JSON renders [] rather than null.
+func (s *Server) castWithLocalHeadshots(
+	cast []storage.ResolvedCastEntry,
+) []castEntryWithHeadshot {
+	out := make([]castEntryWithHeadshot, len(cast))
+	cache := s.ImageCache()
+	for i, ce := range cast {
+		out[i] = castEntryWithHeadshot{ResolvedCastEntry: ce}
+		if cache != nil && !cache.Disabled() {
+			out[i].LocalHeadshotURL = cache.HeadshotURL(ce.Performer.PerformerID)
+		}
+	}
+	return out
 }
 
 // fetchPostersForRecording asks StageMedia for poster URLs for the

@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 )
 
 // settingsResponse is the JSON shape /api/v1/settings returns. It
@@ -17,6 +19,7 @@ type settingsResponse struct {
 	Library      settingsLibrary    `json:"library"`
 	Server       settingsServer     `json:"server"`
 	Stagemedia   settingsStagemedia `json:"stagemedia"`
+	ImageCache   settingsImageCache `json:"image_cache"`
 	Version      string             `json:"version"`
 	ConfigSource string             `json:"config_source"`
 }
@@ -43,6 +46,7 @@ type settingsLibrary struct {
 	FileTemplate   string   `json:"file_template"`
 	IncomingDirs   []string `json:"incoming_dirs"`
 	WatchInterval  string   `json:"watch_interval"`
+	ImageRoot      string   `json:"image_root"`
 }
 
 type settingsServer struct {
@@ -60,6 +64,23 @@ type settingsStagemedia struct {
 	BaseURL   string `json:"base_url"`
 	APIKeySet bool   `json:"api_key_set"`
 	UserAgent string `json:"user_agent"`
+}
+
+// settingsImageCache surfaces the on-disk image cache state. Enabled
+// is true when library.imageRoot is non-empty AND the server has a
+// cache instance attached (the cmd-side wiring); the counts are a
+// disk walk so the settings page can show "N cached posters" etc.
+// without a separate API endpoint.
+type settingsImageCache struct {
+	Enabled bool                     `json:"enabled"`
+	Root    string                   `json:"root"`
+	Counts  settingsImageCacheCounts `json:"counts"`
+}
+
+type settingsImageCacheCounts struct {
+	Posters   int `json:"posters"`
+	Backdrops int `json:"backdrops"`
+	Headshots int `json:"headshots"`
 }
 
 // handleSettings returns the loaded application configuration with
@@ -94,6 +115,7 @@ func (s *Server) handleSettings(c echo.Context) error {
 			FileTemplate:   cfg.Library.FileTemplate,
 			IncomingDirs:   incoming,
 			WatchInterval:  cfg.Library.WatchInterval.String(),
+			ImageRoot:      cfg.Library.ImageRoot,
 		},
 		Server: settingsServer{
 			Listen: cfg.Server.Listen,
@@ -108,8 +130,34 @@ func (s *Server) handleSettings(c echo.Context) error {
 			APIKeySet: cfg.Stagemedia.APIKey != "",
 			UserAgent: cfg.Stagemedia.UserAgent,
 		},
+		ImageCache:   buildImageCacheSettings(s.ImageCache(), cfg.Library.ImageRoot),
 		Version:      s.version,
 		ConfigSource: s.configSource,
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+// buildImageCacheSettings folds the cache + config view into the
+// settings JSON block. The cache is the source of truth for "enabled"
+// — a configured root with no live cache (e.g. test wiring with no
+// ImageCache option) still reports enabled=false so the UI's
+// expectation matches reality.
+func buildImageCacheSettings(
+	cache *imagecache.Cache, root string,
+) settingsImageCache {
+	out := settingsImageCache{Root: root}
+	if cache == nil || cache.Disabled() {
+		return out
+	}
+	out.Enabled = true
+	if root == "" {
+		out.Root = cache.Root
+	}
+	c := cache.Counts()
+	out.Counts = settingsImageCacheCounts{
+		Posters:   c.Posters,
+		Backdrops: c.Backdrops,
+		Headshots: c.Headshots,
+	}
+	return out
 }

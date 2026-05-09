@@ -20,6 +20,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/config"
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
@@ -65,6 +66,11 @@ type Server struct {
 	stagemedia        StagemediaImageClient
 	encora            EncoraWriteClient
 	encoraDestructive EncoraDestructiveClient
+	// imageCache is the on-disk poster/headshot cache. nil when no
+	// library.imageRoot was configured. Handlers nil-check before
+	// calling into it; the cache itself also has a Disabled() guard
+	// so a non-nil-but-empty cache is safe.
+	imageCache *imagecache.Cache
 	// ingestEngine drives `POST /api/v1/queue/{id}/import`. nil when the
 	// server was constructed without one (tests or no-encora-key wiring);
 	// the queue-import handler 503s in that case so other endpoints stay
@@ -133,6 +139,12 @@ type Options struct {
 	// path from viper.ConfigFileUsed, or a sentinel string like
 	// "defaults + env"). Empty falls back to "<not exposed>".
 	ConfigSource string
+	// ImageCache is optional. When non-nil and not Disabled(), the
+	// server registers a `/images/*` static handler that serves the
+	// cached posters/backdrops/headshots. Disabled / nil leaves the
+	// route unregistered, so requests to /images/... fall through to
+	// the SPA shell (which renders 404s client-side).
+	ImageCache *imagecache.Cache
 }
 
 // New constructs a server with all routes registered and templates
@@ -175,6 +187,7 @@ func New(opts Options) (*Server, error) {
 		encora:            opts.Encora,
 		encoraDestructive: opts.EncoraDestructive,
 		ingestEngine:      opts.IngestEngine,
+		imageCache:        opts.ImageCache,
 		sleeper:           sleeper,
 		version:           version,
 		config:            opts.Config,
@@ -182,6 +195,14 @@ func New(opts Options) (*Server, error) {
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
+	// Serve cached images straight off disk when caching is on. The
+	// /images/* route is registered alongside /static/* so the SPA
+	// catch-all (registered in routes()) can't swallow it.
+	if opts.ImageCache != nil && !opts.ImageCache.Disabled() {
+		srv.echo.GET("/images/*", echo.WrapHandler(http.StripPrefix(
+			"/images/", http.FileServer(http.Dir(opts.ImageCache.Root)),
+		)))
+	}
 	return srv, nil
 }
 
@@ -197,6 +218,12 @@ func (s *Server) Stagemedia() StagemediaImageClient { return s.stagemedia }
 // API key was supplied. Apply handlers nil-check this and return 503
 // rather than crashing the server.
 func (s *Server) Encora() EncoraWriteClient { return s.encora }
+
+// ImageCache returns the configured local image cache, or nil when no
+// library.imageRoot was configured. Handlers nil-check before calling
+// into it; the cache's own Disabled() guard handles a non-nil-but-empty
+// cache safely.
+func (s *Server) ImageCache() *imagecache.Cache { return s.imageCache }
 
 // Version returns the build-time version string the sidebar footer
 // renders. Defaults to "dev" when no Options.Version was configured.

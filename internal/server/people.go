@@ -61,13 +61,18 @@ type PersonRecording struct {
 // the API call succeeds within the timeout, otherwise an empty string
 // so the field is always present in the response (the JS frontend
 // branches on truthy vs falsy rather than presence).
+//
+// LocalHeadshotURL is the cache-served /images/... path when the actor's
+// headshot is on disk, "" otherwise. The frontend prefers the local URL
+// so detail pages still render after a stagemedia outage.
 type PersonDetail struct {
-	PerformerID int64             `json:"performer_id"`
-	Name        string            `json:"name"`
-	Slug        string            `json:"slug"`
-	URL         string            `json:"url"`
-	Recordings  []PersonRecording `json:"recordings"`
-	HeadshotURL string            `json:"headshot_url"`
+	PerformerID      int64             `json:"performer_id"`
+	Name             string            `json:"name"`
+	Slug             string            `json:"slug"`
+	URL              string            `json:"url"`
+	Recordings       []PersonRecording `json:"recordings"`
+	HeadshotURL      string            `json:"headshot_url"`
+	LocalHeadshotURL string            `json:"local_headshot_url"`
 }
 
 func (s *Server) handleListPeople(c echo.Context) error {
@@ -102,6 +107,9 @@ func (s *Server) handleGetPerson(c echo.Context) error {
 
 	if url := s.fetchHeadshot(ctx, detail); url != "" {
 		detail.HeadshotURL = url
+	}
+	if cache := s.ImageCache(); cache != nil && !cache.Disabled() {
+		detail.LocalHeadshotURL = cache.HeadshotURL(detail.PerformerID)
 	}
 
 	return c.JSON(http.StatusOK, detail)

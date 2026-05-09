@@ -19,6 +19,8 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -75,6 +77,16 @@ type Client interface {
 	) (encora.Page[encora.WantEntry], encora.RateLimitInfo, error)
 }
 
+// StagemediaImageClient is the slice of *stagemedia.Client the sync
+// loop needs to opportunistically populate the image cache. Defined as
+// an interface so tests can stub it without standing up an httptest
+// server, and so callers without a stagemedia API key can pass nil
+// without forcing the sync to import the concrete client. The real
+// *stagemedia.Client satisfies this via its Images method.
+type StagemediaImageClient interface {
+	Images(ctx context.Context, showID int64, performerIDs []int64) (stagemedia.Images, error)
+}
+
 // Options tunes Sync. Zero values are sane defaults.
 type Options struct {
 	BurstReserve      int
@@ -82,6 +94,16 @@ type Options struct {
 	Now               func() time.Time
 	Sleep             func(time.Duration)
 	Logger            zerolog.Logger
+	// ImageCache is optional. When nil or Disabled(), the sync loop
+	// skips the StageMedia poster + headshot fetch entirely. When
+	// configured, the loop dedups show IDs across the run to avoid
+	// hammering /api/images for the same show twice.
+	ImageCache *imagecache.Cache
+	// Stagemedia is optional and only used in tandem with ImageCache.
+	// When nil, no opportunistic image fetch happens regardless of
+	// the ImageCache field. The real *stagemedia.Client satisfies
+	// this; a nil interface is the disabled case.
+	Stagemedia StagemediaImageClient
 }
 
 // Sync runs a full collection + wants sync into db. The sync_runs row is
@@ -111,9 +133,15 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 		opts.Logger.Warn().Err(profErr).Msg("profile sync failed; continuing")
 	}
 
-	syncErr := syncCollection(ctx, c, db, opts, res)
+	// imageFetcher lifecycle is per-Sync so the show-id dedup map
+	// resets between runs. The fetcher is a no-op when ImageCache or
+	// Stagemedia is missing — callers can leave both nil to keep
+	// classic sync semantics untouched.
+	images := newImageFetcher(opts.ImageCache, opts.Stagemedia, opts.Logger)
+
+	syncErr := syncCollection(ctx, c, db, opts, res, images)
 	if syncErr == nil && !res.RateLimitedBailedOut {
-		syncErr = syncWants(ctx, c, db, opts, res)
+		syncErr = syncWants(ctx, c, db, opts, res, images)
 	} else if res.RateLimitedBailedOut {
 		opts.Logger.Warn().Int("remaining", res.RateLimitRemaining).
 			Msg("bailing before /wants — rate-limit floor reached")
@@ -231,6 +259,7 @@ func syncCollection(
 	db *sql.DB,
 	opts Options,
 	res *Result,
+	images *imageFetcher,
 ) error {
 	page, rl, err := retryOnRateLimit(ctx, opts,
 		func() (encora.Page[encora.CollectionEntry], encora.RateLimitInfo, error) {
@@ -248,6 +277,12 @@ func syncCollection(
 			return fmt.Errorf("write collection page %d: %w", page.CurrentPage, writeErr)
 		}
 		res.CollectionCount += len(page.Data)
+		// Image cache is updated post-commit so a network hiccup can
+		// never roll back a recording write. The fetcher is a no-op
+		// when caching is disabled.
+		for _, entry := range page.Data {
+			images.forRecording(ctx, entry.Recording)
+		}
 
 		if rl.Remaining <= opts.BurstReserve {
 			res.RateLimitedBailedOut = true
@@ -281,6 +316,7 @@ func syncWants(
 	db *sql.DB,
 	opts Options,
 	res *Result,
+	images *imageFetcher,
 ) error {
 	page, rl, err := retryOnRateLimit(ctx, opts,
 		func() (encora.Page[encora.WantEntry], encora.RateLimitInfo, error) {
@@ -298,6 +334,12 @@ func syncWants(
 			return fmt.Errorf("write wants page %d: %w", page.CurrentPage, writeErr)
 		}
 		res.WantsCount += len(page.Data)
+		// Wants entries also get their images opportunistically
+		// cached — show posters are useful in the wants list and
+		// dedup keeps the StageMedia call count bounded.
+		for _, entry := range page.Data {
+			images.forRecording(ctx, entry.Recording)
+		}
 
 		if rl.Remaining <= opts.BurstReserve {
 			res.RateLimitedBailedOut = true

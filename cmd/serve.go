@@ -9,11 +9,18 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
+
+// imageFetchHTTPTimeout caps any single image download from the local
+// cache's perspective. Generous — large posters on a slow link should
+// still land — but tight enough that one stuck CDN can't wedge a
+// long-running serve process.
+const imageFetchHTTPTimeout = 60 * time.Second
 
 // serveSubtitleHTTPTimeout caps subtitle downloads from the queue-import
 // endpoint so a stuck CDN can't wedge the HTTP server. Mirrors the value
@@ -98,6 +105,21 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		smOpt = smClient
 	}
 
+	// Image cache is nil when library.imageRoot is empty so the
+	// /images/* route stays unregistered and detail-page handlers
+	// fall back to the upstream URL. The single shared *http.Client
+	// with imageFetchHTTPTimeout is reused for every cache fetch.
+	var imgCache *imagecache.Cache
+	if appConfig.Library.ImageRoot != "" {
+		imgCache = imagecache.New(
+			appConfig.Library.ImageRoot,
+			&http.Client{Timeout: imageFetchHTTPTimeout},
+			log.Logger,
+		)
+	} else {
+		log.Info().Msg("image cache disabled (library.imageRoot not configured)")
+	}
+
 	// Build the queue-import ingest engine only when both the encora
 	// client and a library root are configured — otherwise the engine
 	// has no useful work it can do, and the queue-import handler 503s
@@ -126,6 +148,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Encora:            encOpt,
 		EncoraDestructive: encDestrucOpt,
 		IngestEngine:      ingestOpt,
+		ImageCache:        imgCache,
 		Version:           Version,
 		Config:            appConfig,
 		// ConfigSource intentionally left empty — viper.ConfigFileUsed

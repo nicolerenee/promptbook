@@ -3,14 +3,23 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	"github.com/nicolerenee/promptbook/internal/sync"
 )
+
+// syncImageFetchHTTPTimeout caps each opportunistic image download
+// triggered during sync. Same default as the serve-side timeout — see
+// imageFetchHTTPTimeout in serve.go for the rationale.
+const syncImageFetchHTTPTimeout = 60 * time.Second
 
 //nolint:gochecknoglobals // cobra requires package-level command variable
 var collectionSyncCmd = &cobra.Command{
@@ -49,9 +58,48 @@ func runCollectionSync(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
+	// Image cache is opt-in. When library.imageRoot is empty the
+	// fetcher in internal/sync stays in no-op mode and the run
+	// behaves exactly as it did before this wave.
+	var imgCache *imagecache.Cache
+	if appConfig.Library.ImageRoot != "" {
+		imgCache = imagecache.New(
+			appConfig.Library.ImageRoot,
+			&http.Client{Timeout: syncImageFetchHTTPTimeout},
+			log.Logger,
+		)
+	} else {
+		log.Info().Msg("image cache disabled (library.imageRoot not configured)")
+	}
+
+	// StageMedia client is required for posters/headshots; sync's
+	// fetcher tolerates a nil client gracefully so an unconfigured
+	// API key just skips image caching during this run.
+	var smClient *stagemedia.Client
+	if appConfig.Stagemedia.APIKey != "" {
+		smClient, err = stagemedia.New(stagemedia.Options{
+			BaseURL:   appConfig.Stagemedia.BaseURL,
+			APIKey:    appConfig.Stagemedia.APIKey,
+			UserAgent: appConfig.Stagemedia.UserAgent,
+			Logger:    log.Logger,
+		})
+		if err != nil {
+			return fmt.Errorf("build stagemedia client: %w", err)
+		}
+	}
+	// As elsewhere in the codebase, coerce a nil *stagemedia.Client
+	// into a true nil sync.StagemediaImageClient interface so the
+	// downstream nil-check fires correctly.
+	var smOpt sync.StagemediaImageClient
+	if smClient != nil {
+		smOpt = smClient
+	}
+
 	res, err := sync.Sync(ctx, client, db, sync.Options{
 		BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
 		Logger:       log.Logger,
+		ImageCache:   imgCache,
+		Stagemedia:   smOpt,
 	})
 	if err != nil {
 		return fmt.Errorf("sync: %w", err)

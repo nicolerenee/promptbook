@@ -55,12 +55,18 @@ type StorageConfig struct {
 }
 
 // LibraryConfig describes the on-disk media library and naming scheme.
+//
+// ImageRoot is the on-disk directory for cached posters/backdrops/headshots.
+// Empty (the default) disables the image cache entirely — no downloads
+// during sync, no /images/* serving from the HTTP server. Set explicitly
+// to opt in; promptbook will create subdirectories under it as needed.
 type LibraryConfig struct {
 	Root           string        `mapstructure:"root"`
 	FolderTemplate string        `mapstructure:"folderTemplate"`
 	FileTemplate   string        `mapstructure:"fileTemplate"`
 	IncomingDirs   []string      `mapstructure:"incomingDirs"`
 	WatchInterval  time.Duration `mapstructure:"watchInterval"`
+	ImageRoot      string        `mapstructure:"imageRoot"`
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).
