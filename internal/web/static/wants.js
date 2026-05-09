@@ -22,10 +22,10 @@
 //     Encora UI for now)" tooltip; a future POST /api/v1/wants/{id}/add
 //     endpoint will wire it up.
 //
-//   - The "added" column would render relative time off the wants
-//     table's last_synced_at column, but the GET /api/v1/wants response
-//     doesn't expose that field today. Cells render "—" until the API
-//     surfaces it. The relativeTime helper is kept ready for that.
+//   - The "Added" column renders relative time off the wants table's
+//     wants_added field (RFC3339 timestamp of when the row was first
+//     mirrored into the local cache). Legacy rows backfilled before the
+//     column existed have wants_added=null and render "—".
 
 (function () {
   'use strict';
@@ -57,8 +57,7 @@
   }
 
   // relativeTime renders an ISO-8601 timestamp as a coarse human string
-  // ("3 days ago"). Held in reserve for the "added" column once the API
-  // exposes wants.last_synced_at.
+  // ("3 days ago"). Used by the "Added" column off wants_added.
   function relativeTime(iso) {
     if (!iso) return '—';
     var t = Date.parse(iso);
@@ -150,9 +149,9 @@
     sorted.forEach(function (it) {
       var subtitle = (it.tour ? escapeHTML(it.tour) + ' · ' : '') +
                      'enc-' + it.id;
-      // last_synced_at would feed relativeTime here; legacy API shape
-      // doesn't return it, so the column stays "—" for now.
-      var added = it.last_synced_at ? relativeTime(it.last_synced_at) : '—';
+      // wants_added is RFC3339 (or null for legacy rows backfilled
+      // before the column existed). Fall back to "—" when unset.
+      var added = it.wants_added ? relativeTime(it.wants_added) : '—';
       html +=
         '<tr>' +
           '<td class="pb-tr-status" style="--row-c:var(--status-wanted)">' +

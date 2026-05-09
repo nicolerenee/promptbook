@@ -189,6 +189,14 @@
     return err.message || String(err);
   }
 
+  // removeRow removes the queue row corresponding to queueID from the
+  // DOM. No-op when the row is already gone (the table re-rendered or
+  // the user navigated away).
+  function removeRow(queueID) {
+    var row = document.querySelector('[data-queue-row="' + queueID + '"]');
+    if (row && row.parentNode) row.parentNode.removeChild(row);
+  }
+
   function handleImportClick(btn) {
     var queueID = btn.getAttribute('data-queue-import');
     var path = btn.getAttribute('data-queue-path') || '';
@@ -203,8 +211,7 @@
     window.PB.api.post('/queue/' + encodeURIComponent(queueID) + '/import', {})
       .then(function (resp) {
         if (resp && resp.ok) {
-          var row = document.querySelector('[data-queue-row="' + queueID + '"]');
-          if (row && row.parentNode) row.parentNode.removeChild(row);
+          removeRow(queueID);
           return;
         }
         btn.removeAttribute('disabled');
@@ -212,6 +219,24 @@
         window.alert('Import failed: ' + ((resp && resp.error) || 'unknown error'));
       })
       .catch(function (err) {
+        // 503 (engine unconfigured) and 404 (queue entry vanished —
+        // typically because a parallel scan already imported it) get
+        // bespoke handling so the user sees something useful rather
+        // than a raw error body.
+        if (err && err.status === 503) {
+          btn.removeAttribute('disabled');
+          btn.textContent = 'Match';
+          window.alert('Queue import is disabled — set library.root and ' +
+            'PROMPTBOOK_ENCORA_APIKEY in config to enable.');
+          return;
+        }
+        if (err && err.status === 404) {
+          // Optimistically drop the row: the entry's already gone
+          // upstream, so leaving it visible would invite a second click
+          // that hits the same 404.
+          removeRow(queueID);
+          return;
+        }
         btn.removeAttribute('disabled');
         btn.textContent = 'Match';
         window.alert('Import failed: ' + errorMessage(err));

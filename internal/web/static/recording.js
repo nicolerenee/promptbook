@@ -587,6 +587,198 @@
     '</div>';
   }
 
+  // ─── Render: danger zone ──────────────────────────────────────────────
+  //
+  // The Danger zone exposes destructive Encora pushes:
+  //   - Remove from collection (when InCollection)
+  //   - Remove from wants     (when InWants)
+  //   - Add to wants          (when neither — "I want this")
+  //
+  // Each click goes through a typed-confirmation gate via window.prompt:
+  // the user has to type the recording's enc-NNNN id before the POST
+  // fires. This keeps the UI scope minimal (no bespoke modal framework)
+  // while still giving the user a meaningful pause before a one-way
+  // upstream action runs. Worth swapping for a styled in-page modal if
+  // the rest of the app grows one — until then, prompt() matches the
+  // codebase's "no fancy UI yet" tone.
+
+  // errorMessage extracts a human-readable message from a fetch failure,
+  // mirroring the helper in queue.js. PB.api errors carry the response
+  // body on .body — the destructive endpoints return
+  // {ok:false, error:"..."} on 409, so we surface .error preferentially,
+  // then .message, then the synthetic err.message.
+  function errorMessage(err) {
+    if (!err) return 'unknown error';
+    if (err.body) {
+      try {
+        var parsed = JSON.parse(err.body);
+        if (parsed && parsed.error) return String(parsed.error);
+        if (parsed && parsed.message) return String(parsed.message);
+      } catch (_) { /* not JSON; fall through */ }
+      if (typeof err.body === 'string' && err.body.length < 240) return err.body;
+    }
+    return err.message || String(err);
+  }
+
+  // dangerActionFor picks the single destructive action that makes
+  // sense for the recording's current Encora state. Returns null when
+  // none applies (shouldn't happen — Orphan recordings still get the
+  // "Add to wants" branch).
+  function dangerActionFor(loaded) {
+    if (loaded.InCollection) {
+      return {
+        kind:    'remove_collection',
+        label:   'Remove from collection',
+        path:    '/encora/collection/' + loaded.Recording.ID + '/remove',
+        confirm: 'This removes the recording from your Encora collection. ' +
+                 'Local files stay on disk; only the upstream catalog row goes.',
+      };
+    }
+    if (loaded.InWants) {
+      return {
+        kind:    'remove_wants',
+        label:   'Remove from wants',
+        path:    '/encora/wants/' + loaded.Recording.ID + '/remove',
+        confirm: 'This removes the recording from your Encora wants list.',
+      };
+    }
+    return {
+      kind:    'add_wants',
+      label:   'Add to wants',
+      path:    '/encora/wants/' + loaded.Recording.ID + '/add',
+      confirm: 'This adds the recording to your Encora wants list.',
+    };
+  }
+
+  function renderDangerZone(loaded) {
+    var action = dangerActionFor(loaded);
+    if (!action) return '';
+    // Buttons that remove are styled red; "add to wants" is constructive
+    // so it gets the standard ghost button to avoid alarming the user.
+    var isDestructive = (action.kind !== 'add_wants');
+    var btnStyle = isDestructive
+      ? 'border-color:var(--status-missing);color:var(--status-missing);background:transparent'
+      : '';
+    var btnAttrs = isDestructive ? ' data-danger-destructive="1"' : '';
+    return '<div data-danger-zone="1" style="margin-top:28px;' +
+      'padding-top:18px;border-top:1px solid var(--rule)">' +
+      '<h3 style="margin:0 0 6px;font-size:13px;color:var(--ink-3);' +
+        'letter-spacing:0.04em;text-transform:uppercase">Danger zone</h3>' +
+      '<p style="margin:0 0 12px;font-size:12px;color:var(--ink-4);max-width:640px">' +
+        escapeHTML(action.confirm) +
+      '</p>' +
+      '<button class="pb-btn" type="button" ' +
+        'data-danger-action="' + escapeHTML(action.kind) + '" ' +
+        'data-danger-path="' + escapeHTML(action.path) + '" ' +
+        'data-danger-id="' + escapeHTML(String(loaded.Recording.ID)) + '"' +
+        btnAttrs +
+        (btnStyle ? ' style="' + btnStyle + '"' : '') +
+        '>' + escapeHTML(action.label) + '</button>' +
+      '<div data-danger-status style="margin-top:10px;font-size:12px;' +
+        'color:var(--status-missing);min-height:1.2em"></div>' +
+    '</div>';
+  }
+
+  // showDangerError surfaces a failure inline below the danger button
+  // without an alert(). Mirrors the queue.js inline-error pattern.
+  function showDangerError(root, msg) {
+    var slot = root.querySelector('[data-danger-status]');
+    if (slot) slot.textContent = msg;
+  }
+
+  // refreshRecording re-fetches the detail payload + history filter and
+  // re-renders the page so the Danger zone reflects the new state. Used
+  // after a successful destructive POST. Keeping this scoped here (vs.
+  // calling init() recursively) avoids re-binding event listeners on
+  // already-rendered elements.
+  function refreshRecording(root, id) {
+    return window.PB.api.get('/recordings/' + encodeURIComponent(id))
+      .then(function (loaded) {
+        return window.PB.api.get('/history?limit=50')
+          .then(function (body) {
+            var rid = Number(id);
+            var items = ((body && body.items) || [])
+              .filter(function (e) { return Number(e.recording_id) === rid; })
+              .slice(0, 3);
+            return { loaded: loaded, history: items };
+          })
+          .catch(function () { return { loaded: loaded, history: [] }; });
+      })
+      .then(function (data) { render(root, data.loaded, data.history); });
+  }
+
+  function handleDangerClick(root, btn) {
+    var path = btn.getAttribute('data-danger-path');
+    var rid = btn.getAttribute('data-danger-id');
+    if (!path || !rid) return;
+    showDangerError(root, '');
+
+    // Typed-confirmation: user must type "enc-NNNN" before the POST
+    // fires. window.prompt returns null on cancel, '' on empty, the
+    // typed string otherwise.
+    var token = 'enc-' + rid;
+    var typed = window.prompt(
+      'Type "' + token + '" to confirm. This action pushes upstream to Encora.',
+      '',
+    );
+    if (typed == null) return;
+    if (String(typed).trim() !== token) {
+      showDangerError(root, 'Confirmation text did not match — nothing changed.');
+      return;
+    }
+
+    var origLabel = btn.textContent;
+    btn.setAttribute('disabled', 'disabled');
+    btn.textContent = 'Working…';
+
+    window.PB.api.post(path, {})
+      .then(function (resp) {
+        if (resp && resp.ok) {
+          // refreshRecording re-runs render() which rebuilds the
+          // danger zone for the new state, so we don't need to reset
+          // the button — it gets replaced wholesale.
+          return refreshRecording(root, rid);
+        }
+        btn.removeAttribute('disabled');
+        btn.textContent = origLabel;
+        showDangerError(root,
+          'Failed: ' + ((resp && resp.error) || 'unknown error'));
+      })
+      .catch(function (err) {
+        btn.removeAttribute('disabled');
+        btn.textContent = origLabel;
+        if (err && err.status === 503) {
+          showDangerError(root,
+            'Encora client not configured — set PROMPTBOOK_ENCORA_APIKEY ' +
+            'on the server to enable upstream writes.');
+          return;
+        }
+        if (err && err.status === 429) {
+          showDangerError(root,
+            'Rate-limited by Encora. Wait a minute and try again.');
+          return;
+        }
+        showDangerError(root, 'Failed: ' + errorMessage(err));
+      });
+  }
+
+  // bindDangerZone attaches a single delegated click handler on the
+  // recording root. Re-rendering the page replaces inner HTML, but the
+  // root element itself is stable so one binding survives refreshes.
+  function bindDangerZone(root) {
+    if (root.dataset.dangerBound) return;
+    root.dataset.dangerBound = '1';
+    root.addEventListener('click', function (ev) {
+      var btn = ev.target;
+      while (btn && btn !== root && !btn.hasAttribute('data-danger-action')) {
+        btn = btn.parentNode;
+      }
+      if (!btn || btn === root) return;
+      ev.preventDefault();
+      handleDangerClick(root, btn);
+    });
+  }
+
   function renderActivityCard(items) {
     var html = '<div class="pb-card">' +
       '<h3>Activity</h3>';
@@ -651,7 +843,8 @@
           renderNFOCard(loaded) +
           renderActivityCard(history) +
         '</div>' +
-      '</div>';
+      '</div>' +
+      renderDangerZone(loaded);
     root.innerHTML = html;
   }
 
@@ -685,6 +878,7 @@
       })
       .then(function (data) {
         render(root, data.loaded, data.history);
+        bindDangerZone(root);
       })
       .catch(function (err) {
         if (err && err.status === 404) {
