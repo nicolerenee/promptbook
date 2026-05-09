@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // SyncKind names a sync run for the sync_runs.kind column.
@@ -269,7 +270,7 @@ func upsertRecording(
 	if rerr := upsertRecordingRow(ctx, tx, r, rawJSON, nowTS); rerr != nil {
 		return rerr
 	}
-	return refreshCastEntries(ctx, tx, r)
+	return refreshCastEntries(ctx, tx, r, now)
 }
 
 func upsertShow(ctx context.Context, tx *sql.Tx, r encora.Recording, ts time.Time) error {
@@ -373,13 +374,44 @@ func upsertRecordingRow(
 	return nil
 }
 
-func refreshCastEntries(ctx context.Context, tx *sql.Tx, r encora.Recording) error {
+// refreshCastEntries wipes and rewrites cast_entries for the recording while
+// keeping the first-class performers and characters tables in sync. The legacy
+// denormalized columns on cast_entries are still populated (downstream
+// consumers haven't migrated off them yet); the upserts into performers and
+// characters layer the canonical people rows on top so foreign-key style
+// joins (e.g. ListRecordingsForPerformer + LoadPerformer) work post-sync.
+func refreshCastEntries(
+	ctx context.Context,
+	tx *sql.Tx,
+	r encora.Recording,
+	now func() time.Time,
+) error {
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM cast_entries WHERE recording_id = ?`, r.ID,
 	); err != nil {
 		return fmt.Errorf("clear cast_entries: %w", err)
 	}
+	nowTS := now().UTC()
 	for _, cast := range r.Cast {
+		if perr := storage.UpsertPerformerTx(ctx, tx, storage.Performer{
+			PerformerID: cast.Performer.ID,
+			Name:        cast.Performer.Name,
+			Slug:        cast.Performer.Slug,
+			URL:         cast.Performer.URL,
+			LastSeenAt:  nowTS,
+		}); perr != nil {
+			return fmt.Errorf("upsert performer for cast_entry: %w", perr)
+		}
+		if cerr := storage.UpsertCharacterTx(ctx, tx, storage.Character{
+			CharacterID: cast.Character.ID,
+			Name:        cast.Character.Name,
+			Slug:        cast.Character.Slug,
+			URL:         cast.Character.URL,
+			LastSeenAt:  nowTS,
+		}); cerr != nil {
+			return fmt.Errorf("upsert character for cast_entry: %w", cerr)
+		}
+
 		var label, abbrev *string
 		if cast.Status != nil {
 			label = &cast.Status.Label
