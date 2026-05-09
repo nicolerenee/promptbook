@@ -30,6 +30,11 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import state from '../state.js';
 import { smartDate, humanSize, relativeTime, formatNFTDate } from '../utils/format.js';
+import {
+  uploadFile,
+  errorMessageFromUpload,
+  renderUploadButton,
+} from '../utils/uploadPicker.js';
 
 // STATUS_META keys on the lowercase status tokens, matching Library.js.
 // Same DaisyUI badge color modifiers so the visual language stays
@@ -227,6 +232,67 @@ function postPickerChoice(path, body, onSuccess) {
           'Image cache not configured — set library.imageRoot on the server.';
       } else {
         state.recording.imageError = errorMessage(err);
+      }
+      m.redraw();
+    });
+}
+
+// runUpload pipes a picked File through the supplied upload endpoint,
+// then (on success) re-fetches the recording detail so the new
+// thumbnail joins the strip and posts the matching selection endpoint
+// so the upload becomes the active choice. Reuses imageBusy/imageError
+// for the busy/error UX so the picker controls stay coherent —
+// uploads visually behave like any other picker action.
+//
+// kind   — 'poster' | 'backdrop'; determines which selection endpoint
+//          to POST after the upload lands.
+// path   — upload endpoint, server-relative including /api/v1.
+// id     — the recording id, used to construct the selection endpoint.
+function runUpload(kind, path, id, file) {
+  if (!file) return;
+  if (state.recording.imageBusy) return;
+  state.recording.imageBusy = true;
+  state.recording.imageError = null;
+  m.redraw();
+
+  uploadFile(path, file)
+    .then((resp) => {
+      if (!resp || resp.ok !== true) {
+        const msg = (resp && resp.error) || 'upload failed';
+        state.recording.imageError = msg;
+        state.recording.imageBusy = false;
+        m.redraw();
+        return null;
+      }
+      const newIdx = resp.index;
+      // Re-fetch the recording so local_poster_urls / local_backdrop_urls
+      // pick up the freshly-saved file. loadRecording sets imageBusy to
+      // false implicitly (no — it only resets dangerBusy/Error +
+      // imageError). Clear it ourselves before the selection POST.
+      state.recording.imageBusy = false;
+      return loadRecording(id).then(() => {
+        // Promote the upload to the active selection. postPickerChoice
+        // handles the imageBusy + redraw lifecycle on its own.
+        const selectionPath = '/recordings/' + id + '/' + kind;
+        postPickerChoice(selectionPath, { index: newIdx }, () => {
+          if (kind === 'poster') {
+            state.recording.selectedPosterIndex = newIdx;
+          } else {
+            state.recording.selectedBackdropIndex = newIdx;
+          }
+        });
+      });
+    })
+    .catch((err) => {
+      state.recording.imageBusy = false;
+      if (err && err.status === 503) {
+        state.recording.imageError =
+          'Image cache not configured — set library.imageRoot on the server.';
+      } else if (err && err.status === 413) {
+        state.recording.imageError =
+          'Upload too large — keep the file under 10 MB.';
+      } else {
+        state.recording.imageError = errorMessageFromUpload(err);
       }
       m.redraw();
     });
@@ -637,18 +703,34 @@ function renderImageThumb({ url, alt, selected, busy, onclick, aspect }) {
 
 // renderPosterPicker is the poster thumbnail strip subsection. Empty
 // state nudges the user to sync; otherwise renders one thumb per
-// cached poster with the selected one highlighted.
+// cached poster with the selected one highlighted. The Upload button
+// next to the heading triggers a hidden file picker; the chosen file
+// is posted to /recordings/:id/poster-upload (which server-side
+// resolves the recording's show_id and saves under the show's poster
+// directory at index >= UploadIndexFloor).
 function renderPosterPicker(loaded) {
   const urls = (loaded.local_poster_urls || []).filter((u) => !!u);
   const id = loaded.Recording.id;
   const highlight = posterIndexHighlight();
   const busy = state.recording.imageBusy;
   return m('section', { class: 'space-y-2' }, [
-    m('h3', { class: 'text-sm font-semibold' },
-      'Posters · ' + urls.length + ' available'),
+    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+      m('h3', { class: 'text-sm font-semibold' },
+        'Posters · ' + urls.length + ' available'),
+      renderUploadButton({
+        label: 'Upload poster',
+        disabled: busy,
+        onSelect: (file) => runUpload(
+          'poster',
+          '/api/v1/recordings/' + id + '/poster-upload',
+          id,
+          file,
+        ),
+      }),
+    ]),
     urls.length === 0
       ? m('div', { class: 'opacity-60 text-sm' },
-          'No posters cached yet — sync to fetch.')
+          'No posters cached yet — sync to fetch, or upload your own.')
       : m('div', { class: 'flex flex-wrap gap-3' },
           urls.map((url, i) => renderImageThumb({
             url,
@@ -667,17 +749,32 @@ function renderPosterPicker(loaded) {
 
 // renderBackdropPicker is the backdrop thumbnail strip subsection.
 // Visually wider than the poster strip because backdrops are 16:9.
+// The Upload button mirrors the poster strip's affordance — a chosen
+// file is POSTed to /recordings/:id/backdrop-upload and lands at
+// index >= UploadIndexFloor in the recording's backdrop directory.
 function renderBackdropPicker(loaded) {
   const urls = loaded.local_backdrop_urls || [];
   const id = loaded.Recording.id;
   const highlight = backdropIndexHighlight();
   const busy = state.recording.imageBusy;
   return m('section', { class: 'space-y-2' }, [
-    m('h3', { class: 'text-sm font-semibold' },
-      'Backdrops · ' + urls.length + ' available'),
+    m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+      m('h3', { class: 'text-sm font-semibold' },
+        'Backdrops · ' + urls.length + ' available'),
+      renderUploadButton({
+        label: 'Upload backdrop',
+        disabled: busy,
+        onSelect: (file) => runUpload(
+          'backdrop',
+          '/api/v1/recordings/' + id + '/backdrop-upload',
+          id,
+          file,
+        ),
+      }),
+    ]),
     urls.length === 0
       ? m('div', { class: 'opacity-60 text-sm' },
-          'No backdrops cached yet — sync to fetch screen-grabs.')
+          'No backdrops cached yet — sync to fetch screen-grabs, or upload your own.')
       : m('div', { class: 'flex flex-wrap gap-3' },
           urls.map((url, i) => renderImageThumb({
             url,

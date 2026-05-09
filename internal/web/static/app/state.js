@@ -66,6 +66,13 @@ export const state = {
   // committing to the server. imageBusy disables every picker button
   // while a POST is in flight to prevent double-clicks; imageError
   // carries the inline failure string from the most recent POST.
+  //
+  // imageBusy + imageError are also reused by the upload flow
+  // (utils/uploadPicker.js + Recording.js's runUpload) so a single
+  // spinner / alert pair governs both selection and upload UX. The
+  // multi-step upload-then-select flow toggles imageBusy explicitly
+  // around the upload, then hands off to postPickerChoice for the
+  // selection POST that promotes the upload to the active choice.
   recording: {
     id: null,
     loaded: null,

@@ -97,6 +97,14 @@ func (s *Server) routes() {
 	api.POST("/recordings/:id/backdrop", s.handleSetBackdrop)
 	api.POST("/recordings/:id/overlay", s.handleSetOverlay)
 	api.POST("/recordings/:id/overlay-disabled", s.handleSetOverlayDisabled)
+	// User image uploads. Multipart "file" field, 10 MiB cap, decoded
+	// + re-encoded as JPEG into the same on-disk cache layout, at
+	// indexes >= imagecache.UploadIndexFloor (100). The picker UI
+	// follows up with POST .../poster or .../backdrop to make the
+	// upload the active selection.
+	api.POST("/recordings/:id/backdrop-upload", s.handleUploadBackdrop)
+	api.POST("/recordings/:id/poster-upload", s.handleUploadRecordingPoster)
+	api.POST("/shows/:id/poster-upload", s.handleUploadPoster)
 	api.GET("/wants", s.handleListWants)
 	api.GET("/sync/runs", s.handleSyncRuns)
 	api.GET("/queue", s.handleListQueue)
