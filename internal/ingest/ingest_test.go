@@ -203,6 +203,14 @@ func TestEngineIngestRealMove(t *testing.T) {
 	// called and at least one path must come back.
 	assert.True(t, fetcher.called, "marigold fixture has has_subtitles=true")
 	assert.NotEmpty(t, fetcher.written)
+
+	// applyPlan must register the file in recording_versions so the
+	// recording shows up as Present in state-derived views.
+	versions, err := storage.ListVersions(t.Context(), db, item.EncoraID)
+	require.NoError(t, err)
+	require.Len(t, versions, 1, "exactly one version row recorded")
+	assert.Equal(t, item.Plan.AbsoluteFile(), versions[0].FilePath)
+	assert.Equal(t, int64(len("video bytes")), versions[0].FileSizeBytes)
 }
 
 func TestEngineIngestSkipsUnknownID(t *testing.T) {
