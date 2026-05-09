@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -14,26 +16,94 @@ import (
 // whole list inline.
 const pageScanLimit = 200
 
+// homeStatuses lists the status filter tabs the home page renders, in
+// display order. The empty status is "All" — the canonical "no filter"
+// link in the nav.
+//
+//nolint:gochecknoglobals // immutable display-order lookup table.
+var homeStatuses = []struct {
+	Key   storage.Status
+	Label string
+}{
+	{Key: "", Label: "All"},
+	{Key: storage.StatusSynced, Label: "Synced"},
+	{Key: storage.StatusFormatMismatch, Label: "Format mismatch"},
+	{Key: storage.StatusMissing, Label: "Missing"},
+	{Key: storage.StatusWanted, Label: "Wanted"},
+	{Key: storage.StatusOrphan, Label: "Orphan"},
+}
+
+type homeStatusTab struct {
+	Key    string
+	Label  string
+	Count  int
+	Active bool
+}
+
 type homeData struct {
-	Title       string
-	Recordings  []recordingsListItem
-	OwnedFilter string
+	Title        string
+	Recordings   []RecordingListItem
+	ActiveStatus string
+	Counts       map[string]int
+	Tabs         []homeStatusTab
 }
 
 func (s *Server) handleHomePage(c echo.Context) error {
-	owned := c.QueryParam("owned")
-	if owned == "" {
-		owned = "true"
-	}
-	items, err := loadRecordingsList(c.Request().Context(), s.db, pageScanLimit, 0, owned)
+	statusParam := c.QueryParam("status")
+	statuses := parseStatusParam(statusParam)
+
+	ctx := c.Request().Context()
+	items, err := loadStatefulRecordings(ctx, s.db, statuses, "", pageScanLimit, 0)
 	if err != nil {
 		return err
 	}
+
+	counts, err := computeStatusCounts(ctx, s.db)
+	if err != nil {
+		return err
+	}
+
+	tabs := make([]homeStatusTab, 0, len(homeStatuses))
+	totalAll := 0
+	for _, c := range counts {
+		totalAll += c
+	}
+	for _, hs := range homeStatuses {
+		key := string(hs.Key)
+		count := counts[key]
+		if hs.Key == "" {
+			count = totalAll
+		}
+		tabs = append(tabs, homeStatusTab{
+			Key:    key,
+			Label:  hs.Label,
+			Count:  count,
+			Active: key == statusParam,
+		})
+	}
+
 	return c.Render(http.StatusOK, "home.html", homeData{
-		Title:       "Promptbook",
-		Recordings:  items,
-		OwnedFilter: owned,
+		Title:        "Promptbook",
+		Recordings:   items,
+		ActiveStatus: statusParam,
+		Counts:       counts,
+		Tabs:         tabs,
 	})
+}
+
+// computeStatusCounts returns a map from status key to the count of
+// recordings currently reporting that status. Uses ListStates so the
+// numbers match what the table renders.
+func computeStatusCounts(ctx context.Context, db *sql.DB) (map[string]int, error) {
+	all, err := storage.ListStates(ctx, db, storage.ListStatesOptions{Limit: maxStateScan})
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(homeStatuses))
+	for _, st := range all {
+		counts[string(st.Status)]++
+	}
+	return counts, nil
 }
 
 type recordingPageData struct {
@@ -59,6 +129,14 @@ func (s *Server) handleRecordingPage(c echo.Context) error {
 	})
 }
 
+// wantsPageData is the view-model for /wants. Kept separate from
+// homeData so the home-page status tabs don't bleed into the wants
+// template.
+type wantsPageData struct {
+	Title      string
+	Recordings []recordingsListItem
+}
+
 func (s *Server) handleWantsPage(c echo.Context) error {
 	items, err := loadRecordingsList(c.Request().Context(), s.db, pageScanLimit, 0, "false")
 	if err != nil {
@@ -70,7 +148,7 @@ func (s *Server) handleWantsPage(c echo.Context) error {
 			wants = append(wants, item)
 		}
 	}
-	return c.Render(http.StatusOK, "wants.html", homeData{
+	return c.Render(http.StatusOK, "wants.html", wantsPageData{
 		Title:      "Wants",
 		Recordings: wants,
 	})

@@ -238,3 +238,176 @@ func TestServeStartCancels(t *testing.T) {
 	cancel() // cancel before Start so it returns immediately
 	require.NoError(t, srv.Start(ctx, "127.0.0.1:0"))
 }
+
+// fourStatusServer builds a server backed by a freshly-migrated SQLite DB
+// seeded with exactly four recordings — one each in synced,
+// format_mismatch, missing, and wanted state. Orphan is omitted because
+// it requires a recording row with no FK from collection/wants, which is
+// the most awkward to seed.
+//
+// Returns the server plus the show name strings so assertions can
+// resolve recordings by their distinctive metadata.
+func fourStatusServer(t *testing.T) (*server.Server, map[storage.Status]string) {
+	t.Helper()
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	type seed struct {
+		showID, recordingID int64
+		showName            string
+		status              storage.Status
+		inCollection        bool
+		inWants             bool
+		hasFile             bool
+		encoraFormat        string
+		localFormat         string
+	}
+	seeds := []seed{
+		{
+			showID: 9001, recordingID: 90001, showName: "SyncedShow",
+			status: storage.StatusSynced, inCollection: true, hasFile: true,
+			encoraFormat: "MKV 1080p", localFormat: "MKV 1080p",
+		},
+		{
+			showID: 9002, recordingID: 90002, showName: "MismatchShow",
+			status: storage.StatusFormatMismatch, inCollection: true, hasFile: true,
+			encoraFormat: "MKV 1080p", localFormat: "MKV 720p",
+		},
+		{
+			showID: 9003, recordingID: 90003, showName: "MissingShow",
+			status: storage.StatusMissing, inCollection: true,
+			encoraFormat: "MKV 1080p",
+		},
+		{
+			showID: 9004, recordingID: 90004, showName: "WantedShow",
+			status: storage.StatusWanted, inWants: true,
+		},
+	}
+
+	for _, s := range seeds {
+		_, seedErr := db.ExecContext(ctx,
+			`INSERT INTO shows (show_id, name) VALUES (?, ?)`, s.showID, s.showName)
+		require.NoError(t, seedErr)
+		_, seedErr = db.ExecContext(ctx, `
+			INSERT INTO recordings (
+				recording_id, show_id, tour, date_full, raw_json
+			) VALUES (?, ?, '', '', '{}')
+		`, s.recordingID, s.showID)
+		require.NoError(t, seedErr)
+		if s.inCollection {
+			_, seedErr = db.ExecContext(ctx,
+				`INSERT INTO collection (recording_id, format) VALUES (?, ?)`,
+				s.recordingID, s.encoraFormat)
+			require.NoError(t, seedErr)
+		}
+		if s.inWants {
+			_, seedErr = db.ExecContext(ctx,
+				`INSERT INTO wants (recording_id) VALUES (?)`, s.recordingID)
+			require.NoError(t, seedErr)
+		}
+		if s.hasFile {
+			require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+				RecordingID: s.recordingID,
+				FilePath:    "/store/" + s.showName + ".mkv",
+				FormatLabel: s.localFormat,
+			}))
+		}
+	}
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	names := make(map[storage.Status]string, len(seeds))
+	for _, s := range seeds {
+		names[s.status] = s.showName
+	}
+	return srv, names
+}
+
+func TestAPIRecordingsStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := fourStatusServer(t)
+
+	tests := []struct {
+		name      string
+		query     string
+		wantCount int
+		wantStat  []string // statuses we expect to find in items.
+	}{
+		{
+			name:      "no filter returns all four",
+			query:     "?limit=200",
+			wantCount: 4,
+			wantStat:  []string{"synced", "format_mismatch", "missing", "wanted"},
+		},
+		{
+			name:      "single status synced",
+			query:     "?status=synced&limit=200",
+			wantCount: 1,
+			wantStat:  []string{"synced"},
+		},
+		{
+			name:      "comma-separated missing,wanted",
+			query:     "?status=missing,wanted&limit=200",
+			wantCount: 2,
+			wantStat:  []string{"missing", "wanted"},
+		},
+		{
+			name:      "status overrides legacy owned",
+			query:     "?status=wanted&owned=true&limit=200",
+			wantCount: 1,
+			wantStat:  []string{"wanted"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(
+				t.Context(), http.MethodGet, "/api/v1/recordings"+tt.query, nil,
+			)
+			srv.Handler().ServeHTTP(rr, req)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+			var body struct {
+				Items []map[string]any `json:"items"`
+			}
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+			assert.Len(t, body.Items, tt.wantCount)
+
+			gotStatuses := make(map[string]bool, len(body.Items))
+			for _, item := range body.Items {
+				if s, ok := item["status"].(string); ok {
+					gotStatuses[s] = true
+				}
+			}
+			for _, want := range tt.wantStat {
+				assert.True(t, gotStatuses[want],
+					"expected status %q in results, got %v", want, gotStatuses)
+			}
+		})
+	}
+}
+
+func TestPagesHomeStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	srv, names := fourStatusServer(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/?status=missing", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	body := rr.Body.String()
+	assert.Contains(t, body, names[storage.StatusMissing],
+		"expected the missing recording's show name to render")
+	assert.NotContains(t, body, names[storage.StatusSynced],
+		"synced recording's show name should not render under ?status=missing")
+	assert.NotContains(t, body, names[storage.StatusWanted],
+		"wanted recording's show name should not render under ?status=missing")
+}

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -19,8 +21,30 @@ const (
 	itemsKey         = "items"
 )
 
-// recordingsListItem is the trimmed shape returned by /api/v1/recordings.
-// Detail callers should hit /api/v1/recordings/{id} for the full payload.
+// RecordingListItem is the shape returned by /api/v1/recordings and
+// embedded in the home page view-model. Status and the per-recording
+// format strings come from the storage.RecordingState reconciler so the
+// JSON and HTML pages render the same five-status taxonomy.
+type RecordingListItem struct {
+	ID             int64  `json:"id"`
+	Show           string `json:"show"`
+	Tour           string `json:"tour"`
+	DateFull       string `json:"date_full"`
+	DateMonthKnown bool   `json:"date_month_known"`
+	DateDayKnown   bool   `json:"date_day_known"`
+	Master         string `json:"master"`
+	Status         string `json:"status"`
+	InCollection   bool   `json:"in_collection"`
+	InWants        bool   `json:"in_wants"`
+	FileCount      int    `json:"file_count"`
+	EncoraFormat   string `json:"encora_format"`
+	LocalFormat    string `json:"local_format"`
+}
+
+// recordingsListItem is the legacy trimmed shape kept for the deprecated
+// loadRecordingsList helper. New code paths should use RecordingListItem.
+//
+// Deprecated: use RecordingListItem and loadStatefulRecordings instead.
 type recordingsListItem struct {
 	ID             int64  `json:"id"`
 	Show           string `json:"show"`
@@ -69,9 +93,21 @@ func (s *Server) handleProfile(c echo.Context) error {
 func (s *Server) handleListRecordings(c echo.Context) error {
 	limit := paramInt(c, "limit", defaultListLimit)
 	offset := paramInt(c, "offset", 0)
+	statusParam := c.QueryParam("status")
 	owned := c.QueryParam("owned")
 
-	items, err := loadRecordingsList(c.Request().Context(), s.db, limit, offset, owned)
+	statuses := parseStatusParam(statusParam)
+
+	// status takes precedence over the legacy owned filter when both are
+	// supplied; owned is honored only when status is absent.
+	ownedFilter := owned
+	if statusParam != "" {
+		ownedFilter = ""
+	}
+
+	items, err := loadStatefulRecordings(
+		c.Request().Context(), s.db, statuses, ownedFilter, limit, offset,
+	)
 	if err != nil {
 		return err
 	}
@@ -155,8 +191,195 @@ func (s *Server) handleSyncRuns(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{itemsKey: out})
 }
 
+// parseStatusParam splits a comma-separated status query value into a
+// slice of storage.Status values. Empty / whitespace tokens are skipped.
+// Returns nil for the empty string so callers can distinguish "no filter"
+// from "filter to nothing".
+func parseStatusParam(raw string) []storage.Status {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]storage.Status, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, storage.Status(p))
+	}
+	return out
+}
+
+// loadStatefulRecordings walks ListStates and decorates each row with the
+// recording metadata (show, tour, date, master) needed for the list view.
+// When statuses is empty and ownedFilter is set, the result is post-
+// filtered by collection membership to preserve the legacy ?owned= API.
+func loadStatefulRecordings(
+	ctx context.Context,
+	db *sql.DB,
+	statuses []storage.Status,
+	ownedFilter string,
+	limit, offset int,
+) ([]RecordingListItem, error) {
+	// Pull all matching states (ListStates does its own pagination, but
+	// we want to apply the legacy owned filter before paginating, so ask
+	// for a wide window and slice it ourselves).
+	listOpts := storage.ListStatesOptions{Status: statuses, Limit: maxStateScan}
+	states, err := storage.ListStates(ctx, db, listOpts)
+	if err != nil {
+		return nil, fmt.Errorf("list states: %w", err)
+	}
+
+	if ownedFilter != "" {
+		states = applyOwnedFilter(states, ownedFilter)
+	}
+
+	// Page-slice after filtering so callers asking for "page 2 of owned"
+	// see the right window.
+	total := len(states)
+	if offset >= total {
+		return []RecordingListItem{}, nil
+	}
+	end := min(offset+limit, total)
+	page := states[offset:end]
+
+	if len(page) == 0 {
+		return []RecordingListItem{}, nil
+	}
+
+	meta, err := loadRecordingMeta(ctx, db, page)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]RecordingListItem, 0, len(page))
+	for _, st := range page {
+		m := meta[st.RecordingID]
+		out = append(out, RecordingListItem{
+			ID:             st.RecordingID,
+			Show:           m.show,
+			Tour:           m.tour,
+			DateFull:       m.dateFull,
+			DateMonthKnown: m.monthKnown,
+			DateDayKnown:   m.dayKnown,
+			Master:         m.master,
+			Status:         string(st.Status),
+			InCollection:   st.InCollection,
+			InWants:        st.InWants,
+			FileCount:      st.FileCount,
+			EncoraFormat:   st.EncoraFormat,
+			LocalFormat:    st.LocalFormat,
+		})
+	}
+	return out, nil
+}
+
+// maxStateScan caps how many states we materialize before paginating.
+// 1024 is well past the ~50-row pages the UI shows but small enough that
+// the N+1 LocalFormat lookup inside ListStates stays cheap.
+const maxStateScan = 1024
+
+// applyOwnedFilter re-applies the legacy ?owned= filter to a state slice.
+// "true" keeps in-collection rows; "false" drops them.
+func applyOwnedFilter(states []storage.RecordingState, owned string) []storage.RecordingState {
+	switch owned {
+	case "true":
+		out := make([]storage.RecordingState, 0, len(states))
+		for _, st := range states {
+			if st.InCollection {
+				out = append(out, st)
+			}
+		}
+		return out
+	case "false":
+		out := make([]storage.RecordingState, 0, len(states))
+		for _, st := range states {
+			if !st.InCollection {
+				out = append(out, st)
+			}
+		}
+		return out
+	default:
+		return states
+	}
+}
+
+// recordingMeta is the per-row recording display metadata loaded
+// alongside a RecordingState.
+type recordingMeta struct {
+	show       string
+	tour       string
+	dateFull   string
+	monthKnown bool
+	dayKnown   bool
+	master     string
+}
+
+// loadRecordingMeta resolves show/tour/date/master for a slice of
+// states in a single SQL query keyed on recording_id. Recordings that
+// don't exist in the recordings table (orphaned versions sans payload)
+// surface as the zero value.
+func loadRecordingMeta(
+	ctx context.Context,
+	db *sql.DB,
+	states []storage.RecordingState,
+) (map[int64]recordingMeta, error) {
+	if len(states) == 0 {
+		return map[int64]recordingMeta{}, nil
+	}
+	placeholders := make([]string, len(states))
+	args := make([]any, len(states))
+	for i, st := range states {
+		placeholders[i] = "?"
+		args[i] = st.RecordingID
+	}
+	// Concatenated placeholders are bind-parameter markers (no
+	// user-controlled SQL); the recording_id args are passed via
+	// QueryContext.
+	//nolint:gosec // G202: placeholders are "?" markers, not user input.
+	q := `
+		SELECT r.recording_id, COALESCE(s.name, ''), r.tour, r.date_full,
+		       r.date_month_known, r.date_day_known, r.master
+		FROM recordings r
+		LEFT JOIN shows s ON s.show_id = r.show_id
+		WHERE r.recording_id IN (` + strings.Join(placeholders, ",") + `)
+	`
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query recording meta: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[int64]recordingMeta, len(states))
+	for rows.Next() {
+		var (
+			id                   int64
+			m                    recordingMeta
+			monthKnown, dayKnown int
+		)
+		if scanErr := rows.Scan(
+			&id, &m.show, &m.tour, &m.dateFull,
+			&monthKnown, &dayKnown, &m.master,
+		); scanErr != nil {
+			return nil, fmt.Errorf("scan recording meta: %w", scanErr)
+		}
+		m.monthKnown = monthKnown == 1
+		m.dayKnown = dayKnown == 1
+		out[id] = m
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return nil, fmt.Errorf("iterate recording meta: %w", rerr)
+	}
+	return out, nil
+}
+
 // loadRecordingsList queries recordings + collection/wants membership in
 // one go. owned filter values: "" / "any" / "true" / "false".
+//
+// Deprecated: this is the legacy shape used by /api/v1/wants. New code
+// should use loadStatefulRecordings, which exposes the RecordingState
+// reconciler output.
 func loadRecordingsList(
 	ctx context.Context,
 	db *sql.DB,
