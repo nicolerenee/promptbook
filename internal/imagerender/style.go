@@ -56,13 +56,14 @@ const (
 	defaultTitleSizePx        = 0
 	defaultSubtitleSizePx     = 0
 
-	// Brand palette. Band is sky blue (#7FA8C9); text is deep navy
-	// (#13284A). Solid alpha so the band reads as a real plate against
-	// any underlying art. Matches the wordmark + app-mark colors so the
-	// burned-in poster identifies as part of the same product family.
-	defaultBandR uint8 = 0x7F
-	defaultBandG uint8 = 0xA8
-	defaultBandB uint8 = 0xC9
+	// Brand palette. Band is the muted playbill blue (#4577A0); text is
+	// deep navy (#13284A). Solid alpha so the band reads as a real plate
+	// against any underlying art. Matches the wordmark + app-mark accent
+	// so the burned-in poster identifies as part of the same product
+	// family.
+	defaultBandR uint8 = 0x45
+	defaultBandG uint8 = 0x77
+	defaultBandB uint8 = 0xA0
 	defaultBandA uint8 = 0xFF
 
 	defaultTextR uint8 = 0x13

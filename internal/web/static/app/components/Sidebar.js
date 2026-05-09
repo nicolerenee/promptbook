@@ -25,11 +25,11 @@ function BrandIcon() {
 }
 
 // BrandWordmark renders the two-color "promptbook" lockup. "book" is
-// always sky blue (#7FA8C9); "prompt" swaps between deep navy (light
-// themes) and cream (dark themes). The actual color rules live in
-// index.html's <style> block keyed off [data-theme] — the same hook
-// the icon swap uses — so theme toggles update immediately without
-// any JS redraw.
+// always the playbill blue (#4577A0); "prompt" swaps between deep
+// navy (light themes) and cream (dark themes). The actual color
+// rules live in index.html's <style> block keyed off [data-theme] —
+// the same hook the icon swap uses — so theme toggles update
+// immediately without any JS redraw.
 function BrandWordmark() {
   return m('span', { class: 'font-serif text-lg leading-none tracking-tight' }, [
     m('span', { class: 'pb-prompt font-medium' }, 'prompt'),
