@@ -1,26 +1,13 @@
 {{define "people.html"}}{{template "_layout.html" .}}{{end}}
 
-{{define "body"}}
-<header>
-  <h1>{{.Title}}</h1>
-  <p>{{len .People}} performers in your library</p>
-</header>
+{{define "head"}}<script src="/static/people.js" defer></script>{{end}}
 
-{{if .People}}
-<table>
-  <thead>
-    <tr><th>Name</th><th>Recordings</th></tr>
-  </thead>
-  <tbody>
-  {{range .People}}
-    <tr>
-      <td><a href="/people/{{.PerformerID}}">{{.Name}}</a></td>
-      <td>{{.RecordingCount}}</td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
-{{else}}
-  <p><em>No people yet. Run <code>promptbook collection sync</code> to populate the cache.</em></p>
-{{end}}
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">People<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
+  </div>
+</div>
+<div id="page-root" data-page="people"></div>
 {{end}}

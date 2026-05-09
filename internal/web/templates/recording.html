@@ -1,93 +1,13 @@
 {{define "recording.html"}}{{template "_layout.html" .}}{{end}}
 
+{{define "head"}}<script src="/static/recording.js" defer></script>{{end}}
+
 {{define "body"}}
-{{$r := .Recording.Recording}}
-{{$poster := firstPoster .Posters}}
-<section class="detail-grid">
-  <div class="detail-poster">
-    {{if $poster}}
-      <img class="poster" src="{{$poster}}" alt="{{$r.Show}} poster">
-    {{else}}
-      <div class="poster-placeholder" aria-label="no poster available">no poster</div>
-    {{end}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Recording<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
   </div>
-  <header class="detail-header">
-    <h1>{{$r.Show}}</h1>
-    <p class="detail-tour">
-      {{$r.Tour}} — {{smartDate $r.Date.FullDate $r.Date.MonthKnown $r.Date.DayKnown}}
-    </p>
-    {{if .State}}
-      <p><span class="status-badge status-{{.State.Status}}">{{.State.Status}}</span></p>
-    {{end}}
-    <p><small>encora id <a href="https://encora.it/recordings/{{$r.ID}}">{{$r.ID}}</a></small></p>
-    {{if .NFTWarning}}
-      <p class="nft-warning" role="alert">{{.NFTWarning}}</p>
-    {{end}}
-  </header>
-</section>
-
-<section class="detail-meta">
-  <dl>
-    <dt>Master</dt><dd>{{or $r.Master "—"}}</dd>
-    <dt>Recording type</dt><dd>{{or $r.Metadata.RecordingType "—"}} / {{or $r.Metadata.MediaType "—"}}</dd>
-    <dt>Venue</dt><dd>{{or $r.Metadata.Venue "—"}}, {{or $r.Metadata.City "—"}}</dd>
-    <dt>Gifting status</dt><dd>{{or $r.Metadata.GiftingStatus "—"}}</dd>
-    <dt>Owners</dt><dd>{{$r.Metadata.OwnersCount}}</dd>
-    <dt>Wanters</dt><dd>{{$r.Metadata.WantersCount}}</dd>
-    {{if .Recording.InCollection}}
-    <dt>Owned format</dt><dd>{{or .Recording.Format "—"}}</dd>
-    <dt>Watched</dt><dd>{{.Recording.UserWatched}}</dd>
-    {{end}}
-  </dl>
-</section>
-
-{{if .Recording.Versions}}
-<section>
-  <h2>Files</h2>
-  <table class="files-table">
-    <thead>
-      <tr>
-        <th>Path</th>
-        <th>Size</th>
-        <th>Quality</th>
-        <th>Codec</th>
-        <th>Format</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Recording.Versions}}
-      <tr>
-        <td><code>{{.FilePath}}</code></td>
-        <td>{{humanSize .FileSizeBytes}}</td>
-        <td>{{or .Quality "—"}}</td>
-        <td>{{or .VideoCodec "—"}}</td>
-        <td>{{or .FormatLabel "—"}}</td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-</section>
-{{end}}
-
-{{if .Recording.Cast}}
-<section>
-  <h2>Cast</h2>
-  <ul class="cast-list">
-    {{range .Recording.Cast}}
-    <li>
-      <a href="/people/{{.Performer.PerformerID}}">{{.Performer.Name}}</a>
-      as {{.Character.Name}}
-      {{if .Status}}<small>({{.Status.Label}})</small>{{end}}
-    </li>
-    {{end}}
-  </ul>
-</section>
-{{end}}
-
-{{if $r.Notes}}
-<section>
-  <h2>Notes</h2>
-  <p>{{$r.Notes}}</p>
-</section>
-{{end}}
+</div>
+<div id="page-root" data-page="recording" data-recording-id="{{.RecordingID}}"></div>
 {{end}}

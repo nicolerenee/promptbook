@@ -43,6 +43,10 @@ type Server struct {
 	// time.Sleep; tests inject a recorder to assert the call without
 	// blocking real wall-clock time.
 	sleeper func(time.Duration)
+	// version is the build-time version string the sidebar footer
+	// renders. "dev" when not configured. Plumbed via Options so the
+	// server package doesn't need to import cmd (which would cycle).
+	version string
 }
 
 // Options configures a new server.
@@ -62,6 +66,9 @@ type Options struct {
 	// for real, so the Retry-After honor logic stays exercisable under
 	// `go test -race` without a wall-clock pause.
 	Sleeper func(time.Duration)
+	// Version is the build-time version string surfaced in the sidebar
+	// footer. Empty falls back to "dev".
+	Version string
 }
 
 // New constructs a server with all routes registered and templates
@@ -88,6 +95,10 @@ func New(opts Options) (*Server, error) {
 	if sleeper == nil {
 		sleeper = time.Sleep
 	}
+	version := opts.Version
+	if version == "" {
+		version = "dev"
+	}
 	srv := &Server{
 		echo:       e,
 		db:         opts.DB,
@@ -95,6 +106,7 @@ func New(opts Options) (*Server, error) {
 		stagemedia: opts.Stagemedia,
 		encora:     opts.Encora,
 		sleeper:    sleeper,
+		version:    version,
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))
@@ -113,6 +125,10 @@ func (s *Server) Stagemedia() *stagemedia.Client { return s.stagemedia }
 // API key was supplied. Apply handlers nil-check this and return 503
 // rather than crashing the server.
 func (s *Server) Encora() EncoraWriteClient { return s.encora }
+
+// Version returns the build-time version string the sidebar footer
+// renders. Defaults to "dev" when no Options.Version was configured.
+func (s *Server) Version() string { return s.version }
 
 // Compile-time guard: the real *encora.Client must satisfy
 // EncoraWriteClient so production wiring can pass it on Options.Encora

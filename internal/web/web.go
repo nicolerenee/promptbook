@@ -49,7 +49,13 @@ func ParsePages() (PageSet, error) {
 	out := make(PageSet, len(pageNames))
 	for _, name := range pageNames {
 		t, err := template.New(name).Funcs(funcs).
-			ParseFS(templatesFS, "templates/_layout.html", "templates/"+name)
+			ParseFS(
+				templatesFS,
+				"templates/_layout.html",
+				"templates/_sidebar.html",
+				"templates/_topbar.html",
+				"templates/"+name,
+			)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}

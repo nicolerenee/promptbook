@@ -99,56 +99,29 @@ func (s *Server) handleGetPerson(c echo.Context) error {
 	return c.JSON(http.StatusOK, detail)
 }
 
-// peoplePageData is the view-model for /people.
-type peoplePageData struct {
-	Title  string
-	People []PersonListItem
-}
-
+// handlePeoplePage renders the people-list shell. Data comes from
+// /api/v1/people, fetched client-side by /static/people.js.
 func (s *Server) handlePeoplePage(c echo.Context) error {
-	items, err := loadPeopleList(c.Request().Context(), s.db, pageScanLimit, 0)
-	if err != nil {
-		return err
-	}
-	return c.Render(http.StatusOK, "people.html", peoplePageData{
-		Title:  "People",
-		People: items,
+	return c.Render(http.StatusOK, "people.html", shellData{
+		Title:     "People",
+		ActiveNav: "people",
+		Version:   s.version,
 	})
 }
 
-// personPageData is the view-model for /people/{id}.
-type personPageData struct {
-	Title       string
-	PerformerID int64
-	Name        string
-	URL         string
-	Recordings  []PersonRecording
-	HeadshotURL string
-}
-
+// handlePersonPage renders the person-detail shell. The performer id is
+// stamped into the page-root data attribute so /static/person.js can
+// fetch /api/v1/people/{id} on load.
 func (s *Server) handlePersonPage(c echo.Context) error {
 	id, err := parsePerformerID(c.Param("id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	ctx := c.Request().Context()
-
-	detail, err := loadPersonDetail(ctx, s.db, id)
-	if errors.Is(err, storage.ErrPerformerNotFound) {
-		return echo.NewHTTPError(http.StatusNotFound, err.Error())
-	}
-	if err != nil {
-		return err
-	}
-
-	headshot := s.fetchHeadshot(ctx, detail)
-	return c.Render(http.StatusOK, "person.html", personPageData{
-		Title:       detail.Name,
-		PerformerID: detail.PerformerID,
-		Name:        detail.Name,
-		URL:         detail.URL,
-		Recordings:  detail.Recordings,
-		HeadshotURL: headshot,
+	return c.Render(http.StatusOK, "person.html", shellData{
+		Title:     "Person",
+		ActiveNav: "people",
+		Version:   s.version,
+		PersonID:  id,
 	})
 }
 

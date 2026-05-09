@@ -38,48 +38,13 @@ func (s *Server) handleListQueue(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{itemsKey: items})
 }
 
-// queuePageRow is the per-row view-model the queue.html template
-// renders. DiscoveredAt is pre-formatted to keep the template logic-free.
-type queuePageRow struct {
-	ID                   int64
-	FilePath             string
-	FileSizeBytes        int64
-	DiscoveredAt         string
-	LastSeenAt           string
-	SuggestedRecordingID *int64
-	SuggestedConfidence  string
-	Notes                string
-}
-
-type queuePageData struct {
-	Title   string
-	Entries []queuePageRow
-}
-
-// handleQueuePage renders the manual import queue as an HTML table.
-// Read-only for now — the resolve-and-import POST flow lands in a later
-// scope.
+// handleQueuePage renders the queue shell. Data comes from
+// /api/v1/queue, fetched client-side by /static/queue.js.
 func (s *Server) handleQueuePage(c echo.Context) error {
-	entries, err := storage.ListQueue(c.Request().Context(), s.db)
-	if err != nil {
-		return err
-	}
-	rows := make([]queuePageRow, 0, len(entries))
-	for _, e := range entries {
-		rows = append(rows, queuePageRow{
-			ID:                   e.ID,
-			FilePath:             e.FilePath,
-			FileSizeBytes:        e.FileSizeBytes,
-			DiscoveredAt:         e.DiscoveredAt.Format(time.RFC3339),
-			LastSeenAt:           e.LastSeenAt.Format(time.RFC3339),
-			SuggestedRecordingID: e.SuggestedRecordingID,
-			SuggestedConfidence:  e.SuggestedConfidence,
-			Notes:                e.Notes,
-		})
-	}
-	return c.Render(http.StatusOK, "queue.html", queuePageData{
-		Title:   "Manual import queue",
-		Entries: rows,
+	return c.Render(http.StatusOK, "queue.html", shellData{
+		Title:     "Queue",
+		ActiveNav: "queue",
+		Version:   s.version,
 	})
 }
 

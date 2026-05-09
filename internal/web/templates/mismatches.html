@@ -1,85 +1,13 @@
 {{define "mismatches.html"}}{{template "_layout.html" .}}{{end}}
 
+{{define "head"}}<script src="/static/mismatches.js" defer></script>{{end}}
+
 {{define "body"}}
-<header>
-  <h1>{{.Title}}</h1>
-  <p>
-    {{if .ActiveType}}Filter: {{.ActiveType}}{{else}}All mismatches{{end}}
-    — {{len .Items}} shown
-  </p>
-  <nav class="mismatch-tabs">
-    {{range .Tabs}}
-      {{if .Active}}
-        <a class="mismatch-tab mismatch-tab-active" href="{{if .Key}}/mismatches?type={{.Key}}{{else}}/mismatches{{end}}">{{.Label}} <small>({{.Count}})</small></a>
-      {{else}}
-        <a class="mismatch-tab" href="{{if .Key}}/mismatches?type={{.Key}}{{else}}/mismatches{{end}}">{{.Label}} <small>({{.Count}})</small></a>
-      {{end}}
-    {{end}}
-  </nav>
-</header>
-
-{{if .Items}}
-<form method="post" action="/apply" id="apply-form">
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Type</th>
-      <th>Show</th>
-      <th>Tour</th>
-      <th>Date</th>
-      <th>Recording</th>
-      <th>Description</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range $i, $item := .Items}}
-    <tr>
-      <td>
-        {{if or (eq (printf "%s" $item.Type) "missing_file") (eq (printf "%s" $item.Type) "wanted_file")}}
-          <small>—</small>
-        {{else}}
-          <input type="checkbox" name="action[{{$i}}].type" value="{{$item.Type}}" class="apply-check" id="apply-check-{{$i}}">
-          <input type="hidden" name="action[{{$i}}].recording_id" value="{{$item.RecordingID}}">
-          {{if eq (printf "%s" $item.Type) "format_mismatch"}}
-            <input type="hidden" name="action[{{$i}}].new_format" value="{{$item.LocalFormat}}">
-          {{end}}
-        {{end}}
-      </td>
-      <td><span class="mismatch-badge mismatch-{{$item.Type}}">{{$item.Type}}</span></td>
-      <td>{{if $item.Show}}{{$item.Show}}{{else}}<small>—</small>{{end}}</td>
-      <td>{{if $item.Tour}}{{$item.Tour}}{{else}}<small>—</small>{{end}}</td>
-      <td>{{if $item.DateFull}}{{$item.DateFull}}{{else}}<small>—</small>{{end}}</td>
-      <td><a href="/recordings/{{$item.RecordingID}}">{{$item.RecordingID}}</a></td>
-      <td>{{$item.Description}}</td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
-
-<div class="apply-bar">
-  <span><strong id="apply-count">0</strong> selected</span>
-  <button type="submit" id="apply-submit" disabled>Apply selected</button>
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Mismatches<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
+  </div>
 </div>
-</form>
-
-<script>
-(function () {
-  var form = document.getElementById('apply-form');
-  if (!form) { return; }
-  var btn = document.getElementById('apply-submit');
-  var count = document.getElementById('apply-count');
-  function refresh() {
-    var n = form.querySelectorAll('input[name^="action["]:checked').length;
-    count.textContent = String(n);
-    if (n === 0) { btn.setAttribute('disabled', 'disabled'); }
-    else         { btn.removeAttribute('disabled'); }
-  }
-  form.addEventListener('change', refresh);
-  refresh();
-})();
-</script>
-{{else}}
-  <p><em>Everything synced.</em></p>
-{{end}}
+<div id="page-root" data-page="mismatches"></div>
 {{end}}
