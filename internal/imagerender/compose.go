@@ -149,8 +149,9 @@ func (r *Renderer) compose(src image.Image, title, subtitle string, style Style)
 	}
 
 	titleSpec := FontSpec{SizePx: resolved.TitleSizePx, Weight: style.Title.Weight}
-	titleFace := pickTitleFace(titleUpper, titleSpec, maxTextWidth)
-	subtitleFace := loadFace(style.Subtitle.Weight, int(resolved.SubtitleSizePx))
+	titleFace := pickFittingFace(titleUpper, titleSpec, maxTextWidth)
+	subtitleSpec := FontSpec{SizePx: resolved.SubtitleSizePx, Weight: style.Subtitle.Weight}
+	subtitleFace := pickFittingFace(subtitleUpper, subtitleSpec, maxTextWidth)
 
 	// Layout: title centered on the upper third of the band, subtitle on
 	// the lower third. When subtitle is empty, the title takes the
@@ -180,9 +181,14 @@ const hPadFactor = 2
 const (
 	titleSizeBandFraction    = 0.50
 	subtitleSizeBandFraction = 0.28
-	padXImageFraction        = 0.04
-	minFontSizePx            = 8
-	minPadXPx                = 4
+	// 7% per side ≈ 14% total horizontal margin. The previous 4% (8%
+	// total) read as edge-to-edge once the subtitle text was long
+	// enough to use most of the width. The shrink-to-fit logic still
+	// scales fonts down when content overflows, but the visual breathing
+	// room around even a fitted line wants more than a thin sliver.
+	padXImageFraction = 0.07
+	minFontSizePx     = 8
+	minPadXPx         = 6
 )
 
 // resolved bundles the post-fraction-resolution sizes the compose
@@ -225,11 +231,10 @@ func resolveStyle(style Style, bandRect image.Rectangle) resolvedStyle {
 	return out
 }
 
-// pickTitleFace tries the configured title size first; if the rendered
-// title would exceed maxWidth, it shrinks the font (down to the
-// titleShrinkFloor cap) so the show name fits inside the band's
-// padding. Beyond the floor, accept overflow.
-func pickTitleFace(text string, spec FontSpec, maxWidth int) font.Face {
+// pickFittingFace shrinks the configured size down to titleShrinkFloor
+// until the rendered text fits maxWidth. Title and subtitle both go
+// through this so neither row runs edge-to-edge on small images.
+func pickFittingFace(text string, spec FontSpec, maxWidth int) font.Face {
 	size := spec.SizePx
 	if size <= 0 {
 		// Should not happen — resolveStyle ensures sizes are positive
@@ -238,6 +243,9 @@ func pickTitleFace(text string, spec FontSpec, maxWidth int) font.Face {
 		size = minFontSizePx
 	}
 	floorSize := size * titleShrinkFloor
+	if floorSize < minFontSizePx {
+		floorSize = minFontSizePx
+	}
 	for size >= floorSize {
 		f := loadFace(spec.Weight, int(size))
 		if measureWidth(f, text) <= maxWidth {
