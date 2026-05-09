@@ -23,6 +23,12 @@ library:
   root: /store01/Performances/Broadway
   folderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
   fileTemplate: "{Show} - {Tour} - {Date} [{Master}]"
+  # Directories the `library watch` scanner polls for new files.
+  # Anything that isn't already an ingested recording lands on the
+  # manual_import_queue for human review (see `library queue`).
+  incomingDirs: []
+  # How often the watch loop polls each incomingDirs entry.
+  watchInterval: 1m
 
 # HTTP server (used by `promptbook serve` only).
 server:

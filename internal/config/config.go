@@ -21,6 +21,7 @@ const (
 	DefaultJWKSRefreshInterval = 1 * time.Hour
 	DefaultFolderTemplate      = "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
 	DefaultFileTemplate        = "{Show} - {Tour} - {Date} [{Master}]"
+	DefaultWatchInterval       = 1 * time.Minute
 )
 
 // Config is the top-level application configuration.
@@ -52,9 +53,11 @@ type StorageConfig struct {
 
 // LibraryConfig describes the on-disk media library and naming scheme.
 type LibraryConfig struct {
-	Root           string `mapstructure:"root"`
-	FolderTemplate string `mapstructure:"folderTemplate"`
-	FileTemplate   string `mapstructure:"fileTemplate"`
+	Root           string        `mapstructure:"root"`
+	FolderTemplate string        `mapstructure:"folderTemplate"`
+	FileTemplate   string        `mapstructure:"fileTemplate"`
+	IncomingDirs   []string      `mapstructure:"incomingDirs"`
+	WatchInterval  time.Duration `mapstructure:"watchInterval"`
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).
@@ -132,6 +135,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.databasePath", DefaultDatabasePath)
 	v.SetDefault("library.folderTemplate", DefaultFolderTemplate)
 	v.SetDefault("library.fileTemplate", DefaultFileTemplate)
+	v.SetDefault("library.watchInterval", DefaultWatchInterval)
 	v.SetDefault("server.listen", DefaultListenAddr)
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
 }
