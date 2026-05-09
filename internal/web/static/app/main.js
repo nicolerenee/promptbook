@@ -20,6 +20,8 @@ import Library from './components/Library.js';
 import Wants from './components/Wants.js';
 import Sync from './components/Sync.js';
 import Recording from './components/Recording.js';
+import Queue from './components/Queue.js';
+import History from './components/History.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -61,10 +63,10 @@ if (!root) {
     '/recordings/:id':  wrap(Recording),
     '/wants':           wrap(Wants),
     '/sync':            wrap(Sync),
-    '/queue':           wrap(stubPage('Manual import queue')),
+    '/queue':           wrap(Queue),
     '/people':          wrap(stubPage('People')),
     '/people/:id':      wrap(stubPage('Person detail')),
-    '/history':         wrap(stubPage('History')),
+    '/history':         wrap(History),
     '/mismatches':      wrap(stubPage('Mismatches')),
     '/apply':           wrap(stubPage('Apply')),
     '/settings':        wrap(stubPage('Settings')),
