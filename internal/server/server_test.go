@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -648,6 +649,130 @@ func TestPagesPeople(t *testing.T) {
 		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 		assert.Contains(t, rr.Body.String(), "Marigold")
 	})
+}
+
+func TestAPIHistoryEmpty(t *testing.T) {
+	t.Parallel()
+
+	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/history", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(t, body.Items)
+}
+
+func TestAPIHistoryLists(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	for _, e := range []storage.HistoryEvent{
+		{OccurredAt: base.Add(1 * time.Hour), Kind: storage.HistoryKindIngest, Summary: "ingested foo"},
+		{OccurredAt: base.Add(2 * time.Hour), Kind: storage.HistoryKindRename, Summary: "renamed foo"},
+		{OccurredAt: base.Add(3 * time.Hour), Kind: storage.HistoryKindNFOWrite, Summary: "wrote nfo"},
+	} {
+		_, recErr := storage.RecordEvent(ctx, db, e)
+		require.NoError(t, recErr)
+	}
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/history", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []struct {
+			Kind    string `json:"kind"`
+			Summary string `json:"summary"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Items, 3)
+	// DESC by occurred_at: newest first.
+	assert.Equal(t, storage.HistoryKindNFOWrite, body.Items[0].Kind)
+	assert.Equal(t, storage.HistoryKindRename, body.Items[1].Kind)
+	assert.Equal(t, storage.HistoryKindIngest, body.Items[2].Kind)
+}
+
+func TestAPIHistoryFilterByKind(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	for _, e := range []storage.HistoryEvent{
+		{OccurredAt: base.Add(1 * time.Hour), Kind: storage.HistoryKindIngest, Summary: "ingested foo"},
+		{OccurredAt: base.Add(2 * time.Hour), Kind: storage.HistoryKindRename, Summary: "renamed foo"},
+		{OccurredAt: base.Add(3 * time.Hour), Kind: storage.HistoryKindNFOWrite, Summary: "wrote nfo"},
+	} {
+		_, recErr := storage.RecordEvent(ctx, db, e)
+		require.NoError(t, recErr)
+	}
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/history?kind=ingest", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Items []struct {
+			Kind    string `json:"kind"`
+			Summary string `json:"summary"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, storage.HistoryKindIngest, body.Items[0].Kind)
+	assert.Equal(t, "ingested foo", body.Items[0].Summary)
+}
+
+func TestPagesHistory(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = storage.RecordEvent(ctx, db, storage.HistoryEvent{
+		Kind:    storage.HistoryKindIngest,
+		Summary: "imported showtape from disk",
+	})
+	require.NoError(t, err)
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/history", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "imported showtape from disk")
 }
 
 func TestPagesHomeStatusFilter(t *testing.T) {

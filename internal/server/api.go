@@ -19,6 +19,8 @@ const (
 	defaultListLimit = 50
 	wantsScanLimit   = 100
 	itemsKey         = "items"
+	limitKey         = "limit"
+	offsetKey        = "offset"
 )
 
 // RecordingListItem is the shape returned by /api/v1/recordings and
@@ -68,6 +70,7 @@ func (s *Server) routes() {
 	api.GET("/queue", s.handleListQueue)
 	api.GET("/people", s.handleListPeople)
 	api.GET("/people/:id", s.handleGetPerson)
+	api.GET("/history", s.handleListHistory)
 
 	s.echo.GET("/", s.handleHomePage)
 	s.echo.GET("/recordings/:id", s.handleRecordingPage)
@@ -76,6 +79,7 @@ func (s *Server) routes() {
 	s.echo.GET("/queue", s.handleQueuePage)
 	s.echo.GET("/people", s.handlePeoplePage)
 	s.echo.GET("/people/:id", s.handlePersonPage)
+	s.echo.GET("/history", s.handleHistoryPage)
 }
 
 func (s *Server) handleHealth(c echo.Context) error {
@@ -118,9 +122,9 @@ func (s *Server) handleListRecordings(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]any{
-		itemsKey: items,
-		"limit":  limit,
-		"offset": offset,
+		itemsKey:  items,
+		limitKey:  limit,
+		offsetKey: offset,
 	})
 }
 
