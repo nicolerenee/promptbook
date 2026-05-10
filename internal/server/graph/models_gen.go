@@ -29,6 +29,7 @@ type ImportPreview struct {
 	DestFile     string `json:"destFile"`
 	DestAbsolute string `json:"destAbsolute"`
 	DestExists   bool   `json:"destExists"`
+	IsSameFile   bool   `json:"isSameFile"`
 	IsDuplicate  bool   `json:"isDuplicate"`
 }
 

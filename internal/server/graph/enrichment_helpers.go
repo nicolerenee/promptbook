@@ -1620,6 +1620,7 @@ const (
 type destConflictResult struct {
 	destAbsolute string
 	destExists   bool
+	isSameFile   bool
 	isDuplicate  bool
 }
 
@@ -1671,9 +1672,17 @@ func (r *Resolver) checkDestinationConflict(
 	result := destConflictResult{
 		destAbsolute: dest,
 		destExists:   conflict.destExists,
+		isSameFile:   conflict.isSameFile,
 		isDuplicate:  conflict.isDuplicate,
 	}
 	if !conflict.destExists {
+		return result, "", "", nil
+	}
+	// Same-file is the library-root backfill case — the file is
+	// already at its canonical location. Plan.Apply short-circuits to
+	// a no-op so the import (NFO + sidecar + recording_versions row)
+	// proceeds normally; no overwrite confirmation needed.
+	if conflict.isSameFile {
 		return result, "", "", nil
 	}
 	if conflict.isDuplicate {
@@ -1926,6 +1935,7 @@ func (r *Resolver) previewQueueImport(
 		DestFile:     plan.TargetFile + plan.Extension,
 		DestAbsolute: plan.AbsoluteFile(),
 		DestExists:   conflict.destExists,
+		IsSameFile:   conflict.isSameFile,
 		IsDuplicate:  conflict.isDuplicate,
 	}, nil
 }

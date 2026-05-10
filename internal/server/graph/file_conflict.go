@@ -36,9 +36,18 @@ type fileConflict struct {
 	// destExists is true when stat(dest) succeeded — the destination
 	// path is occupied.
 	destExists bool
+	// isSameFile is true when destExists AND src+dest resolve to the
+	// same on-disk entry (same inode). Distinct from isDuplicate
+	// because the action differs: same-file means "already in place,
+	// just register"; duplicate means "the user has two separate
+	// copies and needs to decide". Library-root backfill (importing
+	// recordings whose files already live at the canonical path) is
+	// the common driver of this case.
+	isSameFile bool
 	// isDuplicate is true when destExists AND the source + destination
-	// have matching size. False when destExists is false (no conflict)
-	// or when sizes differ.
+	// have matching size but are NOT the same file. False when
+	// destExists is false, when src+dest are the same file, or when
+	// sizes differ.
 	isDuplicate bool
 }
 
@@ -61,6 +70,9 @@ func inspectDestinationConflict(_ context.Context, src, dest string) (fileConfli
 		// A source we can't stat isn't a duplicate decision — let the
 		// downstream importer surface the error.
 		return fileConflict{destExists: true}, nil //nolint:nilerr // intentional fall-through.
+	}
+	if os.SameFile(srcInfo, destInfo) {
+		return fileConflict{destExists: true, isSameFile: true}, nil
 	}
 	return fileConflict{
 		destExists:  true,

@@ -41,6 +41,35 @@ func TestPlanApplyMoves(t *testing.T) {
 	assert.Equal(t, "video bytes", string(got))
 }
 
+func TestPlanApplySameFileNoOp(t *testing.T) {
+	t.Parallel()
+
+	// Source IS the canonical destination — library-root backfill case
+	// where the file already lives at the path the rename templates
+	// would produce. Apply must short-circuit to a no-op success
+	// instead of refusing because the destination is "occupied".
+	root := t.TempDir()
+	plan := rename.Plan{
+		LibraryRoot:  root,
+		TargetFolder: "Marigold - Broadway - December 2009 [encora-90100222]",
+		TargetFile:   "Marigold - Broadway - December 2009 [pro-shot]",
+		Extension:    ".mp4",
+	}
+	require.NoError(t, os.MkdirAll(plan.AbsoluteFolder(), 0o755))
+	require.NoError(t, os.WriteFile(plan.AbsoluteFile(), []byte("v1"), 0o644))
+	plan.Source = plan.AbsoluteFile()
+
+	dest, err := plan.Apply()
+	require.NoError(t, err)
+	assert.Equal(t, plan.AbsoluteFile(), dest)
+
+	// File still exists with original bytes — nothing was moved or
+	// copied or removed.
+	got, err := os.ReadFile(plan.AbsoluteFile())
+	require.NoError(t, err)
+	assert.Equal(t, "v1", string(got))
+}
+
 func TestPlanApplyRefusesOverwrite(t *testing.T) {
 	t.Parallel()
 

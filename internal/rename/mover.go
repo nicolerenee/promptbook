@@ -28,12 +28,24 @@ const libraryFilePerm = 0o644
 // falls back to copy+remove for cross-device moves.
 //
 // Returns the absolute target file path on success.
+//
+// When Source and AbsoluteFile resolve to the same on-disk entry (the
+// file is already at its canonical location — common when a library
+// scan picks up files that already follow the configured naming
+// convention) Apply short-circuits to a no-op success and returns
+// dest. Without this branch the existing-target guard would refuse,
+// since stat'ing the destination always succeeds.
 func (p Plan) Apply() (string, error) {
 	dest := p.AbsoluteFile()
-	if _, err := os.Stat(dest); err == nil {
+	destInfo, destErr := os.Stat(dest)
+	if destErr == nil {
+		srcInfo, srcErr := os.Stat(p.Source)
+		if srcErr == nil && os.SameFile(srcInfo, destInfo) {
+			return dest, nil
+		}
 		return "", fmt.Errorf("%w: %s", ErrTargetExists, dest)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("stat target: %w", err)
+	} else if !errors.Is(destErr, os.ErrNotExist) {
+		return "", fmt.Errorf("stat target: %w", destErr)
 	}
 
 	if err := os.MkdirAll(p.AbsoluteFolder(), libraryDirPerm); err != nil {

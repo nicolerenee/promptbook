@@ -73,6 +73,7 @@ const PREVIEW_QUERY = `
       destFile
       destAbsolute
       destExists
+      isSameFile
       isDuplicate
     }
   }
@@ -329,6 +330,7 @@ function runPreview(local, queueID, recordingID) {
   local.preview.error = null;
   local.preview.dest = '';
   local.preview.destExists = false;
+  local.preview.isSameFile = false;
   local.preview.isDuplicate = false;
   // Reset the user's overwrite confirmation whenever a fresh preview
   // fires — picking a different recording shouldn't carry forward a
@@ -349,6 +351,7 @@ function runPreview(local, queueID, recordingID) {
       local.preview.loading = false;
       local.preview.dest = payload.destAbsolute || '';
       local.preview.destExists = !!payload.destExists;
+      local.preview.isSameFile = !!payload.isSameFile;
       local.preview.isDuplicate = !!payload.isDuplicate;
       m.redraw();
     })
@@ -603,8 +606,12 @@ function ExternallyManagedSection(local, queueID) {
 }
 
 // ConflictBanner renders the destination-conflict warning when the
-// preview reported destExists. Three states:
+// preview reported destExists. Four states:
 //
+//   - destExists + isSameFile → info banner: "file is already at its
+//     canonical location, nothing to move." Common during library-
+//     root backfill. The Import button proceeds and registers the
+//     recording without moving the file.
 //   - destExists + isDuplicate → info banner: "already imported, this
 //     is a duplicate" with a soft "Importing will close this modal
 //     and remove the queue row" hint. The Import button still works
@@ -622,13 +629,23 @@ function ConflictBanner(local) {
   // the source path. Suppress the banner so the user isn't prompted
   // for confirmation that doesn't apply.
   if (local.externallyManaged) return null;
+  if (p.isSameFile) {
+    return m('div', {
+      role: 'alert',
+      class: 'alert alert-info text-sm',
+    }, m('div', [
+      m('span', { class: 'font-semibold mr-1' }, 'Already in place.'),
+      'The file is already at its canonical location. Importing will ' +
+      'register the recording without moving anything.',
+    ]));
+  }
   if (p.isDuplicate) {
     return m('div', {
       role: 'alert',
       class: 'alert alert-info text-sm',
     }, m('div', [
       m('span', { class: 'font-semibold mr-1' }, 'Duplicate detected.'),
-      'An identical file (same size + checksum) already exists at the destination. ' +
+      'An identical file (same size) already exists at the destination. ' +
       'Importing will mark the queue row as handled and leave both files in place.',
     ]));
   }
@@ -887,16 +904,18 @@ const QueueImportModal = {
     }
 
     // canImport gates the primary button. Overwrite-required (the
-    // destination has different content) blocks until the user
-    // explicitly checks the overwrite confirmation. Duplicate +
-    // no-conflict states leave the button enabled — the mutation
-    // handles the duplicate path itself.
+    // destination has a DIFFERENT file at the path) blocks until the
+    // user explicitly checks the overwrite confirmation. Same-file +
+    // duplicate + no-conflict states leave the button enabled — the
+    // mutation handles those paths itself (same-file is a no-op
+    // move; duplicate is a no-op import).
     //
     // Externally-managed imports never move the file, so the
     // overwrite gate doesn't apply.
     const overwriteBlocked = !local.externallyManaged &&
       local.preview &&
       local.preview.destExists &&
+      !local.preview.isSameFile &&
       !local.preview.isDuplicate &&
       !local.overwrite;
     // filesInvalid is the local validator's verdict on the multi-file

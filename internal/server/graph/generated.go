@@ -109,6 +109,7 @@ type ComplexityRoot struct {
 		DestFile     func(childComplexity int) int
 		DestFolder   func(childComplexity int) int
 		IsDuplicate  func(childComplexity int) int
+		IsSameFile   func(childComplexity int) int
 	}
 
 	ImportQueueEntryPayload struct {
@@ -865,6 +866,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ImportPreview.IsDuplicate(childComplexity), true
+	case "ImportPreview.isSameFile":
+		if e.ComplexityRoot.ImportPreview.IsSameFile == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportPreview.IsSameFile(childComplexity), true
 
 	case "ImportQueueEntryPayload.action":
 		if e.ComplexityRoot.ImportQueueEntryPayload.Action == nil {
@@ -3031,6 +3038,8 @@ func (ec *executionContext) childFields_ImportPreview(ctx context.Context, field
 		return ec.fieldContext_ImportPreview_destAbsolute(ctx, field)
 	case "destExists":
 		return ec.fieldContext_ImportPreview_destExists(ctx, field)
+	case "isSameFile":
+		return ec.fieldContext_ImportPreview_isSameFile(ctx, field)
 	case "isDuplicate":
 		return ec.fieldContext_ImportPreview_isDuplicate(ctx, field)
 	}
@@ -5818,6 +5827,29 @@ func (ec *executionContext) _ImportPreview_destExists(ctx context.Context, field
 	)
 }
 func (ec *executionContext) fieldContext_ImportPreview_destExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ImportPreview_isSameFile(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportPreview_isSameFile(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IsSameFile, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportPreview_isSameFile(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -21938,6 +21970,11 @@ func (ec *executionContext) _ImportPreview(ctx context.Context, sel ast.Selectio
 			}
 		case "destExists":
 			out.Values[i] = ec._ImportPreview_destExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isSameFile":
+			out.Values[i] = ec._ImportPreview_isSameFile(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

@@ -526,18 +526,24 @@ type RegenerateNFOResult {
 # (LibraryRoot + folder + file + ext); destFolder + destFile are the
 # split-apart pieces in case the UI wants to render them separately.
 #
-# destExists / isDuplicate surface a destination-conflict check the
-# modal renders as a warning banner so the user isn't silently
-# overwriting an existing file. destExists=true + isDuplicate=true →
-# the source and destination have identical content (size + sha256)
-# and the import would be a no-op; destExists=true + isDuplicate=false
-# → import would overwrite the existing file with different content
-# and requires explicit overwrite confirmation on the mutation.
+# destExists / isSameFile / isDuplicate surface a destination-conflict
+# check the modal renders so the user isn't silently overwriting an
+# existing file. The three flags are mutually exclusive when
+# destExists is true:
+#   - isSameFile=true   → src and dest resolve to the same on-disk
+#     entry (the file is already at its canonical location). Import
+#     proceeds without moving — Plan.Apply short-circuits to a no-op.
+#     Common during library-root backfill.
+#   - isDuplicate=true  → dest is a different file with matching size.
+#     Import is a no-op; the modal surfaces this as informational.
+#   - both false        → dest holds a different file. Import would
+#     overwrite and requires explicit overwrite=true on the mutation.
 type ImportPreview {
   destFolder: String!
   destFile: String!
   destAbsolute: String!
   destExists: Boolean!
+  isSameFile: Boolean!
   isDuplicate: Boolean!
 }
 
