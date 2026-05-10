@@ -11,7 +11,7 @@
 // Sort + page are URL-driven (deep links work).
 
 import m from 'https://esm.sh/mithril@2.2.2';
-import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import Pagination from './Pagination.js';
 
@@ -94,18 +94,80 @@ function pushURLParams() {
   m.route.set('/shows', out, { replace: true });
 }
 
+// SHOWS_LIST_QUERY hits the showsList custom resolver — the offset-
+// paginated by-show aggregate that mirrors /api/v1/shows. The
+// stateCounts subselection picks the per-status fields the SPA renders
+// as a badge cluster.
+const SHOWS_LIST_QUERY = `
+  query ShowsList($sort: String, $dir: String, $limit: Int, $offset: Int) {
+    showsList(sort: $sort, dir: $dir, limit: $limit, offset: $offset) {
+      total
+      items {
+        id
+        name
+        recordingCount
+        firstYear
+        lastYear
+        localPosterURL
+        stateCounts {
+          synced
+          formatMismatch
+          missing
+          wanted
+          orphan
+        }
+      }
+    }
+  }
+`;
+
+// stripIDPrefix turns "show-1234" into "1234". The /shows/:id routes
+// take int64 ids so the SPA strips the prefix at the GraphQL boundary.
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// mapShowItem rewrites a GraphQL ShowsListItem into the snake_case
+// shape the renderer expects. state_counts is a flat
+// {[token]: count} map post-mapping so the badge cluster keeps its
+// existing shape.
+function mapShowItem(node) {
+  if (!node) return null;
+  const sc = node.stateCounts || {};
+  return {
+    id:               Number(stripIDPrefix(node.id)),
+    name:             node.name || '',
+    recording_count:  node.recordingCount || 0,
+    first_year:       node.firstYear == null ? null : node.firstYear,
+    last_year:        node.lastYear == null ? null : node.lastYear,
+    local_poster_url: node.localPosterURL || '',
+    state_counts: {
+      synced:          sc.synced || 0,
+      format_mismatch: sc.formatMismatch || 0,
+      missing:         sc.missing || 0,
+      wanted:          sc.wanted || 0,
+      orphan:          sc.orphan || 0,
+    },
+  };
+}
+
 function loadShows() {
   const s = state.showsList;
   s.loading = true;
   s.error = null;
-  const params = new URLSearchParams();
-  params.set('limit', String(s.limit));
-  params.set('offset', String(s.offset));
-  params.set('sort', s.sortKey);
-  params.set('dir', s.sortDir);
-  return api.get('/shows?' + params.toString()).then((body) => {
-    s.items = (body && body.items) || [];
-    s.total = (body && body.total) || 0;
+  const variables = {
+    limit:  s.limit,
+    offset: s.offset,
+    sort:   s.sortKey,
+    dir:    s.sortDir,
+  };
+  return graphql.query(SHOWS_LIST_QUERY, variables).then((data) => {
+    const env = (data && data.showsList) || {};
+    const items = Array.isArray(env.items) ? env.items : [];
+    s.items = items.map(mapShowItem).filter(Boolean);
+    s.total = env.total || 0;
     s.loading = false;
   }).catch((err) => {
     s.error = err;

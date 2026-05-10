@@ -7,6 +7,7 @@
 schema:
   - schema.graphql
   - ent.graphql
+  - enrichment.graphql
 
 exec:
   filename: generated.go
@@ -45,10 +46,17 @@ omit_getters: true
 # Tell gqlgen the Node interface is implemented by ent.Noder, the
 # generated marker type entgql produces. Without this gqlgen emits its
 # own interface that ent's types don't satisfy.
+#
+# The ID scalar resolves through promptbook's PrefixedID marshaler
+# pair (graph.MarshalPrefixedID / graph.UnmarshalPrefixedID) so every
+# id on the wire is formatted `<type>-<int64>` (recording-1234,
+# show-5678, etc.). The Go-side type stays int64 — the prefix is a
+# wire-format detail enforced at the graph boundary. See
+# prefixed_id.go for the prefix table + Field-context-aware logic.
 models:
   ID:
     model:
-      - github.com/99designs/gqlgen/graphql.Int64
+      - github.com/nicolerenee/promptbook/internal/server/graph.PrefixedID
   Node:
     model:
       - github.com/nicolerenee/promptbook/internal/ent.Noder

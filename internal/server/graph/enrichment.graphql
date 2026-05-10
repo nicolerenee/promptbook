@@ -1,0 +1,185 @@
+# enrichment.graphql — server-side derived fields layered on top of
+# the entgql-generated schema.
+#
+# entgql owns ent.graphql; that file is regenerated every codegen run
+# and any hand-edits get blown away. The fields below either need
+# logic that doesn't live on the ent graph (file-system mtime,
+# reconciler-derived status, image-cache URLs) or shape that doesn't
+# round-trip cleanly through ent's "field on a column" model
+# (BannerLayout's parsed-from-JSON struct, the per-status histogram
+# on Show).
+#
+# All resolvers live in enrichment.resolvers.go. The fields are added
+# to the existing ent types via `extend type` so the connection +
+# where-input plumbing entgql produced for those types still works.
+
+# BannerLayout is the parsed-from-OverlayStyleJSON shape the recording
+# detail page consumes. Mirrors bannerLayoutResponse from the legacy
+# REST endpoint. Both fields default to empty string when nothing is
+# persisted; the SPA falls back to "bottom" / "middle" defaults.
+type BannerLayout {
+  position: String!
+  imageRegion: String!
+}
+
+# ShowStateCounts is the per-status histogram a Show carries. The five
+# Status tokens (synced / format_mismatch / missing / wanted / orphan)
+# get one Int! field each so the SPA can render the badge cluster
+# without parsing a map shape.
+type ShowStateCounts {
+  synced: Int!
+  formatMismatch: Int!
+  missing: Int!
+  wanted: Int!
+  orphan: Int!
+}
+
+# ResolvedCastEntry is the cast-row shape the Recording detail page
+# needs. Mirrors storage.ResolvedCastEntry but adds the local
+# headshot URL the picker resolves through the image cache. Both id
+# fields are PrefixedID — castEntryID points at the join row,
+# performerID at the canonical performer.
+type ResolvedCastEntry {
+  castEntryID: ID!
+  performerID: ID!
+  performerName: String!
+  performerSlug: String!
+  characterID: ID
+  characterName: String
+  statusLabel: String
+  statusAbbrev: String
+  characterOrder: Int!
+  localHeadshotURL: String!
+}
+
+# Recording field extensions. status comes from the storage.LoadState
+# reconciler; the URL fields and nfo* fields read from disk through
+# the image cache + filesystem helpers. bannerLayout +
+# overlayTextOverride + overlayDisabled surface the recording's
+# persisted image-choice fields the SPA already keys off of.
+extend type Recording {
+  status: String!
+  localPosterURL: String!
+  localFanartURL: String!
+  nfoContent: String!
+  nfoModifiedAt: Time
+  bannerLayout: BannerLayout!
+  overlayTextOverride: String
+  overlayDisabled: Boolean!
+  resolvedCast: [ResolvedCastEntry!]!
+  # Reconciler-derived booleans + format strings the SPA detail page
+  # uses to drive its danger-zone + format-mismatch surfaces. Sourced
+  # from the same storage.LoadState reconciler that powers `status`
+  # so the values agree across fields.
+  inCollection: Boolean!
+  inWants: Boolean!
+  encoraFormat: String!
+  localFormatString: String!
+  collectedAt: String
+}
+
+# Show field extensions. localBannerURL + recordingCount + stateCounts
+# match the legacy ShowDetailResponse fields; firstYear / lastYear
+# span the show's recordings so the detail header reads "2017 — 2024".
+# description is sourced from the first non-empty
+# show_description across the show's recordings (mirrors the REST
+# loadShowDescription helper).
+extend type Show {
+  localBannerURL: String!
+  recordingCount: Int!
+  stateCounts: ShowStateCounts!
+  firstYear: Int
+  lastYear: Int
+  description: String!
+}
+
+# Performer field extensions. localHeadshotURL is the only enrichment
+# the people pages need — performer.recordings is already exposed via
+# the entgql-generated edge.
+extend type Performer {
+  localHeadshotURL: String!
+}
+
+# RecordingsListItem mirrors the REST RecordingListItem shape — the
+# fields the SPA's recordings list needs to render rows (show name,
+# date, tour, master, status, format). Sourced through storage's
+# reconciler so the by-status filter agrees with the per-recording
+# Status field. Distinct from `Recording` (the ent type) because the
+# list page needs a flatter shape than the full node — show name + the
+# reconciler-derived status flatten across into a single struct so
+# the SPA template doesn't have to chase edges per row.
+type RecordingsListItem {
+  id: ID!
+  showID: ID!
+  show: String!
+  tour: String!
+  dateFull: String!
+  dateMonthKnown: Boolean!
+  dateDayKnown: Boolean!
+  master: String!
+  status: String!
+  inCollection: Boolean!
+  inWants: Boolean!
+  fileCount: Int!
+  encoraFormat: String!
+  localFormat: String!
+  localPosterURL: String!
+}
+
+# RecordingsListPage is the offset-paginated envelope the SPA list
+# pages expect (mirrors the REST { items, total, limit, offset }
+# shape). Stays flat rather than wrapping in a Relay connection
+# because the page UX is fundamentally page-N-of-M; cursor-based
+# pagination doesn't help when the user clicks "Page 7" directly.
+type RecordingsListPage {
+  items: [RecordingsListItem!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+# ShowsListItem mirrors the REST ShowListItem shape — same flatten
+# rationale as RecordingsListItem. stateCounts surfaces the per-show
+# status histogram the SPA renders as a badge cluster.
+type ShowsListItem {
+  id: ID!
+  name: String!
+  recordingCount: Int!
+  stateCounts: ShowStateCounts!
+  firstYear: Int
+  lastYear: Int
+  localPosterURL: String!
+}
+
+type ShowsListPage {
+  items: [ShowsListItem!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+extend type Query {
+  # recordingsList is the offset-paginated, status-aware list query
+  # the SPA's recordings page hits. status is a comma-separated set of
+  # storage.Status tokens (synced / format_mismatch / missing /
+  # wanted / orphan); empty string disables the filter. sort is one of
+  # 'recording' / 'date' / 'master' / 'local_format' / 'status'; dir
+  # is 'asc' / 'desc'. Mirrors the legacy /api/v1/recordings shape so
+  # the SPA layer is a thin wire-format swap.
+  recordingsList(
+    status: String
+    sort: String
+    dir: String
+    limit: Int
+    offset: Int
+  ): RecordingsListPage!
+
+  # showsList is the offset-paginated, sortable by-show aggregate the
+  # SPA's /shows page hits. Mirrors /api/v1/shows.
+  showsList(
+    sort: String
+    dir: String
+    limit: Int
+    offset: Int
+  ): ShowsListPage!
+}

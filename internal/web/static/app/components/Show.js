@@ -16,6 +16,7 @@
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import { smartDate } from '../utils/format.js';
 import {
@@ -84,17 +85,119 @@ function cmpStr(a, b) {
   return 0;
 }
 
-// loadShow fetches /api/v1/shows/:id and parks the response on
-// state.show. Used both on initial mount and after a successful
-// poster pick so the highlighted thumb updates.
+// SHOW_DETAIL_QUERY pulls the show + its in-library recordings via
+// GraphQL. The Recording subselection inside the Relay connection
+// produces the same per-recording row shape the legacy ShowDetail
+// REST handler emitted; mapShowDetail collapses it back to the
+// snake_case keys the renderer was written against. Image-picker
+// writes (banner-from-url / banner-upload / refresh-images) stay on
+// REST.
+const SHOW_DETAIL_QUERY = `
+  query ShowDetail($id: ID!) {
+    show(id: $id) {
+      id
+      name
+      description
+      recordingCount
+      firstYear
+      lastYear
+      localBannerURL
+      stateCounts {
+        synced
+        formatMismatch
+        missing
+        wanted
+        orphan
+      }
+      recordings(first: 500, orderBy: { field: DATE_FULL, direction: ASC }) {
+        edges {
+          node {
+            id
+            tour
+            master
+            dateFull
+            dateMonthKnown
+            dateDayKnown
+            status
+            inCollection
+            inWants
+            encoraFormat
+            localFormatString
+            localPosterURL
+          }
+        }
+      }
+    }
+  }
+`;
+
+// stripIDPrefix turns "show-1234" into "1234".
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// mapShowDetail rewrites a GraphQL Show node into the snake_case
+// shape the renderer expects. state_counts is a flat
+// {[token]: count} map post-mapping. Recordings come out as a flat
+// array (the renderer doesn't distinguish edges).
+function mapShowDetail(node) {
+  if (!node) return null;
+  const sc = node.stateCounts || {};
+  const recs = ((node.recordings && node.recordings.edges) || [])
+    .map((e) => e && e.node)
+    .filter(Boolean)
+    .map((r) => ({
+      id:               Number(stripIDPrefix(r.id)),
+      tour:             r.tour || '',
+      master:           r.master || '',
+      date_full:        r.dateFull || '',
+      date_month_known: !!r.dateMonthKnown,
+      date_day_known:   !!r.dateDayKnown,
+      status:           r.status || '',
+      in_collection:    !!r.inCollection,
+      in_wants:         !!r.inWants,
+      encora_format:    r.encoraFormat || '',
+      local_format:     r.localFormatString || '',
+      local_poster_url: r.localPosterURL || '',
+    }));
+  return {
+    id:               Number(stripIDPrefix(node.id)),
+    name:             node.name || '',
+    description:      node.description || '',
+    recording_count:  node.recordingCount || 0,
+    first_year:       node.firstYear == null ? null : node.firstYear,
+    last_year:        node.lastYear == null ? null : node.lastYear,
+    local_banner_url: node.localBannerURL || '',
+    state_counts: {
+      synced:          sc.synced || 0,
+      format_mismatch: sc.formatMismatch || 0,
+      missing:         sc.missing || 0,
+      wanted:          sc.wanted || 0,
+      orphan:          sc.orphan || 0,
+    },
+    recordings: recs,
+  };
+}
+
+// loadShow fetches the show detail payload via GraphQL and parks the
+// shaped result on state.show. Used both on initial mount and after a
+// successful poster pick so the highlighted thumb updates.
 function loadShow(id) {
   state.show.loading = true;
   state.show.error = null;
   state.show.id = id;
   state.show.imageError = null;
-  return api.get('/shows/' + encodeURIComponent(id))
-    .then((body) => {
-      state.show.detail = body || null;
+  return graphql.query(SHOW_DETAIL_QUERY, { id: 'show-' + id })
+    .then((data) => {
+      const node = data && data.show;
+      if (!node) {
+        const err = new Error('Show not found.');
+        err.status = 404;
+        throw err;
+      }
+      state.show.detail = mapShowDetail(node);
       state.show.loading = false;
     })
     .catch((err) => {

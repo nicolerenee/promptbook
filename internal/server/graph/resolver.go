@@ -10,19 +10,26 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 )
 
 // Resolver is the root resolver. It carries the ent client every
-// generated resolver method calls into.
+// generated resolver method calls into, plus the image cache the
+// enrichment resolvers (poster URL, fanart URL, headshot URL) use to
+// derive `/images/...` paths from int64 entity ids.
+//
+// imageCache may be nil — when caching is disabled, the URL helpers
+// return empty strings so the SPA renders its placeholder branch.
 type Resolver struct {
-	client *ent.Client
+	client     *ent.Client
+	imageCache *imagecache.Cache
 }
 
 // NewSchema builds an executable GraphQL schema rooted at the supplied
-// ent client. The returned schema is wired into the gqlgen handler at
-// the server-package layer.
-func NewSchema(client *ent.Client) graphql.ExecutableSchema {
+// ent client + image cache. The image cache is optional; pass nil
+// when image caching is disabled at the server layer.
+func NewSchema(client *ent.Client, cache *imagecache.Cache) graphql.ExecutableSchema {
 	return NewExecutableSchema(Config{
-		Resolvers: &Resolver{client: client},
+		Resolvers: &Resolver{client: client, imageCache: cache},
 	})
 }

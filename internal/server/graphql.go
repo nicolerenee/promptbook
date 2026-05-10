@@ -13,6 +13,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
 )
 
@@ -32,11 +33,12 @@ const graphqlAPQCacheSize = 100
 const websocketKeepAlive = 10 * time.Second
 
 // newGraphQLHandler builds a configured gqlgen server backed by the
-// supplied ent client. Mirrors gqlgen's deprecated NewDefaultServer
-// (transports + introspection + APQ + LRU query cache) but pinned to
-// the constants defined above.
-func newGraphQLHandler(client *ent.Client) *handler.Server {
-	srv := handler.New(graph.NewSchema(client))
+// supplied ent client + image cache. Mirrors gqlgen's deprecated
+// NewDefaultServer (transports + introspection + APQ + LRU query
+// cache) but pinned to the constants defined above. cache may be nil
+// — the enrichment resolvers nil-check before reading.
+func newGraphQLHandler(client *ent.Client, cache *imagecache.Cache) *handler.Server {
+	srv := handler.New(graph.NewSchema(client, cache))
 	srv.AddTransport(transport.Websocket{KeepAlivePingInterval: websocketKeepAlive})
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
@@ -59,9 +61,11 @@ func newGraphQLHandler(client *ent.Client) *handler.Server {
 // POST + GET land on the gqlgen handler (POST for queries, GET for
 // CORS pre-flight handling and Apollo-compatible GET queries). The
 // playground mounts at /graphql/playground so the live endpoint is
-// JSON-only and tooling has a separate URL to bookmark.
+// JSON-only and tooling has a separate URL to bookmark. The image
+// cache is plumbed through so the enrichment resolvers can derive
+// /images/... URLs without re-reading server state.
 func (s *Server) registerGraphQL() {
-	gql := newGraphQLHandler(s.db)
+	gql := newGraphQLHandler(s.db, s.imageCache)
 	s.echo.POST("/graphql", echo.WrapHandler(gql))
 	s.echo.GET("/graphql", echo.WrapHandler(gql))
 	s.echo.GET(

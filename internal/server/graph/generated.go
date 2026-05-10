@@ -31,13 +31,21 @@ func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 type Config = graphql.Config[ResolverRoot, DirectiveRoot, ComplexityRoot]
 
 type ResolverRoot interface {
+	Performer() PerformerResolver
 	Query() QueryResolver
+	Recording() RecordingResolver
+	Show() ShowResolver
 }
 
 type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	BannerLayout struct {
+		ImageRegion func(childComplexity int) int
+		Position    func(childComplexity int) int
+	}
+
 	CastEntry struct {
 		CharacterID    func(childComplexity int) int
 		CharacterName  func(childComplexity int) int
@@ -95,11 +103,12 @@ type ComplexityRoot struct {
 	}
 
 	Performer struct {
-		ID         func(childComplexity int) int
-		LastSeenAt func(childComplexity int) int
-		Name       func(childComplexity int) int
-		Slug       func(childComplexity int) int
-		URL        func(childComplexity int) int
+		ID               func(childComplexity int) int
+		LastSeenAt       func(childComplexity int) int
+		LocalHeadshotURL func(childComplexity int) int
+		Name             func(childComplexity int) int
+		Slug             func(childComplexity int) int
+		URL              func(childComplexity int) int
 	}
 
 	PerformerConnection struct {
@@ -122,8 +131,10 @@ type ComplexityRoot struct {
 		Performers        func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.PerformerOrder, where *ent.PerformerWhereInput) int
 		Recording         func(childComplexity int, id int64) int
 		Recordings        func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
+		RecordingsList    func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
 		Show              func(childComplexity int, id int64) int
 		Shows             func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.ShowOrder, where *ent.ShowWhereInput) int
+		ShowsList         func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
 		SyncRuns          func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.SyncRunOrder, where *ent.SyncRunWhereInput) int
 		WantsEntries      func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.WantsEntryOrder, where *ent.WantsEntryWhereInput) int
 		WantsEntry        func(childComplexity int, id int64) int
@@ -131,18 +142,23 @@ type ComplexityRoot struct {
 
 	Recording struct {
 		AmountRecorded      func(childComplexity int) int
+		BannerLayout        func(childComplexity int) int
 		BootCampRecommended func(childComplexity int) int
 		CastEntries         func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, where *ent.CastEntryWhereInput) int
 		City                func(childComplexity int) int
+		CollectedAt         func(childComplexity int) int
 		DateDayKnown        func(childComplexity int) int
 		DateFull            func(childComplexity int) int
 		DateMonthKnown      func(childComplexity int) int
 		DateTime            func(childComplexity int) int
 		DateVariant         func(childComplexity int) int
+		EncoraFormat        func(childComplexity int) int
 		GiftingStatus       func(childComplexity int) int
 		HasScreenshots      func(childComplexity int) int
 		HasSubtitles        func(childComplexity int) int
 		ID                  func(childComplexity int) int
+		InCollection        func(childComplexity int) int
+		InWants             func(childComplexity int) int
 		IsClosing           func(childComplexity int) int
 		IsConcert           func(childComplexity int) int
 		IsFavourite         func(childComplexity int) int
@@ -152,18 +168,27 @@ type ComplexityRoot struct {
 		LastSeenAt          func(childComplexity int) int
 		LastUpdated         func(childComplexity int) int
 		LimitedStatus       func(childComplexity int) int
+		LocalFanartURL      func(childComplexity int) int
+		LocalFormatString   func(childComplexity int) int
+		LocalPosterURL      func(childComplexity int) int
 		Master              func(childComplexity int) int
 		MasterNotes         func(childComplexity int) int
 		MediaType           func(childComplexity int) int
+		NfoContent          func(childComplexity int) int
+		NfoModifiedAt       func(childComplexity int) int
 		NftDate             func(childComplexity int) int
 		NftForever          func(childComplexity int) int
 		Notes               func(childComplexity int) int
+		OverlayDisabled     func(childComplexity int) int
+		OverlayTextOverride func(childComplexity int) int
 		OwnersCount         func(childComplexity int) int
 		RawJSON             func(childComplexity int) int
 		RecordingType       func(childComplexity int) int
 		ReleaseFormat       func(childComplexity int) int
+		ResolvedCast        func(childComplexity int) int
 		Show                func(childComplexity int) int
 		ShowID              func(childComplexity int) int
+		Status              func(childComplexity int) int
 		Tour                func(childComplexity int) int
 		Venue               func(childComplexity int) int
 		Versions            func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, where *ent.RecordingVersionWhereInput) int
@@ -208,12 +233,56 @@ type ComplexityRoot struct {
 		Node   func(childComplexity int) int
 	}
 
+	RecordingsListItem struct {
+		DateDayKnown   func(childComplexity int) int
+		DateFull       func(childComplexity int) int
+		DateMonthKnown func(childComplexity int) int
+		EncoraFormat   func(childComplexity int) int
+		FileCount      func(childComplexity int) int
+		ID             func(childComplexity int) int
+		InCollection   func(childComplexity int) int
+		InWants        func(childComplexity int) int
+		LocalFormat    func(childComplexity int) int
+		LocalPosterURL func(childComplexity int) int
+		Master         func(childComplexity int) int
+		Show           func(childComplexity int) int
+		ShowID         func(childComplexity int) int
+		Status         func(childComplexity int) int
+		Tour           func(childComplexity int) int
+	}
+
+	RecordingsListPage struct {
+		Items  func(childComplexity int) int
+		Limit  func(childComplexity int) int
+		Offset func(childComplexity int) int
+		Total  func(childComplexity int) int
+	}
+
+	ResolvedCastEntry struct {
+		CastEntryID      func(childComplexity int) int
+		CharacterID      func(childComplexity int) int
+		CharacterName    func(childComplexity int) int
+		CharacterOrder   func(childComplexity int) int
+		LocalHeadshotURL func(childComplexity int) int
+		PerformerID      func(childComplexity int) int
+		PerformerName    func(childComplexity int) int
+		PerformerSlug    func(childComplexity int) int
+		StatusAbbrev     func(childComplexity int) int
+		StatusLabel      func(childComplexity int) int
+	}
+
 	Show struct {
+		Description     func(childComplexity int) int
 		DescriptionHTML func(childComplexity int) int
+		FirstYear       func(childComplexity int) int
 		ID              func(childComplexity int) int
 		LastSeenAt      func(childComplexity int) int
+		LastYear        func(childComplexity int) int
+		LocalBannerURL  func(childComplexity int) int
 		Name            func(childComplexity int) int
+		RecordingCount  func(childComplexity int) int
 		Recordings      func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
+		StateCounts     func(childComplexity int) int
 	}
 
 	ShowConnection struct {
@@ -225,6 +294,31 @@ type ComplexityRoot struct {
 	ShowEdge struct {
 		Cursor func(childComplexity int) int
 		Node   func(childComplexity int) int
+	}
+
+	ShowStateCounts struct {
+		FormatMismatch func(childComplexity int) int
+		Missing        func(childComplexity int) int
+		Orphan         func(childComplexity int) int
+		Synced         func(childComplexity int) int
+		Wanted         func(childComplexity int) int
+	}
+
+	ShowsListItem struct {
+		FirstYear      func(childComplexity int) int
+		ID             func(childComplexity int) int
+		LastYear       func(childComplexity int) int
+		LocalPosterURL func(childComplexity int) int
+		Name           func(childComplexity int) int
+		RecordingCount func(childComplexity int) int
+		StateCounts    func(childComplexity int) int
+	}
+
+	ShowsListPage struct {
+		Items  func(childComplexity int) int
+		Limit  func(childComplexity int) int
+		Offset func(childComplexity int) int
+		Total  func(childComplexity int) int
 	}
 
 	SyncRun struct {
@@ -266,6 +360,9 @@ type ComplexityRoot struct {
 	}
 }
 
+type PerformerResolver interface {
+	LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error)
+}
 type QueryResolver interface {
 	Node(ctx context.Context, id int64) (ent.Noder, error)
 	Nodes(ctx context.Context, ids []int64) ([]ent.Noder, error)
@@ -280,6 +377,32 @@ type QueryResolver interface {
 	Performer(ctx context.Context, id int64) (*ent.Performer, error)
 	CollectionEntry(ctx context.Context, id int64) (*ent.CollectionEntry, error)
 	WantsEntry(ctx context.Context, id int64) (*ent.WantsEntry, error)
+	RecordingsList(ctx context.Context, status *string, sort *string, dir *string, limit *int, offset *int) (*RecordingsListPage, error)
+	ShowsList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*ShowsListPage, error)
+}
+type RecordingResolver interface {
+	Status(ctx context.Context, obj *ent.Recording) (string, error)
+	LocalPosterURL(ctx context.Context, obj *ent.Recording) (string, error)
+	LocalFanartURL(ctx context.Context, obj *ent.Recording) (string, error)
+	NfoContent(ctx context.Context, obj *ent.Recording) (string, error)
+	NfoModifiedAt(ctx context.Context, obj *ent.Recording) (*time.Time, error)
+	BannerLayout(ctx context.Context, obj *ent.Recording) (*BannerLayout, error)
+	OverlayTextOverride(ctx context.Context, obj *ent.Recording) (*string, error)
+	OverlayDisabled(ctx context.Context, obj *ent.Recording) (bool, error)
+	ResolvedCast(ctx context.Context, obj *ent.Recording) ([]*ResolvedCastEntry, error)
+	InCollection(ctx context.Context, obj *ent.Recording) (bool, error)
+	InWants(ctx context.Context, obj *ent.Recording) (bool, error)
+	EncoraFormat(ctx context.Context, obj *ent.Recording) (string, error)
+	LocalFormatString(ctx context.Context, obj *ent.Recording) (string, error)
+	CollectedAt(ctx context.Context, obj *ent.Recording) (*string, error)
+}
+type ShowResolver interface {
+	LocalBannerURL(ctx context.Context, obj *ent.Show) (string, error)
+	RecordingCount(ctx context.Context, obj *ent.Show) (int, error)
+	StateCounts(ctx context.Context, obj *ent.Show) (*ShowStateCounts, error)
+	FirstYear(ctx context.Context, obj *ent.Show) (*int, error)
+	LastYear(ctx context.Context, obj *ent.Show) (*int, error)
+	Description(ctx context.Context, obj *ent.Show) (string, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -295,6 +418,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "BannerLayout.imageRegion":
+		if e.ComplexityRoot.BannerLayout.ImageRegion == nil {
+			break
+		}
+
+		return e.ComplexityRoot.BannerLayout.ImageRegion(childComplexity), true
+	case "BannerLayout.position":
+		if e.ComplexityRoot.BannerLayout.Position == nil {
+			break
+		}
+
+		return e.ComplexityRoot.BannerLayout.Position(childComplexity), true
 
 	case "CastEntry.characterID":
 		if e.ComplexityRoot.CastEntry.CharacterID == nil {
@@ -525,6 +661,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Performer.LastSeenAt(childComplexity), true
+	case "Performer.localHeadshotURL":
+		if e.ComplexityRoot.Performer.LocalHeadshotURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Performer.LocalHeadshotURL(childComplexity), true
 	case "Performer.name":
 		if e.ComplexityRoot.Performer.Name == nil {
 			break
@@ -665,6 +807,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Recordings(childComplexity, args["after"].(*entgql.Cursor[int64]), args["first"].(*int), args["before"].(*entgql.Cursor[int64]), args["last"].(*int), args["orderBy"].(*ent.RecordingOrder), args["where"].(*ent.RecordingWhereInput)), true
+	case "Query.recordingsList":
+		if e.ComplexityRoot.Query.RecordingsList == nil {
+			break
+		}
+
+		args, err := ec.field_Query_recordingsList_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.RecordingsList(childComplexity, args["status"].(*string), args["sort"].(*string), args["dir"].(*string), args["limit"].(*int), args["offset"].(*int)), true
 	case "Query.show":
 		if e.ComplexityRoot.Query.Show == nil {
 			break
@@ -687,6 +840,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Shows(childComplexity, args["after"].(*entgql.Cursor[int64]), args["first"].(*int), args["before"].(*entgql.Cursor[int64]), args["last"].(*int), args["orderBy"].(*ent.ShowOrder), args["where"].(*ent.ShowWhereInput)), true
+	case "Query.showsList":
+		if e.ComplexityRoot.Query.ShowsList == nil {
+			break
+		}
+
+		args, err := ec.field_Query_showsList_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.ShowsList(childComplexity, args["sort"].(*string), args["dir"].(*string), args["limit"].(*int), args["offset"].(*int)), true
 	case "Query.syncRuns":
 		if e.ComplexityRoot.Query.SyncRuns == nil {
 			break
@@ -727,6 +891,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.AmountRecorded(childComplexity), true
+	case "Recording.bannerLayout":
+		if e.ComplexityRoot.Recording.BannerLayout == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.BannerLayout(childComplexity), true
 	case "Recording.bootCampRecommended":
 		if e.ComplexityRoot.Recording.BootCampRecommended == nil {
 			break
@@ -750,6 +920,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.City(childComplexity), true
+	case "Recording.collectedAt":
+		if e.ComplexityRoot.Recording.CollectedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.CollectedAt(childComplexity), true
 	case "Recording.dateDayKnown":
 		if e.ComplexityRoot.Recording.DateDayKnown == nil {
 			break
@@ -780,6 +956,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.DateVariant(childComplexity), true
+	case "Recording.encoraFormat":
+		if e.ComplexityRoot.Recording.EncoraFormat == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.EncoraFormat(childComplexity), true
 	case "Recording.giftingStatus":
 		if e.ComplexityRoot.Recording.GiftingStatus == nil {
 			break
@@ -804,6 +986,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.ID(childComplexity), true
+	case "Recording.inCollection":
+		if e.ComplexityRoot.Recording.InCollection == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.InCollection(childComplexity), true
+	case "Recording.inWants":
+		if e.ComplexityRoot.Recording.InWants == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.InWants(childComplexity), true
 	case "Recording.isClosing":
 		if e.ComplexityRoot.Recording.IsClosing == nil {
 			break
@@ -858,6 +1052,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.LimitedStatus(childComplexity), true
+	case "Recording.localFanartURL":
+		if e.ComplexityRoot.Recording.LocalFanartURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.LocalFanartURL(childComplexity), true
+	case "Recording.localFormatString":
+		if e.ComplexityRoot.Recording.LocalFormatString == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.LocalFormatString(childComplexity), true
+	case "Recording.localPosterURL":
+		if e.ComplexityRoot.Recording.LocalPosterURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.LocalPosterURL(childComplexity), true
 	case "Recording.master":
 		if e.ComplexityRoot.Recording.Master == nil {
 			break
@@ -876,6 +1088,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.MediaType(childComplexity), true
+	case "Recording.nfoContent":
+		if e.ComplexityRoot.Recording.NfoContent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.NfoContent(childComplexity), true
+	case "Recording.nfoModifiedAt":
+		if e.ComplexityRoot.Recording.NfoModifiedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.NfoModifiedAt(childComplexity), true
 	case "Recording.nftDate":
 		if e.ComplexityRoot.Recording.NftDate == nil {
 			break
@@ -894,6 +1118,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.Notes(childComplexity), true
+	case "Recording.overlayDisabled":
+		if e.ComplexityRoot.Recording.OverlayDisabled == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.OverlayDisabled(childComplexity), true
+	case "Recording.overlayTextOverride":
+		if e.ComplexityRoot.Recording.OverlayTextOverride == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.OverlayTextOverride(childComplexity), true
 	case "Recording.ownersCount":
 		if e.ComplexityRoot.Recording.OwnersCount == nil {
 			break
@@ -918,6 +1154,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.ReleaseFormat(childComplexity), true
+	case "Recording.resolvedCast":
+		if e.ComplexityRoot.Recording.ResolvedCast == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.ResolvedCast(childComplexity), true
 	case "Recording.show":
 		if e.ComplexityRoot.Recording.Show == nil {
 			break
@@ -930,6 +1172,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.ShowID(childComplexity), true
+	case "Recording.status":
+		if e.ComplexityRoot.Recording.Status == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.Status(childComplexity), true
 	case "Recording.tour":
 		if e.ComplexityRoot.Recording.Tour == nil {
 			break
@@ -1103,12 +1351,201 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.RecordingVersionEdge.Node(childComplexity), true
 
+	case "RecordingsListItem.dateDayKnown":
+		if e.ComplexityRoot.RecordingsListItem.DateDayKnown == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.DateDayKnown(childComplexity), true
+	case "RecordingsListItem.dateFull":
+		if e.ComplexityRoot.RecordingsListItem.DateFull == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.DateFull(childComplexity), true
+	case "RecordingsListItem.dateMonthKnown":
+		if e.ComplexityRoot.RecordingsListItem.DateMonthKnown == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.DateMonthKnown(childComplexity), true
+	case "RecordingsListItem.encoraFormat":
+		if e.ComplexityRoot.RecordingsListItem.EncoraFormat == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.EncoraFormat(childComplexity), true
+	case "RecordingsListItem.fileCount":
+		if e.ComplexityRoot.RecordingsListItem.FileCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.FileCount(childComplexity), true
+	case "RecordingsListItem.id":
+		if e.ComplexityRoot.RecordingsListItem.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.ID(childComplexity), true
+	case "RecordingsListItem.inCollection":
+		if e.ComplexityRoot.RecordingsListItem.InCollection == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.InCollection(childComplexity), true
+	case "RecordingsListItem.inWants":
+		if e.ComplexityRoot.RecordingsListItem.InWants == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.InWants(childComplexity), true
+	case "RecordingsListItem.localFormat":
+		if e.ComplexityRoot.RecordingsListItem.LocalFormat == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.LocalFormat(childComplexity), true
+	case "RecordingsListItem.localPosterURL":
+		if e.ComplexityRoot.RecordingsListItem.LocalPosterURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.LocalPosterURL(childComplexity), true
+	case "RecordingsListItem.master":
+		if e.ComplexityRoot.RecordingsListItem.Master == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.Master(childComplexity), true
+	case "RecordingsListItem.show":
+		if e.ComplexityRoot.RecordingsListItem.Show == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.Show(childComplexity), true
+	case "RecordingsListItem.showID":
+		if e.ComplexityRoot.RecordingsListItem.ShowID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.ShowID(childComplexity), true
+	case "RecordingsListItem.status":
+		if e.ComplexityRoot.RecordingsListItem.Status == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.Status(childComplexity), true
+	case "RecordingsListItem.tour":
+		if e.ComplexityRoot.RecordingsListItem.Tour == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.Tour(childComplexity), true
+
+	case "RecordingsListPage.items":
+		if e.ComplexityRoot.RecordingsListPage.Items == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListPage.Items(childComplexity), true
+	case "RecordingsListPage.limit":
+		if e.ComplexityRoot.RecordingsListPage.Limit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListPage.Limit(childComplexity), true
+	case "RecordingsListPage.offset":
+		if e.ComplexityRoot.RecordingsListPage.Offset == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListPage.Offset(childComplexity), true
+	case "RecordingsListPage.total":
+		if e.ComplexityRoot.RecordingsListPage.Total == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListPage.Total(childComplexity), true
+
+	case "ResolvedCastEntry.castEntryID":
+		if e.ComplexityRoot.ResolvedCastEntry.CastEntryID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.CastEntryID(childComplexity), true
+	case "ResolvedCastEntry.characterID":
+		if e.ComplexityRoot.ResolvedCastEntry.CharacterID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.CharacterID(childComplexity), true
+	case "ResolvedCastEntry.characterName":
+		if e.ComplexityRoot.ResolvedCastEntry.CharacterName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.CharacterName(childComplexity), true
+	case "ResolvedCastEntry.characterOrder":
+		if e.ComplexityRoot.ResolvedCastEntry.CharacterOrder == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.CharacterOrder(childComplexity), true
+	case "ResolvedCastEntry.localHeadshotURL":
+		if e.ComplexityRoot.ResolvedCastEntry.LocalHeadshotURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.LocalHeadshotURL(childComplexity), true
+	case "ResolvedCastEntry.performerID":
+		if e.ComplexityRoot.ResolvedCastEntry.PerformerID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.PerformerID(childComplexity), true
+	case "ResolvedCastEntry.performerName":
+		if e.ComplexityRoot.ResolvedCastEntry.PerformerName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.PerformerName(childComplexity), true
+	case "ResolvedCastEntry.performerSlug":
+		if e.ComplexityRoot.ResolvedCastEntry.PerformerSlug == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.PerformerSlug(childComplexity), true
+	case "ResolvedCastEntry.statusAbbrev":
+		if e.ComplexityRoot.ResolvedCastEntry.StatusAbbrev == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.StatusAbbrev(childComplexity), true
+	case "ResolvedCastEntry.statusLabel":
+		if e.ComplexityRoot.ResolvedCastEntry.StatusLabel == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ResolvedCastEntry.StatusLabel(childComplexity), true
+
+	case "Show.description":
+		if e.ComplexityRoot.Show.Description == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Show.Description(childComplexity), true
 	case "Show.descriptionHTML":
 		if e.ComplexityRoot.Show.DescriptionHTML == nil {
 			break
 		}
 
 		return e.ComplexityRoot.Show.DescriptionHTML(childComplexity), true
+	case "Show.firstYear":
+		if e.ComplexityRoot.Show.FirstYear == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Show.FirstYear(childComplexity), true
 	case "Show.id":
 		if e.ComplexityRoot.Show.ID == nil {
 			break
@@ -1121,12 +1558,30 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Show.LastSeenAt(childComplexity), true
+	case "Show.lastYear":
+		if e.ComplexityRoot.Show.LastYear == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Show.LastYear(childComplexity), true
+	case "Show.localBannerURL":
+		if e.ComplexityRoot.Show.LocalBannerURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Show.LocalBannerURL(childComplexity), true
 	case "Show.name":
 		if e.ComplexityRoot.Show.Name == nil {
 			break
 		}
 
 		return e.ComplexityRoot.Show.Name(childComplexity), true
+	case "Show.recordingCount":
+		if e.ComplexityRoot.Show.RecordingCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Show.RecordingCount(childComplexity), true
 	case "Show.recordings":
 		if e.ComplexityRoot.Show.Recordings == nil {
 			break
@@ -1138,6 +1593,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Show.Recordings(childComplexity, args["after"].(*entgql.Cursor[int64]), args["first"].(*int), args["before"].(*entgql.Cursor[int64]), args["last"].(*int), args["orderBy"].(*ent.RecordingOrder), args["where"].(*ent.RecordingWhereInput)), true
+	case "Show.stateCounts":
+		if e.ComplexityRoot.Show.StateCounts == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Show.StateCounts(childComplexity), true
 
 	case "ShowConnection.edges":
 		if e.ComplexityRoot.ShowConnection.Edges == nil {
@@ -1170,6 +1631,105 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ShowEdge.Node(childComplexity), true
+
+	case "ShowStateCounts.formatMismatch":
+		if e.ComplexityRoot.ShowStateCounts.FormatMismatch == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowStateCounts.FormatMismatch(childComplexity), true
+	case "ShowStateCounts.missing":
+		if e.ComplexityRoot.ShowStateCounts.Missing == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowStateCounts.Missing(childComplexity), true
+	case "ShowStateCounts.orphan":
+		if e.ComplexityRoot.ShowStateCounts.Orphan == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowStateCounts.Orphan(childComplexity), true
+	case "ShowStateCounts.synced":
+		if e.ComplexityRoot.ShowStateCounts.Synced == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowStateCounts.Synced(childComplexity), true
+	case "ShowStateCounts.wanted":
+		if e.ComplexityRoot.ShowStateCounts.Wanted == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowStateCounts.Wanted(childComplexity), true
+
+	case "ShowsListItem.firstYear":
+		if e.ComplexityRoot.ShowsListItem.FirstYear == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.FirstYear(childComplexity), true
+	case "ShowsListItem.id":
+		if e.ComplexityRoot.ShowsListItem.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.ID(childComplexity), true
+	case "ShowsListItem.lastYear":
+		if e.ComplexityRoot.ShowsListItem.LastYear == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.LastYear(childComplexity), true
+	case "ShowsListItem.localPosterURL":
+		if e.ComplexityRoot.ShowsListItem.LocalPosterURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.LocalPosterURL(childComplexity), true
+	case "ShowsListItem.name":
+		if e.ComplexityRoot.ShowsListItem.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.Name(childComplexity), true
+	case "ShowsListItem.recordingCount":
+		if e.ComplexityRoot.ShowsListItem.RecordingCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.RecordingCount(childComplexity), true
+	case "ShowsListItem.stateCounts":
+		if e.ComplexityRoot.ShowsListItem.StateCounts == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListItem.StateCounts(childComplexity), true
+
+	case "ShowsListPage.items":
+		if e.ComplexityRoot.ShowsListPage.Items == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListPage.Items(childComplexity), true
+	case "ShowsListPage.limit":
+		if e.ComplexityRoot.ShowsListPage.Limit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListPage.Limit(childComplexity), true
+	case "ShowsListPage.offset":
+		if e.ComplexityRoot.ShowsListPage.Offset == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListPage.Offset(childComplexity), true
+	case "ShowsListPage.total":
+		if e.ComplexityRoot.ShowsListPage.Total == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowsListPage.Total(childComplexity), true
 
 	case "SyncRun.errorCount":
 		if e.ComplexityRoot.SyncRun.ErrorCount == nil {
@@ -1377,7 +1937,7 @@ func newExecutionContext(
 	}
 }
 
-//go:embed "schema.graphql" "ent.graphql"
+//go:embed "schema.graphql" "ent.graphql" "enrichment.graphql"
 var sourcesFS embed.FS
 
 func sourceData(filename string) string {
@@ -1391,12 +1951,23 @@ func sourceData(filename string) string {
 var sources = []*ast.Source{
 	{Name: "schema.graphql", Input: sourceData("schema.graphql"), BuiltIn: false},
 	{Name: "ent.graphql", Input: sourceData("ent.graphql"), BuiltIn: false},
+	{Name: "enrichment.graphql", Input: sourceData("enrichment.graphql"), BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
 // childFields_* functions provide shared child field context lookups.
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
+
+func (ec *executionContext) childFields_BannerLayout(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "position":
+		return ec.fieldContext_BannerLayout_position(ctx, field)
+	case "imageRegion":
+		return ec.fieldContext_BannerLayout_imageRegion(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type BannerLayout", field.Name)
+}
 
 func (ec *executionContext) childFields_CastEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
@@ -1522,6 +2093,8 @@ func (ec *executionContext) childFields_Performer(ctx context.Context, field gra
 		return ec.fieldContext_Performer_url(ctx, field)
 	case "lastSeenAt":
 		return ec.fieldContext_Performer_lastSeenAt(ctx, field)
+	case "localHeadshotURL":
+		return ec.fieldContext_Performer_localHeadshotURL(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Performer", field.Name)
 }
@@ -1626,6 +2199,34 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_castEntries(ctx, field)
 	case "versions":
 		return ec.fieldContext_Recording_versions(ctx, field)
+	case "status":
+		return ec.fieldContext_Recording_status(ctx, field)
+	case "localPosterURL":
+		return ec.fieldContext_Recording_localPosterURL(ctx, field)
+	case "localFanartURL":
+		return ec.fieldContext_Recording_localFanartURL(ctx, field)
+	case "nfoContent":
+		return ec.fieldContext_Recording_nfoContent(ctx, field)
+	case "nfoModifiedAt":
+		return ec.fieldContext_Recording_nfoModifiedAt(ctx, field)
+	case "bannerLayout":
+		return ec.fieldContext_Recording_bannerLayout(ctx, field)
+	case "overlayTextOverride":
+		return ec.fieldContext_Recording_overlayTextOverride(ctx, field)
+	case "overlayDisabled":
+		return ec.fieldContext_Recording_overlayDisabled(ctx, field)
+	case "resolvedCast":
+		return ec.fieldContext_Recording_resolvedCast(ctx, field)
+	case "inCollection":
+		return ec.fieldContext_Recording_inCollection(ctx, field)
+	case "inWants":
+		return ec.fieldContext_Recording_inWants(ctx, field)
+	case "encoraFormat":
+		return ec.fieldContext_Recording_encoraFormat(ctx, field)
+	case "localFormatString":
+		return ec.fieldContext_Recording_localFormatString(ctx, field)
+	case "collectedAt":
+		return ec.fieldContext_Recording_collectedAt(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Recording", field.Name)
 }
@@ -1706,6 +2307,82 @@ func (ec *executionContext) childFields_RecordingVersionEdge(ctx context.Context
 	return nil, fmt.Errorf("no field named %q was found under type RecordingVersionEdge", field.Name)
 }
 
+func (ec *executionContext) childFields_RecordingsListItem(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_RecordingsListItem_id(ctx, field)
+	case "showID":
+		return ec.fieldContext_RecordingsListItem_showID(ctx, field)
+	case "show":
+		return ec.fieldContext_RecordingsListItem_show(ctx, field)
+	case "tour":
+		return ec.fieldContext_RecordingsListItem_tour(ctx, field)
+	case "dateFull":
+		return ec.fieldContext_RecordingsListItem_dateFull(ctx, field)
+	case "dateMonthKnown":
+		return ec.fieldContext_RecordingsListItem_dateMonthKnown(ctx, field)
+	case "dateDayKnown":
+		return ec.fieldContext_RecordingsListItem_dateDayKnown(ctx, field)
+	case "master":
+		return ec.fieldContext_RecordingsListItem_master(ctx, field)
+	case "status":
+		return ec.fieldContext_RecordingsListItem_status(ctx, field)
+	case "inCollection":
+		return ec.fieldContext_RecordingsListItem_inCollection(ctx, field)
+	case "inWants":
+		return ec.fieldContext_RecordingsListItem_inWants(ctx, field)
+	case "fileCount":
+		return ec.fieldContext_RecordingsListItem_fileCount(ctx, field)
+	case "encoraFormat":
+		return ec.fieldContext_RecordingsListItem_encoraFormat(ctx, field)
+	case "localFormat":
+		return ec.fieldContext_RecordingsListItem_localFormat(ctx, field)
+	case "localPosterURL":
+		return ec.fieldContext_RecordingsListItem_localPosterURL(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RecordingsListItem", field.Name)
+}
+
+func (ec *executionContext) childFields_RecordingsListPage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "items":
+		return ec.fieldContext_RecordingsListPage_items(ctx, field)
+	case "total":
+		return ec.fieldContext_RecordingsListPage_total(ctx, field)
+	case "limit":
+		return ec.fieldContext_RecordingsListPage_limit(ctx, field)
+	case "offset":
+		return ec.fieldContext_RecordingsListPage_offset(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RecordingsListPage", field.Name)
+}
+
+func (ec *executionContext) childFields_ResolvedCastEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "castEntryID":
+		return ec.fieldContext_ResolvedCastEntry_castEntryID(ctx, field)
+	case "performerID":
+		return ec.fieldContext_ResolvedCastEntry_performerID(ctx, field)
+	case "performerName":
+		return ec.fieldContext_ResolvedCastEntry_performerName(ctx, field)
+	case "performerSlug":
+		return ec.fieldContext_ResolvedCastEntry_performerSlug(ctx, field)
+	case "characterID":
+		return ec.fieldContext_ResolvedCastEntry_characterID(ctx, field)
+	case "characterName":
+		return ec.fieldContext_ResolvedCastEntry_characterName(ctx, field)
+	case "statusLabel":
+		return ec.fieldContext_ResolvedCastEntry_statusLabel(ctx, field)
+	case "statusAbbrev":
+		return ec.fieldContext_ResolvedCastEntry_statusAbbrev(ctx, field)
+	case "characterOrder":
+		return ec.fieldContext_ResolvedCastEntry_characterOrder(ctx, field)
+	case "localHeadshotURL":
+		return ec.fieldContext_ResolvedCastEntry_localHeadshotURL(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ResolvedCastEntry", field.Name)
+}
+
 func (ec *executionContext) childFields_Show(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "id":
@@ -1718,6 +2395,18 @@ func (ec *executionContext) childFields_Show(ctx context.Context, field graphql.
 		return ec.fieldContext_Show_lastSeenAt(ctx, field)
 	case "recordings":
 		return ec.fieldContext_Show_recordings(ctx, field)
+	case "localBannerURL":
+		return ec.fieldContext_Show_localBannerURL(ctx, field)
+	case "recordingCount":
+		return ec.fieldContext_Show_recordingCount(ctx, field)
+	case "stateCounts":
+		return ec.fieldContext_Show_stateCounts(ctx, field)
+	case "firstYear":
+		return ec.fieldContext_Show_firstYear(ctx, field)
+	case "lastYear":
+		return ec.fieldContext_Show_lastYear(ctx, field)
+	case "description":
+		return ec.fieldContext_Show_description(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Show", field.Name)
 }
@@ -1742,6 +2431,56 @@ func (ec *executionContext) childFields_ShowEdge(ctx context.Context, field grap
 		return ec.fieldContext_ShowEdge_cursor(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ShowEdge", field.Name)
+}
+
+func (ec *executionContext) childFields_ShowStateCounts(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "synced":
+		return ec.fieldContext_ShowStateCounts_synced(ctx, field)
+	case "formatMismatch":
+		return ec.fieldContext_ShowStateCounts_formatMismatch(ctx, field)
+	case "missing":
+		return ec.fieldContext_ShowStateCounts_missing(ctx, field)
+	case "wanted":
+		return ec.fieldContext_ShowStateCounts_wanted(ctx, field)
+	case "orphan":
+		return ec.fieldContext_ShowStateCounts_orphan(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ShowStateCounts", field.Name)
+}
+
+func (ec *executionContext) childFields_ShowsListItem(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_ShowsListItem_id(ctx, field)
+	case "name":
+		return ec.fieldContext_ShowsListItem_name(ctx, field)
+	case "recordingCount":
+		return ec.fieldContext_ShowsListItem_recordingCount(ctx, field)
+	case "stateCounts":
+		return ec.fieldContext_ShowsListItem_stateCounts(ctx, field)
+	case "firstYear":
+		return ec.fieldContext_ShowsListItem_firstYear(ctx, field)
+	case "lastYear":
+		return ec.fieldContext_ShowsListItem_lastYear(ctx, field)
+	case "localPosterURL":
+		return ec.fieldContext_ShowsListItem_localPosterURL(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ShowsListItem", field.Name)
+}
+
+func (ec *executionContext) childFields_ShowsListPage(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "items":
+		return ec.fieldContext_ShowsListPage_items(ctx, field)
+	case "total":
+		return ec.fieldContext_ShowsListPage_total(ctx, field)
+	case "limit":
+		return ec.fieldContext_ShowsListPage_limit(ctx, field)
+	case "offset":
+		return ec.fieldContext_ShowsListPage_offset(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ShowsListPage", field.Name)
 }
 
 func (ec *executionContext) childFields_SyncRun(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2120,6 +2859,52 @@ func (ec *executionContext) field_Query_recording_args(ctx context.Context, rawA
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_recordingsList_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "status",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["status"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "sort",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sort"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "dir",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["dir"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg4
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_recordings_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2185,6 +2970,44 @@ func (ec *executionContext) field_Query_show_args(ctx context.Context, rawArgs m
 		return nil, err
 	}
 	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_showsList_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "sort",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["sort"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "dir",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["dir"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "offset",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["offset"] = arg3
 	return args, nil
 }
 
@@ -2573,6 +3396,52 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _BannerLayout_position(ctx context.Context, field graphql.CollectedField, obj *BannerLayout) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_BannerLayout_position(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Position, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_BannerLayout_position(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("BannerLayout", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _BannerLayout_imageRegion(ctx context.Context, field graphql.CollectedField, obj *BannerLayout) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_BannerLayout_imageRegion(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ImageRegion, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_BannerLayout_imageRegion(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("BannerLayout", field, false, false, errors.New("field of type String does not have child fields"))
+}
 
 func (ec *executionContext) _CastEntry_id(ctx context.Context, field graphql.CollectedField, obj *ent.CastEntry) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -3557,6 +4426,29 @@ func (ec *executionContext) fieldContext_Performer_lastSeenAt(_ context.Context,
 	return graphql.NewScalarFieldContext("Performer", field, false, false, errors.New("field of type Time does not have child fields"))
 }
 
+func (ec *executionContext) _Performer_localHeadshotURL(ctx context.Context, field graphql.CollectedField, obj *ent.Performer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Performer_localHeadshotURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Performer().LocalHeadshotURL(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Performer_localHeadshotURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Performer", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _PerformerConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.PerformerConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -4265,6 +5157,94 @@ func (ec *executionContext) fieldContext_Query_wantsEntry(ctx context.Context, f
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_wantsEntry_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_recordingsList(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_recordingsList(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().RecordingsList(ctx, fc.Args["status"].(*string), fc.Args["sort"].(*string), fc.Args["dir"].(*string), fc.Args["limit"].(*int), fc.Args["offset"].(*int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *RecordingsListPage) graphql.Marshaler {
+			return ec.marshalNRecordingsListPage2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListPage(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_recordingsList(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordingsListPage(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_recordingsList_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_showsList(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_showsList(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().ShowsList(ctx, fc.Args["sort"].(*string), fc.Args["dir"].(*string), fc.Args["limit"].(*int), fc.Args["offset"].(*int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ShowsListPage) graphql.Marshaler {
+			return ec.marshalNShowsListPage2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListPage(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_showsList(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ShowsListPage(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_showsList_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -5272,6 +6252,346 @@ func (ec *executionContext) fieldContext_Recording_versions(ctx context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Recording_status(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_status(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().Status(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_localPosterURL(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_localPosterURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().LocalPosterURL(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_localPosterURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_localFanartURL(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_localFanartURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().LocalFanartURL(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_localFanartURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_nfoContent(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_nfoContent(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().NfoContent(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_nfoContent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_nfoModifiedAt(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_nfoModifiedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().NfoModifiedAt(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_nfoModifiedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_bannerLayout(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_bannerLayout(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().BannerLayout(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *BannerLayout) graphql.Marshaler {
+			return ec.marshalNBannerLayout2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐBannerLayout(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_bannerLayout(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Recording",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_BannerLayout(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Recording_overlayTextOverride(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_overlayTextOverride(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().OverlayTextOverride(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_overlayTextOverride(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_overlayDisabled(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_overlayDisabled(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().OverlayDisabled(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_overlayDisabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_resolvedCast(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_resolvedCast(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().ResolvedCast(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*ResolvedCastEntry) graphql.Marshaler {
+			return ec.marshalNResolvedCastEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐResolvedCastEntryᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_resolvedCast(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Recording",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ResolvedCastEntry(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Recording_inCollection(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_inCollection(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().InCollection(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_inCollection(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_inWants(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_inWants(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().InWants(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_inWants(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_encoraFormat(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_encoraFormat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().EncoraFormat(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_encoraFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_localFormatString(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_localFormatString(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().LocalFormatString(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_localFormatString(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_collectedAt(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_collectedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().CollectedAt(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_collectedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _RecordingConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.RecordingConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5864,6 +7184,682 @@ func (ec *executionContext) fieldContext_RecordingVersionEdge_cursor(_ context.C
 	return graphql.NewScalarFieldContext("RecordingVersionEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
 }
 
+func (ec *executionContext) _RecordingsListItem_id(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_showID(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_showID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ShowID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_showID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_show(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_show(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Show, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_show(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_tour(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_tour(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Tour, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_tour(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_dateFull(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_dateFull(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DateFull, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_dateFull(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_dateMonthKnown(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_dateMonthKnown(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DateMonthKnown, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_dateMonthKnown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_dateDayKnown(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_dateDayKnown(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DateDayKnown, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_dateDayKnown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_master(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_master(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Master, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_master(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_status(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_status(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Status, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_inCollection(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_inCollection(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InCollection, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_inCollection(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_inWants(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_inWants(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InWants, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_inWants(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_fileCount(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_fileCount(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileCount, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_fileCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_encoraFormat(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_encoraFormat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EncoraFormat, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_encoraFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_localFormat(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_localFormat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LocalFormat, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_localFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_localPosterURL(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_localPosterURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LocalPosterURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_localPosterURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListPage_items(ctx context.Context, field graphql.CollectedField, obj *RecordingsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListPage_items(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Items, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*RecordingsListItem) graphql.Marshaler {
+			return ec.marshalNRecordingsListItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItemᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListPage_items(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RecordingsListPage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordingsListItem(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RecordingsListPage_total(ctx context.Context, field graphql.CollectedField, obj *RecordingsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListPage_total(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Total, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListPage_total(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListPage_limit(ctx context.Context, field graphql.CollectedField, obj *RecordingsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListPage_limit(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Limit, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListPage_limit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListPage_offset(ctx context.Context, field graphql.CollectedField, obj *RecordingsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListPage_offset(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Offset, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListPage_offset(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_castEntryID(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_castEntryID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CastEntryID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_castEntryID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_performerID(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_performerID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PerformerID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_performerID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_performerName(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_performerName(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PerformerName, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_performerName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_performerSlug(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_performerSlug(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PerformerSlug, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_performerSlug(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_characterID(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_characterID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CharacterID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int64) graphql.Marshaler {
+			return ec.marshalOID2ᚖint64(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_characterID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_characterName(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_characterName(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CharacterName, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_characterName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_statusLabel(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_statusLabel(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StatusLabel, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_statusLabel(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_statusAbbrev(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_statusAbbrev(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StatusAbbrev, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_statusAbbrev(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_characterOrder(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_characterOrder(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CharacterOrder, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_characterOrder(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ResolvedCastEntry_localHeadshotURL(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ResolvedCastEntry_localHeadshotURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LocalHeadshotURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ResolvedCastEntry_localHeadshotURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ResolvedCastEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _Show_id(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -5998,6 +7994,153 @@ func (ec *executionContext) fieldContext_Show_recordings(ctx context.Context, fi
 		return fc, err
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _Show_localBannerURL(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Show_localBannerURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Show().LocalBannerURL(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Show_localBannerURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Show", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Show_recordingCount(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Show_recordingCount(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Show().RecordingCount(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Show_recordingCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Show", field, true, true, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Show_stateCounts(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Show_stateCounts(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Show().StateCounts(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ShowStateCounts) graphql.Marshaler {
+			return ec.marshalNShowStateCounts2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowStateCounts(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Show_stateCounts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Show",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ShowStateCounts(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Show_firstYear(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Show_firstYear(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Show().FirstYear(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Show_firstYear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Show", field, true, true, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Show_lastYear(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Show_lastYear(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Show().LastYear(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Show_lastYear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Show", field, true, true, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Show_description(ctx context.Context, field graphql.CollectedField, obj *ent.Show) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Show_description(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Show().Description(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Show_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Show", field, true, true, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _ShowConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.ShowConnection) (ret graphql.Marshaler) {
@@ -6140,6 +8283,392 @@ func (ec *executionContext) _ShowEdge_cursor(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_ShowEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ShowEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
+}
+
+func (ec *executionContext) _ShowStateCounts_synced(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowStateCounts_synced(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Synced, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowStateCounts_synced(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowStateCounts_formatMismatch(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowStateCounts_formatMismatch(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FormatMismatch, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowStateCounts_formatMismatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowStateCounts_missing(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowStateCounts_missing(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Missing, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowStateCounts_missing(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowStateCounts_wanted(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowStateCounts_wanted(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Wanted, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowStateCounts_wanted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowStateCounts_orphan(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowStateCounts_orphan(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Orphan, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowStateCounts_orphan(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListItem_id(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListItem", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListItem_name(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListItem_recordingCount(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_recordingCount(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RecordingCount, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_recordingCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListItem", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListItem_stateCounts(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_stateCounts(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StateCounts, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ShowStateCounts) graphql.Marshaler {
+			return ec.marshalNShowStateCounts2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowStateCounts(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_stateCounts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ShowsListItem",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ShowStateCounts(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ShowsListItem_firstYear(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_firstYear(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FirstYear, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_firstYear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListItem", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListItem_lastYear(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_lastYear(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastYear, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_lastYear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListItem", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListItem_localPosterURL(ctx context.Context, field graphql.CollectedField, obj *ShowsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListItem_localPosterURL(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LocalPosterURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListItem_localPosterURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListPage_items(ctx context.Context, field graphql.CollectedField, obj *ShowsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListPage_items(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Items, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*ShowsListItem) graphql.Marshaler {
+			return ec.marshalNShowsListItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListItemᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListPage_items(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ShowsListPage",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ShowsListItem(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ShowsListPage_total(ctx context.Context, field graphql.CollectedField, obj *ShowsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListPage_total(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Total, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListPage_total(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListPage_limit(ctx context.Context, field graphql.CollectedField, obj *ShowsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListPage_limit(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Limit, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListPage_limit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ShowsListPage_offset(ctx context.Context, field graphql.CollectedField, obj *ShowsListPage) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ShowsListPage_offset(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Offset, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ShowsListPage_offset(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ShowsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _SyncRun_id(ctx context.Context, field graphql.CollectedField, obj *ent.SyncRun) (ret graphql.Marshaler) {
@@ -14213,6 +16742,50 @@ func (ec *executionContext) _Node(ctx context.Context, sel ast.SelectionSet, obj
 
 // region    **************************** object.gotpl ****************************
 
+var bannerLayoutImplementors = []string{"BannerLayout"}
+
+func (ec *executionContext) _BannerLayout(ctx context.Context, sel ast.SelectionSet, obj *BannerLayout) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, bannerLayoutImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("BannerLayout")
+		case "position":
+			out.Values[i] = ec._BannerLayout_position(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "imageRegion":
+			out.Values[i] = ec._BannerLayout_imageRegion(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var castEntryImplementors = []string{"CastEntry", "Node"}
 
 func (ec *executionContext) _CastEntry(ctx context.Context, sel ast.SelectionSet, obj *ent.CastEntry) graphql.Marshaler {
@@ -14638,28 +17211,64 @@ func (ec *executionContext) _Performer(ctx context.Context, sel ast.SelectionSet
 		case "id":
 			out.Values[i] = ec._Performer_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "name":
 			out.Values[i] = ec._Performer_name(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "slug":
 			out.Values[i] = ec._Performer_slug(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "url":
 			out.Values[i] = ec._Performer_url(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "lastSeenAt":
 			out.Values[i] = ec._Performer_lastSeenAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "localHeadshotURL":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Performer_localHeadshotURL(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -15057,6 +17666,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "recordingsList":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_recordingsList(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "showsList":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_showsList(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -15347,6 +18000,501 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "status":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_status(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "localPosterURL":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_localPosterURL(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "localFanartURL":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_localFanartURL(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "nfoContent":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_nfoContent(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "nfoModifiedAt":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_nfoModifiedAt(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "bannerLayout":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_bannerLayout(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "overlayTextOverride":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_overlayTextOverride(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "overlayDisabled":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_overlayDisabled(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "resolvedCast":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_resolvedCast(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "inCollection":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_inCollection(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "inWants":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_inWants(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "encoraFormat":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_encoraFormat(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "localFormatString":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_localFormatString(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "collectedAt":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_collectedAt(ctx, field, obj)
 				return res
 			}
 
@@ -15697,6 +18845,241 @@ func (ec *executionContext) _RecordingVersionEdge(ctx context.Context, sel ast.S
 	return out
 }
 
+var recordingsListItemImplementors = []string{"RecordingsListItem"}
+
+func (ec *executionContext) _RecordingsListItem(ctx context.Context, sel ast.SelectionSet, obj *RecordingsListItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, recordingsListItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RecordingsListItem")
+		case "id":
+			out.Values[i] = ec._RecordingsListItem_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "showID":
+			out.Values[i] = ec._RecordingsListItem_showID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "show":
+			out.Values[i] = ec._RecordingsListItem_show(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tour":
+			out.Values[i] = ec._RecordingsListItem_tour(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dateFull":
+			out.Values[i] = ec._RecordingsListItem_dateFull(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dateMonthKnown":
+			out.Values[i] = ec._RecordingsListItem_dateMonthKnown(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dateDayKnown":
+			out.Values[i] = ec._RecordingsListItem_dateDayKnown(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "master":
+			out.Values[i] = ec._RecordingsListItem_master(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._RecordingsListItem_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inCollection":
+			out.Values[i] = ec._RecordingsListItem_inCollection(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inWants":
+			out.Values[i] = ec._RecordingsListItem_inWants(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "fileCount":
+			out.Values[i] = ec._RecordingsListItem_fileCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "encoraFormat":
+			out.Values[i] = ec._RecordingsListItem_encoraFormat(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "localFormat":
+			out.Values[i] = ec._RecordingsListItem_localFormat(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "localPosterURL":
+			out.Values[i] = ec._RecordingsListItem_localPosterURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var recordingsListPageImplementors = []string{"RecordingsListPage"}
+
+func (ec *executionContext) _RecordingsListPage(ctx context.Context, sel ast.SelectionSet, obj *RecordingsListPage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, recordingsListPageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RecordingsListPage")
+		case "items":
+			out.Values[i] = ec._RecordingsListPage_items(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "total":
+			out.Values[i] = ec._RecordingsListPage_total(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "limit":
+			out.Values[i] = ec._RecordingsListPage_limit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "offset":
+			out.Values[i] = ec._RecordingsListPage_offset(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var resolvedCastEntryImplementors = []string{"ResolvedCastEntry"}
+
+func (ec *executionContext) _ResolvedCastEntry(ctx context.Context, sel ast.SelectionSet, obj *ResolvedCastEntry) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, resolvedCastEntryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ResolvedCastEntry")
+		case "castEntryID":
+			out.Values[i] = ec._ResolvedCastEntry_castEntryID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "performerID":
+			out.Values[i] = ec._ResolvedCastEntry_performerID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "performerName":
+			out.Values[i] = ec._ResolvedCastEntry_performerName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "performerSlug":
+			out.Values[i] = ec._ResolvedCastEntry_performerSlug(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "characterID":
+			out.Values[i] = ec._ResolvedCastEntry_characterID(ctx, field, obj)
+		case "characterName":
+			out.Values[i] = ec._ResolvedCastEntry_characterName(ctx, field, obj)
+		case "statusLabel":
+			out.Values[i] = ec._ResolvedCastEntry_statusLabel(ctx, field, obj)
+		case "statusAbbrev":
+			out.Values[i] = ec._ResolvedCastEntry_statusAbbrev(ctx, field, obj)
+		case "characterOrder":
+			out.Values[i] = ec._ResolvedCastEntry_characterOrder(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "localHeadshotURL":
+			out.Values[i] = ec._ResolvedCastEntry_localHeadshotURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var showImplementors = []string{"Show", "Node"}
 
 func (ec *executionContext) _Show(ctx context.Context, sel ast.SelectionSet, obj *ent.Show) graphql.Marshaler {
@@ -15738,6 +19121,216 @@ func (ec *executionContext) _Show(ctx context.Context, sel ast.SelectionSet, obj
 					}
 				}()
 				res = ec._Show_recordings(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "localBannerURL":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Show_localBannerURL(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "recordingCount":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Show_recordingCount(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "stateCounts":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Show_stateCounts(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "firstYear":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Show_firstYear(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "lastYear":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Show_lastYear(ctx, field, obj)
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "description":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Show_description(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -15848,6 +19441,182 @@ func (ec *executionContext) _ShowEdge(ctx context.Context, sel ast.SelectionSet,
 			out.Values[i] = ec._ShowEdge_node(ctx, field, obj)
 		case "cursor":
 			out.Values[i] = ec._ShowEdge_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var showStateCountsImplementors = []string{"ShowStateCounts"}
+
+func (ec *executionContext) _ShowStateCounts(ctx context.Context, sel ast.SelectionSet, obj *ShowStateCounts) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, showStateCountsImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ShowStateCounts")
+		case "synced":
+			out.Values[i] = ec._ShowStateCounts_synced(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "formatMismatch":
+			out.Values[i] = ec._ShowStateCounts_formatMismatch(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "missing":
+			out.Values[i] = ec._ShowStateCounts_missing(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "wanted":
+			out.Values[i] = ec._ShowStateCounts_wanted(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "orphan":
+			out.Values[i] = ec._ShowStateCounts_orphan(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var showsListItemImplementors = []string{"ShowsListItem"}
+
+func (ec *executionContext) _ShowsListItem(ctx context.Context, sel ast.SelectionSet, obj *ShowsListItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, showsListItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ShowsListItem")
+		case "id":
+			out.Values[i] = ec._ShowsListItem_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._ShowsListItem_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recordingCount":
+			out.Values[i] = ec._ShowsListItem_recordingCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "stateCounts":
+			out.Values[i] = ec._ShowsListItem_stateCounts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "firstYear":
+			out.Values[i] = ec._ShowsListItem_firstYear(ctx, field, obj)
+		case "lastYear":
+			out.Values[i] = ec._ShowsListItem_lastYear(ctx, field, obj)
+		case "localPosterURL":
+			out.Values[i] = ec._ShowsListItem_localPosterURL(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var showsListPageImplementors = []string{"ShowsListPage"}
+
+func (ec *executionContext) _ShowsListPage(ctx context.Context, sel ast.SelectionSet, obj *ShowsListPage) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, showsListPageImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ShowsListPage")
+		case "items":
+			out.Values[i] = ec._ShowsListPage_items(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "total":
+			out.Values[i] = ec._ShowsListPage_total(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "limit":
+			out.Values[i] = ec._ShowsListPage_limit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "offset":
+			out.Values[i] = ec._ShowsListPage_offset(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -16498,6 +20267,20 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNBannerLayout2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐBannerLayout(ctx context.Context, sel ast.SelectionSet, v BannerLayout) graphql.Marshaler {
+	return ec._BannerLayout(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNBannerLayout2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐBannerLayout(ctx context.Context, sel ast.SelectionSet, v *BannerLayout) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._BannerLayout(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {
 	res, err := graphql.UnmarshalBoolean(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -16559,19 +20342,19 @@ func (ec *executionContext) marshalNCursor2entgoᚗioᚋcontribᚋentgqlᚐCurso
 }
 
 func (ec *executionContext) unmarshalNID2int64(ctx context.Context, v any) (int64, error) {
-	res, err := graphql.UnmarshalInt64(v)
+	res, err := UnmarshalPrefixedID(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNID2int64(ctx context.Context, sel ast.SelectionSet, v int64) graphql.Marshaler {
 	_ = sel
-	res := graphql.MarshalInt64(v)
+	res := MarshalPrefixedID(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
 		}
 	}
-	return res
+	return graphql.WrapContextMarshaler(ctx, res)
 }
 
 func (ec *executionContext) unmarshalNID2ᚕint64ᚄ(ctx context.Context, v any) ([]int64, error) {
@@ -16755,6 +20538,72 @@ func (ec *executionContext) unmarshalNRecordingWhereInput2ᚖgithubᚗcomᚋnico
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNRecordingsListItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*RecordingsListItem) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRecordingsListItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItem(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRecordingsListItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItem(ctx context.Context, sel ast.SelectionSet, v *RecordingsListItem) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RecordingsListItem(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRecordingsListPage2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListPage(ctx context.Context, sel ast.SelectionSet, v RecordingsListPage) graphql.Marshaler {
+	return ec._RecordingsListPage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNRecordingsListPage2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListPage(ctx context.Context, sel ast.SelectionSet, v *RecordingsListPage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RecordingsListPage(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNResolvedCastEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐResolvedCastEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*ResolvedCastEntry) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNResolvedCastEntry2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐResolvedCastEntry(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNResolvedCastEntry2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐResolvedCastEntry(ctx context.Context, sel ast.SelectionSet, v *ResolvedCastEntry) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ResolvedCastEntry(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNShow2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐShow(ctx context.Context, sel ast.SelectionSet, v *ent.Show) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -16795,9 +20644,63 @@ func (ec *executionContext) marshalNShowOrderField2ᚖgithubᚗcomᚋnicolerenee
 	return v
 }
 
+func (ec *executionContext) marshalNShowStateCounts2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowStateCounts(ctx context.Context, sel ast.SelectionSet, v ShowStateCounts) graphql.Marshaler {
+	return ec._ShowStateCounts(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNShowStateCounts2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowStateCounts(ctx context.Context, sel ast.SelectionSet, v *ShowStateCounts) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ShowStateCounts(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNShowWhereInput2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐShowWhereInput(ctx context.Context, v any) (*ent.ShowWhereInput, error) {
 	res, err := ec.unmarshalInputShowWhereInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNShowsListItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*ShowsListItem) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNShowsListItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListItem(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNShowsListItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListItem(ctx context.Context, sel ast.SelectionSet, v *ShowsListItem) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ShowsListItem(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNShowsListPage2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListPage(ctx context.Context, sel ast.SelectionSet, v ShowsListPage) graphql.Marshaler {
+	return ec._ShowsListPage(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNShowsListPage2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐShowsListPage(ctx context.Context, sel ast.SelectionSet, v *ShowsListPage) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ShowsListPage(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
@@ -17235,7 +21138,7 @@ func (ec *executionContext) unmarshalOID2ᚖint64(ctx context.Context, v any) (*
 	if v == nil {
 		return nil, nil
 	}
-	res, err := graphql.UnmarshalInt64(v)
+	res, err := UnmarshalPrefixedID(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
@@ -17244,9 +21147,8 @@ func (ec *executionContext) marshalOID2ᚖint64(ctx context.Context, sel ast.Sel
 		return graphql.Null
 	}
 	_ = sel
-	_ = ctx
-	res := graphql.MarshalInt64(*v)
-	return res
+	res := MarshalPrefixedID(*v)
+	return graphql.WrapContextMarshaler(ctx, res)
 }
 
 func (ec *executionContext) unmarshalOInt2ᚕint64ᚄ(ctx context.Context, v any) ([]int64, error) {

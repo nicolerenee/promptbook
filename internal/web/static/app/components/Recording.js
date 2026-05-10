@@ -28,6 +28,7 @@
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import { smartDate, humanSize, relativeTime, formatNFTDate } from '../utils/format.js';
 import {
@@ -146,32 +147,198 @@ function basename(p) {
   return p.substring(i + 1);
 }
 
-// loadRecording fetches /api/v1/recordings/:id and parks the response
-// on state.recording. Under the v2 image cache the payload exposes
-// scalar image URLs (local_fanart_url, local_poster_url) rather than
-// indexed arrays — the chosen image IS the only image on disk.
+// RECORDING_DETAIL_QUERY pulls the per-recording payload through the
+// GraphQL surface: ent.Recording's denormalized fields plus the
+// enrichment resolvers (status, localPosterURL, banner layout, NFO
+// content + mtime, resolved cast, in-collection / in-wants /
+// format strings driven through the reconciler). Image-picker /
+// overlay-editor / banner-layout writes still go through the legacy
+// REST POSTs — this only swaps the data fetch.
+const RECORDING_DETAIL_QUERY = `
+  query RecordingDetail($id: ID!) {
+    recording(id: $id) {
+      id
+      tour
+      master
+      dateFull
+      dateMonthKnown
+      dateDayKnown
+      rawJSON
+      status
+      inCollection
+      inWants
+      encoraFormat
+      localFormatString
+      collectedAt
+      localPosterURL
+      localFanartURL
+      nfoContent
+      nfoModifiedAt
+      overlayDisabled
+      overlayTextOverride
+      bannerLayout {
+        position
+        imageRegion
+      }
+      resolvedCast {
+        castEntryID
+        performerID
+        performerName
+        performerSlug
+        characterID
+        characterName
+        statusLabel
+        statusAbbrev
+        characterOrder
+        localHeadshotURL
+      }
+      show {
+        id
+        name
+      }
+      versions(first: 100) {
+        edges {
+          node {
+            id
+            filePath
+            container
+            quality
+            videoCodec
+            audioCodec
+            formatLabel
+            fileSizeBytes
+            addedAt
+          }
+        }
+      }
+    }
+  }
+`;
+
+// stripIDPrefix turns "recording-1234" into "1234". URL routes
+// (/recordings/:id) still carry int64s so we strip at the GraphQL
+// boundary on the way back out to the renderer's existing keys.
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// shapeRecordingDetail rebuilds the legacy storage.LoadedRecording +
+// recordingDetailResponse merged shape from the GraphQL payload. The
+// renderers below were written against PascalCase keys (the Go
+// struct's zero-tag fallback); we reconstruct that shape so they keep
+// reading correctly.
+function shapeRecordingDetail(node) {
+  if (!node) return null;
+  const intID = Number(stripIDPrefix(node.id));
+  const showID = node.show ? Number(stripIDPrefix(node.show.id)) : 0;
+  const cast = (node.resolvedCast || []).map((ce) => ({
+    Performer: {
+      PerformerID: ce.performerID ? Number(stripIDPrefix(ce.performerID)) : 0,
+      Name: ce.performerName || '',
+      Slug: ce.performerSlug || '',
+    },
+    Character: {
+      CharacterID: ce.characterID ? Number(stripIDPrefix(ce.characterID)) : 0,
+      Name: ce.characterName || '',
+      Order: ce.characterOrder || 0,
+    },
+    Status: ce.statusLabel
+      ? { Label: ce.statusLabel, Abbreviation: ce.statusAbbrev || '' }
+      : null,
+    local_headshot_url: ce.localHeadshotURL || '',
+  }));
+  const versionEdges = (node.versions && node.versions.edges) || [];
+  const versions = versionEdges
+    .map((e) => e && e.node)
+    .filter(Boolean)
+    .map((v, i) => ({
+      FilePath:      v.filePath || '',
+      VideoCodec:    v.videoCodec || '',
+      AudioCodec:    v.audioCodec || '',
+      Quality:       v.quality || '',
+      Container:     v.container || '',
+      FormatLabel:   v.formatLabel || '',
+      FileSizeBytes: v.fileSizeBytes || 0,
+      Index:         i,
+    }));
+  // raw_json on the ent.Recording exposes the upstream JSON as a
+  // string; the renderer expects the parsed shape on Recording.* so
+  // we parse + flatten here. A parse failure leaves recording fields
+  // empty rather than crashing the page.
+  let parsed = null;
+  if (node.rawJSON) {
+    try { parsed = JSON.parse(node.rawJSON); } catch (_) { parsed = null; }
+  }
+  const rec = parsed || {};
+  // Surface the canonical fields the renderer reads directly so a
+  // malformed raw_json still produces a partial header instead of
+  // nothing at all.
+  rec.id = intID;
+  rec.show = node.show ? node.show.name : (rec.show || '');
+  rec.tour = node.tour || rec.tour || '';
+  rec.master = node.master || rec.master || '';
+  rec.date = rec.date || {
+    full_date: node.dateFull || '',
+    month_known: !!node.dateMonthKnown,
+    day_known: !!node.dateDayKnown,
+  };
+  return {
+    Recording:             rec,
+    InCollection:          !!node.inCollection,
+    InWants:               !!node.inWants,
+    Format:                node.encoraFormat || '',
+    LocalFormatString:     node.localFormatString || '',
+    CollectedAt:           node.collectedAt || null,
+    Versions:              versions,
+    Cast:                  cast,
+    showID,
+    nfo_content:           node.nfoContent || '',
+    nfo_modified_at:       node.nfoModifiedAt || null,
+    local_poster_url:      node.localPosterURL || '',
+    local_fanart_url:      node.localFanartURL || '',
+    overlay_disabled:      !!node.overlayDisabled,
+    overlay_text_override: node.overlayTextOverride == null ? null : node.overlayTextOverride,
+    banner_layout: {
+      position:     (node.bannerLayout && node.bannerLayout.position) || '',
+      image_region: (node.bannerLayout && node.bannerLayout.imageRegion) || '',
+    },
+  };
+}
+
+// loadRecording fetches the recording detail payload via GraphQL and
+// parks the shaped result on state.recording. Image-picker /
+// overlay-editor / banner-layout writes still POST to the REST
+// endpoints (not migrated in Phase 4b — those are mutations and
+// remain on the existing surface).
 function loadRecording(id) {
   state.recording.loading = true;
   state.recording.error = null;
   state.recording.id = id;
   state.recording.imageError = null;
-  return api.get('/recordings/' + encodeURIComponent(id))
-    .then((body) => {
-      state.recording.loaded = body;
+  return graphql.query(RECORDING_DETAIL_QUERY, { id: 'recording-' + id })
+    .then((data) => {
+      const node = data && data.recording;
+      if (!node) {
+        const err = new Error('Recording not found.');
+        err.status = 404;
+        throw err;
+      }
+      return shapeRecordingDetail(node);
+    })
+    .then((shaped) => {
+      state.recording.loaded = shaped;
       state.recording.loading = false;
       state.recording.overlayOverride =
-        body && body.overlay_text_override != null
-          ? body.overlay_text_override : null;
+        shaped.overlay_text_override != null
+          ? shaped.overlay_text_override : null;
       state.recording.overlayDraft =
         state.recording.overlayOverride != null
           ? state.recording.overlayOverride
-          : autoOverlayText(body);
-      state.recording.overlayDisabled =
-        !!(body && body.overlay_disabled);
-      // Banner layout: prefer the recording's persisted choices,
-      // falling back to the renderer's defaults so the preview
-      // matches what poster.jpg looks like on disk.
-      const bl = (body && body.banner_layout) || {};
+          : autoOverlayText(shaped);
+      state.recording.overlayDisabled = !!shaped.overlay_disabled;
+      const bl = shaped.banner_layout || {};
       state.recording.bannerPosition = bl.position || 'bottom';
       state.recording.bannerImageRegion = bl.image_region || 'middle';
     })

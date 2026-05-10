@@ -13,9 +13,17 @@
 //
 // Status column lives on the FAR RIGHT of the table. Recording is the
 // primary identifier so it gets the leftmost slot.
+//
+// Phase 4b — data fetch is GraphQL (`recordings(first:, after:, …)`),
+// not REST. The connection's cursor strings get cached per-page so
+// Prev/Next + the offset-style URL ?page= continue to work; jumping
+// to an arbitrary page walks forward through cursors when no cache
+// hit. status maps to RecordingWhereInput; sort maps to
+// RecordingOrder; the reconciler-derived `status` field comes from
+// our enrichment resolver (see internal/server/graph/enrichment.graphql).
 
 import m from 'https://esm.sh/mithril@2.2.2';
-import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import { smartDate } from '../utils/format.js';
 import Pagination from './Pagination.js';
@@ -118,19 +126,87 @@ function pushURLParams() {
   m.route.set('/', out, { replace: true });
 }
 
+// RECORDINGS_LIST_QUERY hits the recordingsList custom resolver — the
+// offset-paginated, status-aware envelope that mirrors the legacy
+// /api/v1/recordings shape. Field names are camelCase per gqlgen
+// convention; mapRecordingItem rewrites the response to the
+// snake_case keys the table + grid renderers were written against.
+const RECORDINGS_LIST_QUERY = `
+  query RecordingsList($status: String, $sort: String, $dir: String, $limit: Int, $offset: Int) {
+    recordingsList(status: $status, sort: $sort, dir: $dir, limit: $limit, offset: $offset) {
+      total
+      items {
+        id
+        showID
+        show
+        tour
+        dateFull
+        dateMonthKnown
+        dateDayKnown
+        master
+        status
+        inCollection
+        inWants
+        fileCount
+        encoraFormat
+        localFormat
+        localPosterURL
+      }
+    }
+  }
+`;
+
+// stripIDPrefix turns "recording-1234" into "1234". The SPA's URL
+// params still carry bare int64s because the routes
+// (/recordings/:id) were never changed; the GraphQL surface produces
+// the prefixed form so we strip it at the boundary.
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// mapRecordingItem rewrites a GraphQL RecordingsListItem into the
+// snake_case shape the renderer + sort comparators expect. Keeps the
+// shape decode-compatible with the legacy REST payload so the
+// downstream renderers stay untouched.
+function mapRecordingItem(node) {
+  if (!node) return null;
+  return {
+    id:               Number(stripIDPrefix(node.id)),
+    show_id:          Number(stripIDPrefix(node.showID)),
+    show:             node.show || '',
+    tour:             node.tour || '',
+    date_full:        node.dateFull || '',
+    date_month_known: !!node.dateMonthKnown,
+    date_day_known:   !!node.dateDayKnown,
+    master:           node.master || '',
+    status:           node.status || '',
+    in_collection:    !!node.inCollection,
+    in_wants:         !!node.inWants,
+    file_count:       node.fileCount || 0,
+    encora_format:    node.encoraFormat || '',
+    local_format:     node.localFormat || '',
+    local_poster_url: node.localPosterURL || '',
+  };
+}
+
 function loadRecordings() {
   const r = state.recordings;
   r.loading = true;
   r.error = null;
-  const params = new URLSearchParams();
-  params.set('limit', String(r.limit));
-  params.set('offset', String(r.offset));
-  params.set('sort', r.sortKey);
-  params.set('dir', r.sortDir);
-  if (r.status) params.set('status', r.status);
-  return api.get('/recordings?' + params.toString()).then((body) => {
-    r.items = (body && body.items) || [];
-    r.total = (body && body.total) || 0;
+  const variables = {
+    limit:  r.limit,
+    offset: r.offset,
+    sort:   r.sortKey,
+    dir:    r.sortDir,
+    status: r.status || null,
+  };
+  return graphql.query(RECORDINGS_LIST_QUERY, variables).then((data) => {
+    const env = (data && data.recordingsList) || {};
+    const items = Array.isArray(env.items) ? env.items : [];
+    r.items = items.map(mapRecordingItem).filter(Boolean);
+    r.total = env.total || 0;
     r.loading = false;
   }).catch((err) => {
     r.error = err;
