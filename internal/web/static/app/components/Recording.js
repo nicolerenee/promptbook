@@ -210,6 +210,7 @@ const RECORDING_DETAIL_QUERY = `
             audioCodec
             formatLabel
             fileSizeBytes
+            partIndex
             addedAt
           }
         }
@@ -239,6 +240,8 @@ const RECORDING_DETAIL_QUERY = `
         name
         sizeBytes
         isDir
+        kind
+        label
       }
     }
   }
@@ -290,6 +293,11 @@ function shapeRecordingDetail(node) {
       Container:     v.container || '',
       FormatLabel:   v.formatLabel || '',
       FileSizeBytes: v.fileSizeBytes || 0,
+      // PartIndex is 0 for single-file versions and >=1 for the
+      // n-th part of a multipart recording. The Versions table
+      // collapses rows that share a recording_id and carry
+      // PartIndex >= 1 into a single primary row.
+      PartIndex:     v.partIndex || 0,
       Index:         i,
     }));
   // raw_json on the ent.Recording exposes the upstream JSON as a
@@ -1279,13 +1287,40 @@ function castTideflyerItem(entry, idx) {
   ]));
 }
 
-// renderVersionsTable tabulates the recording's local files. Each row
-// carries a small info-icon affordance that toggles an inline Media
-// Info sub-row underneath; the per-row expanded state lives on
-// state.recording.expandedVersions keyed by row index (versions don't
-// always carry a stable id from the wire shape, so we key on the
-// row's position in the list — Mithril redraws the table in the same
-// order so the keys stay stable across renders).
+// groupVersionsForTable buckets the per-version edges into rendering
+// groups for the Versions table. Versions with PartIndex == 0 each
+// produce a singleton group (today's one-row-per-version behaviour);
+// versions with PartIndex >= 1 collapse into a single multipart group
+// regardless of count — the recording detail page is already scoped to
+// one recording, so all "I'm part N of something" rows belong to the
+// same multipart version. Parts inside a group are sorted by
+// PartIndex so "Parts 1, 2" reads correctly even when the wire ordering
+// is something else.
+function groupVersionsForTable(versions) {
+  const groups = [];
+  const partVersions = [];
+  versions.forEach((v, idx) => {
+    if ((v.PartIndex || 0) >= 1) {
+      partVersions.push({ v: v, idx: idx });
+    } else {
+      groups.push({ kind: 'single', items: [{ v: v, idx: idx }] });
+    }
+  });
+  if (partVersions.length > 0) {
+    partVersions.sort((a, b) => (a.v.PartIndex || 0) - (b.v.PartIndex || 0));
+    groups.push({ kind: 'multipart', items: partVersions });
+  }
+  return groups;
+}
+
+// renderVersionsTable tabulates the recording's local files. Each
+// group is one visual primary row: singletons render today's
+// one-row-per-version layout, multipart groups (PartIndex >= 1)
+// collapse into a single primary row showing summed size + a parts
+// badge, with a "Show parts" disclosure underneath. Per-row Media
+// Info expansion lives on state.recording.expandedVersions keyed by
+// the group's lead index — the disclosure stays stable across redraws
+// because Mithril keys by the lead index.
 function renderVersionsTable(loaded) {
   const versions = loaded.Versions || [];
   const mi = loaded && loaded.media_info;
@@ -1296,11 +1331,18 @@ function renderVersionsTable(loaded) {
         : 'No local files registered for this recording.');
   }
   const expandedMap = state.recording.expandedVersions || {};
+  const groups = groupVersionsForTable(versions);
   const rows = [];
-  versions.forEach((v, idx) => {
-    rows.push(versionRow(v, idx, mi, !!expandedMap[idx]));
-    if (expandedMap[idx]) {
-      rows.push(m('tr', { key: 'mi-' + idx }, [
+  groups.forEach((g) => {
+    const leadIdx = g.items[0].idx;
+    const expanded = !!expandedMap[leadIdx];
+    if (g.kind === 'multipart') {
+      rows.push(multipartVersionRow(g.items, leadIdx, mi, expanded));
+    } else {
+      rows.push(versionRow(g.items[0].v, leadIdx, mi, expanded));
+    }
+    if (expanded) {
+      rows.push(m('tr', { key: 'mi-' + leadIdx }, [
         m('td', {
           colspan: 6,
           class: 'bg-base-200/40',
@@ -1325,6 +1367,45 @@ function renderVersionsTable(loaded) {
     ]));
 }
 
+// versionDisplayCells builds the shared Format / Codec / Quality
+// cells used by both versionRow and multipartVersionRow. Pulled out
+// so the multipart primary row reads exactly like the singleton row
+// for the metadata columns — parts share format/codec/quality, so
+// rendering off part 1 (the lead) is sufficient.
+function versionDisplayCells(v, mi) {
+  const format = v.Container || (mi && mi.container) || '—';
+  let videoCodec = v.VideoCodec || (mi && formatVideoCodec(mi.videoCodec)) || '';
+  let audioCodec = v.AudioCodec || '';
+  if (!audioCodec && mi && mi.audioStreams && mi.audioStreams[0]) {
+    audioCodec = String(mi.audioStreams[0].codec || '').toUpperCase();
+  }
+  let codec = videoCodec || '—';
+  if (audioCodec) codec += ' / ' + audioCodec;
+  let quality = v.Quality;
+  if (!quality && mi) quality = qualityFromHeight(mi.height);
+  if (!quality) quality = '—';
+  return { format: format, codec: codec, quality: quality };
+}
+
+// versionInfoButton renders the per-row Media Info disclosure icon
+// + handler. Shared between singleton and multipart primary rows so
+// the affordance is identical regardless of grouping.
+function versionInfoButton(idx, expanded) {
+  return m('button', {
+    type: 'button',
+    class: 'btn btn-ghost btn-xs',
+    'aria-label': expanded ? 'Hide media info' : 'Show media info',
+    'aria-expanded': expanded ? 'true' : 'false',
+    title: expanded ? 'Hide media info' : 'Show media info',
+    onclick: () => {
+      if (!state.recording.expandedVersions) {
+        state.recording.expandedVersions = {};
+      }
+      state.recording.expandedVersions[idx] = !expanded;
+    },
+  }, infoIcon());
+}
+
 // versionRow falls back to the recording-level MediaInfo when the
 // per-version typed columns (Container/VideoCodec/Quality/AudioCodec)
 // are empty — pre-mediainfo imports never populated those columns,
@@ -1338,42 +1419,77 @@ function versionRow(v, idx, mi, expanded) {
   // Format = container (just "MP4"/"MKV"). Drops the legacy
   // FormatLabel string because it bundled size into the same field
   // and produced "MP4 - 8.57 GB" — the Size column already shows it.
-  const format = v.Container || (mi && mi.container) || '—';
-  let videoCodec = v.VideoCodec || (mi && formatVideoCodec(mi.videoCodec)) || '';
-  let audioCodec = v.AudioCodec || '';
-  if (!audioCodec && mi && mi.audioStreams && mi.audioStreams[0]) {
-    audioCodec = String(mi.audioStreams[0].codec || '').toUpperCase();
-  }
-  let codec = videoCodec || '—';
-  if (audioCodec) codec += ' / ' + audioCodec;
-  let quality = v.Quality;
-  if (!quality && mi) quality = qualityFromHeight(mi.height);
-  if (!quality) quality = '—';
+  const cells = versionDisplayCells(v, mi);
   return m('tr', { key: 'v-' + idx }, [
     m('td', { class: 'font-mono text-xs', title: v.FilePath || '' }, [
       isPrimary ? m('span', { class: 'text-warning mr-1' }, '★') : null,
       m('span', name || '—'),
       dir ? m('div', { class: 'opacity-60 text-[10px] truncate' }, dir) : null,
     ]),
-    m('td', { class: 'font-mono text-xs' }, format),
-    m('td', { class: 'font-mono text-xs' }, codec),
-    m('td', { class: 'font-mono text-xs' }, quality),
+    m('td', { class: 'font-mono text-xs' }, cells.format),
+    m('td', { class: 'font-mono text-xs' }, cells.codec),
+    m('td', { class: 'font-mono text-xs' }, cells.quality),
     m('td', { class: 'font-mono text-xs text-right' },
       humanSize(v.FileSizeBytes)),
     m('td', { class: 'text-right w-8' },
-      m('button', {
-        type: 'button',
-        class: 'btn btn-ghost btn-xs',
-        'aria-label': expanded ? 'Hide media info' : 'Show media info',
-        'aria-expanded': expanded ? 'true' : 'false',
-        title: expanded ? 'Hide media info' : 'Show media info',
-        onclick: () => {
-          if (!state.recording.expandedVersions) {
-            state.recording.expandedVersions = {};
-          }
-          state.recording.expandedVersions[idx] = !expanded;
-        },
-      }, infoIcon())),
+      versionInfoButton(idx, expanded)),
+  ]);
+}
+
+// multipartVersionRow collapses N part rows (PartIndex >= 1) into a
+// single primary row showing the parent folder, a "N parts" badge
+// listing the part numbers, and the summed file size. A "Show parts"
+// <details> sub-row reveals each part's filename + size in
+// part-index order. The shared format/codec/quality columns read off
+// part 1's typed values (parts share characteristics) and the per-row
+// Media Info expander shows the lead part's MediaInfo blob —
+// duplicating it per part would clutter the table without adding info.
+function multipartVersionRow(items, idx, mi, expanded) {
+  const lead = items[0].v;
+  const dir = dirname(lead.FilePath || '');
+  const parts = items.map((it) => it.v.PartIndex || 0);
+  const partsLabel = parts.length + ' parts';
+  const partsList = parts.join(', ');
+  const totalSize = items.reduce(
+    (acc, it) => acc + (it.v.FileSizeBytes || 0), 0);
+  const cells = versionDisplayCells(lead, mi);
+  return m('tr', { key: 'vmp-' + idx }, [
+    m('td', { class: 'font-mono text-xs' }, [
+      m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+        m('span', { class: 'text-warning' }, '★'),
+        m('span', dir || '—'),
+        m('span', {
+          class: 'badge badge-info badge-sm',
+          title: 'Parts ' + partsList,
+        }, partsLabel),
+      ]),
+      m('details', { class: 'mt-1' }, [
+        m('summary', {
+          class: 'cursor-pointer text-[10px] opacity-60 select-none',
+        }, 'Show parts'),
+        m('ul', { class: 'mt-1 space-y-0.5 pl-3' },
+          items.map((it) => m('li', {
+            class: 'flex items-center justify-between gap-3',
+          }, [
+            m('span', { class: 'font-mono text-[10px] truncate',
+              title: it.v.FilePath || '' }, [
+              m('span', { class: 'opacity-60 mr-1' },
+                'Part ' + (it.v.PartIndex || 0) + ':'),
+              m('span', basename(it.v.FilePath || '') || '—'),
+            ]),
+            m('span', {
+              class: 'opacity-60 text-[10px] font-mono shrink-0',
+            }, humanSize(it.v.FileSizeBytes || 0)),
+          ]))),
+      ]),
+    ]),
+    m('td', { class: 'font-mono text-xs' }, cells.format),
+    m('td', { class: 'font-mono text-xs' }, cells.codec),
+    m('td', { class: 'font-mono text-xs' }, cells.quality),
+    m('td', { class: 'font-mono text-xs text-right' },
+      humanSize(totalSize)),
+    m('td', { class: 'text-right w-8' },
+      versionInfoButton(idx, expanded)),
   ]);
 }
 
@@ -1424,10 +1540,41 @@ function renderExtrasSection(loaded) {
   ]);
 }
 
+// extrasKindBadge is the per-row hint chip showing what KIND of
+// extra a file is — Featurette / Scene / BTS / Interview / Trailer /
+// Deleted for Jellyfin-typed extras (badge-info), Audio / Photo /
+// Other for the non-Jellyfin kinds promptbook tracks anyway
+// (badge-ghost). Returns null for legacy rows where kind is empty so
+// the row reads plain. badge-sm keeps the row height stable across
+// kinds.
+function extrasKindBadge(kind) {
+  if (!kind) return null;
+  const map = {
+    featurette:      { label: 'Featurette', cls: 'badge-info' },
+    scene:           { label: 'Scene',      cls: 'badge-info' },
+    behindthescenes: { label: 'BTS',        cls: 'badge-info' },
+    interview:       { label: 'Interview',  cls: 'badge-info' },
+    trailer:         { label: 'Trailer',    cls: 'badge-info' },
+    deletedscenes:   { label: 'Deleted',    cls: 'badge-info' },
+    other:           { label: 'Other',      cls: 'badge-ghost' },
+    audio:           { label: 'Audio',      cls: 'badge-ghost' },
+    photo:           { label: 'Photo',      cls: 'badge-ghost' },
+  };
+  const meta = map[kind];
+  if (!meta) return null;
+  return m('span', {
+    class: 'badge ' + meta.cls + ' badge-sm shrink-0',
+    title: kind,
+  }, meta.label);
+}
+
 // extraFileRow is one terminal row in the Extras section — a single
 // file with its basename + size. The icon is purely decorative so the
-// row reads cleanly even without it.
+// row reads cleanly even without it. A small kind badge sits to the
+// right of the filename when the row carries a typed kind (post
+// recording_extras-table imports); legacy untyped rows render plain.
 function extraFileRow(entry, displayName) {
+  const badge = extrasKindBadge(entry && entry.kind);
   return m('div', {
     class: 'flex items-center justify-between gap-3 px-3 py-1.5 text-sm',
   }, [
@@ -1435,6 +1582,7 @@ function extraFileRow(entry, displayName) {
       m('span', { class: 'opacity-60 shrink-0' }, fileIcon()),
       m('span', { class: 'font-mono truncate', title: entry.path },
         displayName),
+      badge,
     ]),
     m('span', { class: 'opacity-60 text-xs font-mono shrink-0' },
       humanSize(entry.sizeBytes || 0)),
