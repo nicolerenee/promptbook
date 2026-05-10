@@ -490,6 +490,26 @@ const Recordings = {
     loadRecordings();
   },
 
+  // oncreate restores the saved scroll position after the grid/list
+  // body has laid out, so back-navigation from a recording detail
+  // keeps the user where they left off. main.js disables the
+  // browser's auto restoration; this hook owns it instead.
+  oncreate() {
+    const y = state.recordings.scrollY;
+    if (typeof y === 'number' && y > 0 && typeof window !== 'undefined') {
+      window.scrollTo(0, y);
+    }
+  },
+
+  // onbeforeremove captures scrollY so the next mount of this page
+  // can restore it. Returning a resolved Promise is unnecessary —
+  // we don't need to delay the unmount.
+  onbeforeremove() {
+    if (typeof window !== 'undefined') {
+      state.recordings.scrollY = window.scrollY || 0;
+    }
+  },
+
   // onupdate fires on every redraw; readURLParams + a state-buttonshot
   // diff lets us refetch only when the inputs that affect the result
   // set actually changed (view toggles within the same dataset don't

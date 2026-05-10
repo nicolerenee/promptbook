@@ -22,6 +22,13 @@ export const state = {
     offset: 0,
     total: 0,
     limit: 50,
+    // scrollY stores the page's window.scrollY at the moment the
+    // user navigated AWAY from the recordings list, so the next
+    // mount (typically browser back from a detail page) can
+    // restore the position. Owned by Recordings.js's
+    // onbeforeremove + oncreate hooks; main.js puts the browser
+    // into manual scroll-restoration mode so we don't fight it.
+    scrollY: 0,
   },
   // showsList is the /shows list page view-model. Same shape as
   // recordings minus status filter (by-show aggregates are

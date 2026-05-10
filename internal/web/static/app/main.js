@@ -39,6 +39,16 @@ initTheme();
 // HTML5 pushState. Set BEFORE m.route() per Mithril 2.x docs.
 m.route.prefix = '';
 
+// Take ownership of scroll restoration. The browser's 'auto' mode
+// fires popstate before the new route's component has laid out its
+// content, so the saved scrollY buttons to 0. Each long-list page
+// (Recordings / ShowsList / People) saves its scrollY on
+// onbeforeremove and restores it on oncreate; the browser is told to
+// stay out of the way.
+if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
+
 // wrap takes a page component and returns a Mithril RouteResolver. The
 // resolver renders Layout with the page baked into its attrs, so the
 // drawer + topbar persist across route changes and only the inner
