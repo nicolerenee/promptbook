@@ -57,6 +57,15 @@ func (s *Server) imagesHandler(c echo.Context) error {
 	diskPath := slot.diskPath(cache)
 	if diskPath != "" {
 		if info, err := os.Stat(diskPath); err == nil && !info.IsDir() {
+			// no-cache forces the browser to revalidate via
+			// If-Modified-Since on every request. http.ServeFile
+			// honors the conditional and returns 304 (no body) when
+			// the mtime is unchanged, so the round-trip is cheap; the
+			// payoff is that picking a new image at the same canonical
+			// path (e.g. shows/123/banner.jpg) is picked up
+			// immediately instead of being masked by Safari's
+			// heuristic freshness window.
+			c.Response().Header().Set("Cache-Control", "no-cache")
 			http.ServeFile(c.Response().Writer, c.Request(), diskPath)
 			return nil
 		}
