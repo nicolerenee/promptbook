@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -89,19 +90,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		log.Info().Msg("stagemedia disabled (no api key configured)")
 	}
 
-	var encClient *encora.Client
-	if appConfig.Encora.APIKey != "" {
-		encClient, err = encora.New(encora.Options{
-			BaseURL:   appConfig.Encora.BaseURL,
-			APIKey:    appConfig.Encora.APIKey,
-			UserAgent: appConfig.Encora.UserAgent,
-			Logger:    log.Logger,
-		})
-		if err != nil {
-			return fmt.Errorf("build encora client: %w", err)
-		}
-	} else {
-		log.Info().Msg("encora disabled (no api key configured)")
+	encClient, err := buildServeEncoraClient()
+	if err != nil {
+		return err
 	}
 
 	// server.Options.Encora and EncoraDestructive are interfaces; a nil
@@ -144,7 +135,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		log.Info().Msg("image cache disabled (library.imageRoot not configured)")
 	}
 
-	ingestOpt := buildIngestEngine(db, encClient, imgCache)
+	ingestOpt := buildIngestEngine(db, sqlDB, encClient, imgCache)
 
 	// Renderer is nil when image caching is off so the picker
 	// handlers' nil-check 503s rather than half-mutating state. When
@@ -157,10 +148,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// (Server constructs its own copy) and off background job writes.
 	nfoRefresh := buildNFORefresh(db, imgCache)
 
-	runner := buildJobRunner(ctx, db, encClient, smClient, imgCache, imgRenderer, nfoRefresh)
+	runner := buildJobRunner(ctx, db, sqlDB, encClient, smClient, imgCache, imgRenderer, nfoRefresh)
 
 	srv, err := server.New(server.Options{
 		DB:                db,
+		SQLDB:             sqlDB,
 		Logger:            log.Logger,
 		Stagemedia:        smOpt,
 		Encora:            encOpt,
@@ -212,8 +204,29 @@ func buildNFORefresh(db *ent.Client, imgCache *imagecache.Cache) *nforefresh.Ser
 // client and a library root are configured. Returns nil otherwise so
 // the queue-import handler 503s instead of failing requests at run
 // time.
+// buildServeEncoraClient constructs the *encora.Client the serve
+// command uses (or returns nil + nil on missing api key). Extracted
+// from runServe so the parent function stays under the funlen
+// threshold; mirrors buildIngestEngine's "build or no-op" pattern.
+func buildServeEncoraClient() (*encora.Client, error) {
+	if appConfig.Encora.APIKey == "" {
+		log.Info().Msg("encora disabled (no api key configured)")
+		return nil, nil //nolint:nilnil // by design — caller treats nil as "disabled".
+	}
+	encClient, err := encora.New(encora.Options{
+		BaseURL:   appConfig.Encora.BaseURL,
+		APIKey:    appConfig.Encora.APIKey,
+		UserAgent: appConfig.Encora.UserAgent,
+		Logger:    log.Logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build encora client: %w", err)
+	}
+	return encClient, nil
+}
+
 func buildIngestEngine(
-	db *ent.Client, encClient *encora.Client, imgCache *imagecache.Cache,
+	db *ent.Client, sqlDB *sql.DB, encClient *encora.Client, imgCache *imagecache.Cache,
 ) server.IngestRunner {
 	if encClient == nil || appConfig.Library.Root == "" {
 		log.Info().Msg("queue import disabled (encora api key or library.root missing)")
@@ -221,6 +234,7 @@ func buildIngestEngine(
 	}
 	return &ingest.Engine{
 		DB:             db,
+		SQLDB:          sqlDB,
 		Client:         encClient,
 		LibraryRoot:    appConfig.Library.Root,
 		FolderTemplate: appConfig.Library.FolderTemplate,
@@ -248,6 +262,7 @@ func buildIngestEngine(
 func buildJobRunner(
 	_ context.Context,
 	db *ent.Client,
+	sqlDB *sql.DB,
 	encClient *encora.Client,
 	smClient *stagemedia.Client,
 	imgCache *imagecache.Cache,
@@ -261,13 +276,13 @@ func buildJobRunner(
 	})
 
 	registered := 0
-	registered += registerRefreshEncora(runner, db, encClient, imgCache)
+	registered += registerRefreshEncora(runner, db, sqlDB, encClient, imgCache)
 	imageRefreshJob, imageRegistered := registerImageRefreshJobs(
 		runner, db, encClient, smClient, imgCache, imgRenderer, nfoRefresh,
 	)
 	registered += imageRegistered
 	registered += registerRefreshRecordingFull(
-		runner, db, encClient, nfoRefresh, imageRefreshJob,
+		runner, db, sqlDB, encClient, nfoRefresh, imageRefreshJob,
 	)
 	registered += registerScanIncoming(runner, db)
 	registered += registerScanLibraryRoot(runner, db)
@@ -283,7 +298,8 @@ func buildJobRunner(
 // post-registration Enqueuer back-reference. Returns 1 on success, 0
 // otherwise.
 func registerRefreshEncora(
-	runner *jobs.Runner, db *ent.Client, encClient *encora.Client, imgCache *imagecache.Cache,
+	runner *jobs.Runner, db *ent.Client, sqlDB *sql.DB,
+	encClient *encora.Client, imgCache *imagecache.Cache,
 ) int {
 	if encClient == nil {
 		return 0
@@ -295,6 +311,7 @@ func registerRefreshEncora(
 	// treating the runner as a plain value injected into the job.
 	refreshJob := &builtin.RefreshEncoraJob{
 		DB:           db,
+		SQLDB:        sqlDB,
 		Client:       encClient,
 		Logger:       log.Logger,
 		BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
@@ -382,12 +399,14 @@ func registerImageRefreshJobs(
 func registerRefreshRecordingFull(
 	runner *jobs.Runner,
 	db *ent.Client,
+	sqlDB *sql.DB,
 	encClient *encora.Client,
 	nfoRefresh *nforefresh.Service,
 	imageRefreshJob *builtin.RefreshRecordingImagesJob,
 ) int {
 	job := &builtin.RefreshRecordingFullJob{
 		DB:           db,
+		SQLDB:        sqlDB,
 		Prober:       probe.FFProbe{Path: appConfig.Library.FFProbePath},
 		NFORefresh:   nfoRefresh,
 		ImageRefresh: imageRefreshJob,

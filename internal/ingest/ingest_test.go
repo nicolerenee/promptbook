@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/rename"
@@ -144,7 +145,11 @@ func seededDBPath(t *testing.T) string {
 
 	c, err := encora.New(encora.Options{BaseURL: srv.URL, APIKey: "test"})
 	require.NoError(t, err)
-	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
+	// Pass SQLDB so the sync also stamps each recording's Encora id
+	// into the external_ids table — keeps the per-recording external
+	// ids visible to ListForRecording in the same way the migration
+	// back-fill seeds existing rows.
+	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2, SQLDB: sqlDB})
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())
 
@@ -254,6 +259,98 @@ func TestEngineIngestRealMove(t *testing.T) {
 		"media_info_json blob must be populated when probe ran")
 	assert.Contains(t, versions[0].MediaInfoJSON, `"videoCodec":"h264"`,
 		"persisted blob must carry the probe codec")
+}
+
+// TestEngineIngestPersistsExternalIDs covers commit 3's framework
+// hook: when Options.ExternalIDs is set, the engine writes those
+// rows into external_ids after the recording lands. The Encora row
+// is independently back-filled by the migration / sync hook — the
+// table-driven externalids.ListForRecording call here asserts the
+// new rows joined the existing encora row.
+func TestEngineIngestPersistsExternalIDs(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".encora-id"), []byte("90100222\n"), 0o644))
+	src := filepath.Join(srcDir, "Random Filename.mp4")
+	require.NoError(t, os.WriteFile(src, []byte("video bytes"), 0o644))
+
+	libRoot := filepath.Join(t.TempDir(), "library")
+	engine := &ingest.Engine{
+		DB:             db,
+		SQLDB:          sqlDB,
+		Client:         &stubClient{},
+		LibraryRoot:    libRoot,
+		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
+		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+		Prober:         defaultStubProber(),
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{
+		ExternalIDs: []externalids.ExternalID{
+			// RecordingID stays 0; the engine fills it from the
+			// resolved EncoraID at persistence time.
+			{Provider: externalids.ProviderTMDB, ExternalID: "90181637"},
+			{Provider: externalids.ProviderIMDB, ExternalID: "tt99999999"},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	require.Equal(t, "moved", res.Items[0].Action)
+
+	rows, err := externalids.ListForRecording(t.Context(), sqlDB, 90100222)
+	require.NoError(t, err)
+	want := []externalids.ExternalID{
+		// Alphabetical by provider per ListForRecording's contract.
+		{RecordingID: 90100222, Provider: externalids.ProviderEncora, ExternalID: "90100222"},
+		{RecordingID: 90100222, Provider: externalids.ProviderIMDB, ExternalID: "tt99999999"},
+		{RecordingID: 90100222, Provider: externalids.ProviderTMDB, ExternalID: "90181637"},
+	}
+	assert.Equal(t, want, rows)
+}
+
+// TestEngineIngestNoExternalIDsIsNoOp confirms the engine doesn't
+// touch the external_ids table when Options.ExternalIDs is empty —
+// only the Encora row back-filled by the migration / sync hook
+// should be there.
+func TestEngineIngestNoExternalIDsIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	dbPath := seededDBPath(t)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".encora-id"), []byte("90100222\n"), 0o644))
+	src := filepath.Join(srcDir, "Random.mp4")
+	require.NoError(t, os.WriteFile(src, []byte("video"), 0o644))
+
+	libRoot := filepath.Join(t.TempDir(), "library")
+	engine := &ingest.Engine{
+		DB:             db,
+		SQLDB:          sqlDB,
+		Client:         &stubClient{},
+		LibraryRoot:    libRoot,
+		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
+		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+		Prober:         defaultStubProber(),
+	}
+
+	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+
+	rows, err := externalids.ListForRecording(t.Context(), sqlDB, 90100222)
+	require.NoError(t, err)
+	// Only the migration-back-filled Encora row.
+	require.Len(t, rows, 1)
+	assert.Equal(t, externalids.ProviderEncora, rows[0].Provider)
 }
 
 func TestEngineIngestSkipsUnknownID(t *testing.T) {

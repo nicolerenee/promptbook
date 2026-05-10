@@ -10,6 +10,7 @@ package sync
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/ent/wantsentry"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -114,6 +116,13 @@ type Options struct {
 	Now               func() time.Time
 	Sleep             func(time.Duration)
 	Logger            zerolog.Logger
+	// SQLDB, when non-nil, is used to stamp each synced recording's
+	// Encora id into the external_ids table after the page commits.
+	// Keeps the table uniform across legacy (migration back-fill) and
+	// new (post-sync) Encora rows. Optional: passing nil skips the
+	// upsert; tests that don't exercise the external-ids surface can
+	// leave it nil.
+	SQLDB *sql.DB
 }
 
 // Sync runs a full collection + wants sync into client. The sync_runs row
@@ -275,7 +284,7 @@ func syncCollection(
 	res.RateLimitRemaining = rl.Remaining
 
 	for {
-		writeErr := writeCollectionPage(ctx, client, page.Data, opts.Now)
+		writeErr := writeCollectionPage(ctx, client, opts.SQLDB, page.Data, opts.Now)
 		if writeErr != nil {
 			return fmt.Errorf("write collection page %d: %w", page.CurrentPage, writeErr)
 		}
@@ -325,7 +334,7 @@ func syncWants(
 	res.RateLimitRemaining = rl.Remaining
 
 	for {
-		writeErr := writeWantsPage(ctx, client, page.Data, opts.Now)
+		writeErr := writeWantsPage(ctx, client, opts.SQLDB, page.Data, opts.Now)
 		if writeErr != nil {
 			return fmt.Errorf("write wants page %d: %w", page.CurrentPage, writeErr)
 		}
@@ -359,6 +368,7 @@ func syncWants(
 func writeCollectionPage(
 	ctx context.Context,
 	client *ent.Client,
+	sqlDB *sql.DB,
 	entries []encora.CollectionEntry,
 	now func() time.Time,
 ) error {
@@ -379,12 +389,23 @@ func writeCollectionPage(
 	if cerr := tx.Commit(); cerr != nil {
 		return fmt.Errorf("commit tx: %w", cerr)
 	}
-	return nil
+	return upsertEncoraExternalIDs(ctx, sqlDB, collectionRecordingIDs(entries))
+}
+
+// collectionRecordingIDs flattens a /collection page into the
+// recording ids the post-commit external_ids upsert needs.
+func collectionRecordingIDs(entries []encora.CollectionEntry) []int64 {
+	out := make([]int64, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Recording.ID)
+	}
+	return out
 }
 
 func writeWantsPage(
 	ctx context.Context,
 	client *ent.Client,
+	sqlDB *sql.DB,
 	entries []encora.WantEntry,
 	now func() time.Time,
 ) error {
@@ -404,6 +425,43 @@ func writeWantsPage(
 	}
 	if cerr := tx.Commit(); cerr != nil {
 		return fmt.Errorf("commit tx: %w", cerr)
+	}
+	return upsertEncoraExternalIDs(ctx, sqlDB, wantsRecordingIDs(entries))
+}
+
+// wantsRecordingIDs flattens a /wants page the same way
+// collectionRecordingIDs flattens a /collection page.
+func wantsRecordingIDs(entries []encora.WantEntry) []int64 {
+	out := make([]int64, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Recording.ID)
+	}
+	return out
+}
+
+// upsertEncoraExternalIDs writes (recording_id, 'encora',
+// encora_id_as_text) rows for every id in the page. Idempotent under
+// the composite primary key — repeat calls for the same recording
+// are absorbed. nil sqlDB skips the write so callers that don't
+// thread the *sql.DB through (legacy tests) keep working; the
+// migration's back-fill already covers the existing rows in that
+// scenario.
+func upsertEncoraExternalIDs(
+	ctx context.Context, sqlDB *sql.DB, recordingIDs []int64,
+) error {
+	if sqlDB == nil || len(recordingIDs) == 0 {
+		return nil
+	}
+	rows := make([]externalids.ExternalID, 0, len(recordingIDs))
+	for _, id := range recordingIDs {
+		rows = append(rows, externalids.ExternalID{
+			RecordingID: id,
+			Provider:    externalids.ProviderEncora,
+			ExternalID:  externalids.EncoraID(id),
+		})
+	}
+	if err := externalids.UpsertMany(ctx, sqlDB, rows); err != nil {
+		return fmt.Errorf("upsert encora external_ids: %w", err)
 	}
 	return nil
 }

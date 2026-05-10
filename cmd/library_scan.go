@@ -30,11 +30,11 @@ func runLibraryScan(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	src := args[0]
 
-	_, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
+	sqlDB, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = sqlDB.Close() }()
 
 	client, err := buildEncoraClientForIngest()
 	if err != nil {
@@ -43,6 +43,7 @@ func runLibraryScan(cmd *cobra.Command, args []string) error {
 
 	engine := &ingest.Engine{
 		DB:             db,
+		SQLDB:          sqlDB,
 		Client:         client,
 		LibraryRoot:    appConfig.Library.Root,
 		FolderTemplate: appConfig.Library.FolderTemplate,

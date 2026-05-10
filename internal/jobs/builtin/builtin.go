@@ -16,6 +16,7 @@ package builtin
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -40,7 +41,13 @@ import (
 // refresh-recording-images, and refresh-actor-headshot for entities
 // missing a slot file on disk.
 type RefreshEncoraJob struct {
-	DB           *ent.Client
+	DB *ent.Client
+	// SQLDB shares DB's connection pool. Plumbed onto pbsync.Options
+	// so the sync's per-page commit also stamps Encora ids into the
+	// external_ids table (keeps the table uniform across legacy
+	// back-fill + new sync inserts). Optional: nil is tolerated and
+	// the sync's external_ids upsert is skipped.
+	SQLDB        *sql.DB
 	Client       *encora.Client
 	Logger       zerolog.Logger
 	BurstReserve int
@@ -64,6 +71,7 @@ func (j *RefreshEncoraJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 	_, err := pbsync.Sync(ctx, j.Client, j.DB, pbsync.Options{
 		BurstReserve: j.BurstReserve,
 		Logger:       j.Logger,
+		SQLDB:        j.SQLDB,
 	})
 	if err != nil {
 		return fmt.Errorf("refresh-encora sync: %w", err)

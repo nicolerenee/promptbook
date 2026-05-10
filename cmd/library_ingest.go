@@ -79,11 +79,11 @@ func runLibraryIngest(cmd *cobra.Command, args []string) error {
 		return errors.New("library.root is not configured")
 	}
 
-	_, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
+	sqlDB, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = sqlDB.Close() }()
 
 	client, err := buildEncoraClientForIngest()
 	if err != nil {
@@ -101,6 +101,7 @@ func runLibraryIngest(cmd *cobra.Command, args []string) error {
 
 	engine := &ingest.Engine{
 		DB:             db,
+		SQLDB:          sqlDB,
 		Client:         client,
 		LibraryRoot:    appConfig.Library.Root,
 		FolderTemplate: appConfig.Library.FolderTemplate,

@@ -43,9 +43,7 @@ func (r *mutationResolver) RegenerateRecordingNfo(ctx context.Context, recording
 // resolver-package helper so the body lives in
 // enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
 // "may delete" comment blocks on regeneration).
-func (r *mutationResolver) SetRecordingExternallyManaged(
-	ctx context.Context, recordingID int64, externallyManaged bool,
-) (*ent.Recording, error) {
+func (r *mutationResolver) SetRecordingExternallyManaged(ctx context.Context, recordingID int64, externallyManaged bool) (*ent.Recording, error) {
 	return r.Resolver.setRecordingExternallyManaged(ctx, recordingID, externallyManaged)
 }
 
@@ -348,6 +346,13 @@ func (r *recordingResolver) LocalReleaseFormat(ctx context.Context, obj *ent.Rec
 // blocks on regeneration).
 func (r *recordingResolver) Extras(ctx context.Context, obj *ent.Recording) ([]*RecordingExtra, error) {
 	return r.Resolver.recordingExtras(ctx, obj.ID)
+}
+
+// ExternalIDs is the resolver for the externalIDs field. Pass-through
+// to the resolver-package helper so the body lives in
+// enrichment_helpers.go.
+func (r *recordingResolver) ExternalIDs(ctx context.Context, obj *ent.Recording) ([]*RecordingExternalID, error) {
+	return r.Resolver.recordingExternalIDs(ctx, obj.ID)
 }
 
 // LocalBannerURL is the resolver for the localBannerURL field. Same

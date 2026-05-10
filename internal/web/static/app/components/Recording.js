@@ -235,6 +235,12 @@ const RECORDING_DETAIL_QUERY = `
         kind
         label
       }
+      externalIDs {
+        provider
+        label
+        externalID
+        url
+      }
     }
   }
 `;
@@ -349,6 +355,11 @@ function shapeRecordingDetail(node) {
     // extras lists the non-main files in the version's source folder
     // — folder-as-unit drops only. Loose-file imports surface [].
     extras:                Array.isArray(node.extras) ? node.extras : [],
+    // external_ids are the third-party provider ids attached to the
+    // recording (Encora + any TMDB / IMDB ids the importer wrote).
+    // Empty when the recording has no rows in external_ids; the chip
+    // row collapses cleanly in that case.
+    external_ids:          Array.isArray(node.externalIDs) ? node.externalIDs : [],
   };
 }
 
@@ -1012,29 +1023,60 @@ function ellipsisIcon() {
   ]);
 }
 
-// renderLinkBadges renders one small badge-link per external source
-// the recording carries. Inline (no dropdown) so the badges line up
-// at the same size as the master / counts chips that share the
-// subtitle row — DaisyUI's dropdown trigger sits at btn-height even
-// inside a badge wrapper, which made it visibly larger than the
-// neighbouring badge-sm chips. Today the only source is Encora;
-// when more land (Stagemedia, IMDB, …) they slot in as siblings.
-// Past ~3 sources the row will get crowded — that's the point at
-// which it's worth folding back into a dropdown.
-function renderLinkBadges(id) {
-  const links = [
-    {
-      label: 'Encora',
-      href: 'https://encora.it/recordings/' + encodeURIComponent(String(id)),
-    },
-  ];
-  return links.map((l) => m('a', {
-    href: l.href,
+// renderLinkBadges renders one small badge-link per external_ids row
+// the recording carries (Encora is back-filled at migration time;
+// TMDB / IMDB / future providers land at ingest time). Inline (no
+// dropdown) so the badges line up at the same size as the master /
+// counts chips that share the subtitle row — DaisyUI's dropdown
+// trigger sits at btn-height even inside a badge wrapper, which made
+// it visibly larger than the neighbouring badge-sm chips. Past ~3
+// sources the row will get crowded — that's the point at which it's
+// worth folding back into a dropdown.
+//
+// Falls back to a hardcoded Encora chip when the GraphQL payload
+// didn't carry external_ids (legacy clients pre-Phase 2.5 — defensive,
+// shouldn't fire post-migration).
+function renderLinkBadges(loaded) {
+  const ids = (loaded && Array.isArray(loaded.external_ids)) ? loaded.external_ids : [];
+  if (ids.length === 0) {
+    const id = loaded && loaded.Recording && loaded.Recording.id;
+    if (!id) return [];
+    return [renderLinkBadge('Encora', 'https://encora.it/recordings/' + encodeURIComponent(String(id)))];
+  }
+  // Encora-first ordering: the provider chip cluster reads as
+  // "canonical source · extras" rather than the alphabetical default
+  // ListForRecording emits. Other providers preserve their incoming
+  // order so the SPA matches the wire shape.
+  const encora = ids.filter((e) => e.provider === 'encora');
+  const others = ids.filter((e) => e.provider !== 'encora');
+  return [...encora, ...others].map((eid) => renderLinkBadge(
+    eid.label || eid.provider || 'link',
+    eid.url || '',
+    eid.externalID || '',
+  ));
+}
+
+// renderLinkBadge is the per-chip renderer. href empty falls back to
+// a span (non-clickable) so providers without a known URL still
+// display the id rather than vanishing silently. id, when supplied,
+// becomes the visible "Label · id" body — matches the "Encora ·
+// enc-NNNN" style the muted subtitle already uses elsewhere on the
+// page.
+function renderLinkBadge(label, href, id) {
+  const body = id ? [externalLinkIcon(), m('span', label + ' · ' + id)]
+                  : [externalLinkIcon(), m('span', label)];
+  if (!href) {
+    return m('span', {
+      class: 'badge badge-sm badge-ghost gap-1',
+    }, body);
+  }
+  return m('a', {
+    href: href,
     target: '_blank',
     rel: 'noopener noreferrer',
     class: 'badge badge-sm badge-ghost gap-1 hover:badge-neutral',
-    'aria-label': l.label + ' (opens in new tab)',
-  }, [externalLinkIcon(), m('span', l.label)]));
+    'aria-label': label + ' (opens in new tab)',
+  }, body);
 }
 
 // renderActionsCluster is the icon-button trio that anchors the
@@ -1321,7 +1363,7 @@ function renderHeader(loaded) {
       ? m('span', { class: 'badge badge-sm badge-ghost' },
           String(wanters) + ' wants')
       : null,
-    ...renderLinkBadges(id),
+    ...renderLinkBadges(loaded),
   ]);
 
   return m('div', {

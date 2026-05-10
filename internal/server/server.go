@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -95,8 +96,13 @@ type FrameExtractor interface {
 
 // Server is the HTTP entry point.
 type Server struct {
-	echo              *echo.Echo
-	db                *ent.Client
+	echo *echo.Echo
+	db   *ent.Client
+	// sqlDB shares db's connection pool. Plumbed through so the
+	// graphql resolver can read from the external_ids table (no ent
+	// type for it — see internal/externalids). Optional; the
+	// Recording.externalIDs resolver returns [] when sqlDB is nil.
+	sqlDB             *sql.DB
 	logger            zerolog.Logger
 	stagemedia        StagemediaImageClient
 	encora            EncoraWriteClient
@@ -165,7 +171,12 @@ type Server struct {
 
 // Options configures a new server.
 type Options struct {
-	DB     *ent.Client
+	DB *ent.Client
+	// SQLDB shares DB's connection pool. Used by the graphql resolver
+	// for external_ids reads. Optional in tests; production wiring
+	// (cmd/serve.go) supplies the same *sql.DB returned by
+	// storage.OpenEnt.
+	SQLDB  *sql.DB
 	Logger zerolog.Logger
 	// Stagemedia is optional. When nil, poster + headshot fetching is
 	// disabled; handlers that depend on it must nil-check. Typed as the
@@ -285,6 +296,7 @@ func New(opts Options) (*Server, error) {
 	srv := &Server{
 		echo:              e,
 		db:                opts.DB,
+		sqlDB:             opts.SQLDB,
 		logger:            opts.Logger,
 		stagemedia:        opts.Stagemedia,
 		encora:            opts.Encora,

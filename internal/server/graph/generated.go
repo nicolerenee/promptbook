@@ -272,6 +272,7 @@ type ComplexityRoot struct {
 		DateTime            func(childComplexity int) int
 		DateVariant         func(childComplexity int) int
 		EncoraFormat        func(childComplexity int) int
+		ExternalIDs         func(childComplexity int) int
 		ExternallyManaged   func(childComplexity int) int
 		Extras              func(childComplexity int) int
 		GiftingStatus       func(childComplexity int) int
@@ -326,6 +327,13 @@ type ComplexityRoot struct {
 	RecordingEdge struct {
 		Cursor func(childComplexity int) int
 		Node   func(childComplexity int) int
+	}
+
+	RecordingExternalID struct {
+		ExternalID func(childComplexity int) int
+		Label      func(childComplexity int) int
+		Provider   func(childComplexity int) int
+		URL        func(childComplexity int) int
 	}
 
 	RecordingExtra struct {
@@ -572,6 +580,7 @@ type RecordingResolver interface {
 	MediaInfo(ctx context.Context, obj *ent.Recording) (*MediaInfo, error)
 	LocalReleaseFormat(ctx context.Context, obj *ent.Recording) (string, error)
 	Extras(ctx context.Context, obj *ent.Recording) ([]*RecordingExtra, error)
+	ExternalIDs(ctx context.Context, obj *ent.Recording) ([]*RecordingExternalID, error)
 }
 type ShowResolver interface {
 	LocalBannerURL(ctx context.Context, obj *ent.Show) (string, error)
@@ -1671,6 +1680,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.EncoraFormat(childComplexity), true
+	case "Recording.externalIDs":
+		if e.ComplexityRoot.Recording.ExternalIDs == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.ExternalIDs(childComplexity), true
 	case "Recording.externallyManaged":
 		if e.ComplexityRoot.Recording.ExternallyManaged == nil {
 			break
@@ -1966,6 +1981,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RecordingEdge.Node(childComplexity), true
+
+	case "RecordingExternalID.externalID":
+		if e.ComplexityRoot.RecordingExternalID.ExternalID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExternalID.ExternalID(childComplexity), true
+	case "RecordingExternalID.label":
+		if e.ComplexityRoot.RecordingExternalID.Label == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExternalID.Label(childComplexity), true
+	case "RecordingExternalID.provider":
+		if e.ComplexityRoot.RecordingExternalID.Provider == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExternalID.Provider(childComplexity), true
+	case "RecordingExternalID.url":
+		if e.ComplexityRoot.RecordingExternalID.URL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExternalID.URL(childComplexity), true
 
 	case "RecordingExtra.isDir":
 		if e.ComplexityRoot.RecordingExtra.IsDir == nil {
@@ -3343,6 +3383,8 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_localReleaseFormat(ctx, field)
 	case "extras":
 		return ec.fieldContext_Recording_extras(ctx, field)
+	case "externalIDs":
+		return ec.fieldContext_Recording_externalIDs(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Recording", field.Name)
 }
@@ -3367,6 +3409,20 @@ func (ec *executionContext) childFields_RecordingEdge(ctx context.Context, field
 		return ec.fieldContext_RecordingEdge_cursor(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type RecordingEdge", field.Name)
+}
+
+func (ec *executionContext) childFields_RecordingExternalID(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "provider":
+		return ec.fieldContext_RecordingExternalID_provider(ctx, field)
+	case "label":
+		return ec.fieldContext_RecordingExternalID_label(ctx, field)
+	case "externalID":
+		return ec.fieldContext_RecordingExternalID_externalID(ctx, field)
+	case "url":
+		return ec.fieldContext_RecordingExternalID_url(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RecordingExternalID", field.Name)
 }
 
 func (ec *executionContext) childFields_RecordingExtra(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -10146,6 +10202,38 @@ func (ec *executionContext) fieldContext_Recording_extras(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Recording_externalIDs(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_externalIDs(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().ExternalIDs(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*RecordingExternalID) graphql.Marshaler {
+			return ec.marshalNRecordingExternalID2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExternalIDᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_externalIDs(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Recording",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordingExternalID(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _RecordingConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.RecordingConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10286,6 +10374,98 @@ func (ec *executionContext) _RecordingEdge_cursor(ctx context.Context, field gra
 }
 func (ec *executionContext) fieldContext_RecordingEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("RecordingEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExternalID_provider(ctx context.Context, field graphql.CollectedField, obj *RecordingExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExternalID_provider(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Provider, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExternalID_provider(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExternalID", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExternalID_label(ctx context.Context, field graphql.CollectedField, obj *RecordingExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExternalID_label(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Label, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExternalID_label(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExternalID", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExternalID_externalID(ctx context.Context, field graphql.CollectedField, obj *RecordingExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExternalID_externalID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExternalID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExternalID_externalID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExternalID", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExternalID_url(ctx context.Context, field graphql.CollectedField, obj *RecordingExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExternalID_url(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExternalID_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExternalID", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _RecordingExtra_path(ctx context.Context, field graphql.CollectedField, obj *RecordingExtra) (ret graphql.Marshaler) {
@@ -24093,6 +24273,42 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "externalIDs":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_externalIDs(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -24180,6 +24396,57 @@ func (ec *executionContext) _RecordingEdge(ctx context.Context, sel ast.Selectio
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var recordingExternalIDImplementors = []string{"RecordingExternalID"}
+
+func (ec *executionContext) _RecordingExternalID(ctx context.Context, sel ast.SelectionSet, obj *RecordingExternalID) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, recordingExternalIDImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RecordingExternalID")
+		case "provider":
+			out.Values[i] = ec._RecordingExternalID_provider(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "label":
+			out.Values[i] = ec._RecordingExternalID_label(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "externalID":
+			out.Values[i] = ec._RecordingExternalID_externalID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._RecordingExternalID_url(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -26610,6 +26877,32 @@ func (ec *executionContext) marshalNRecordingConnection2ᚖgithubᚗcomᚋnicole
 		return graphql.Null
 	}
 	return ec._RecordingConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRecordingExternalID2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExternalIDᚄ(ctx context.Context, sel ast.SelectionSet, v []*RecordingExternalID) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRecordingExternalID2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExternalID(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRecordingExternalID2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExternalID(ctx context.Context, sel ast.SelectionSet, v *RecordingExternalID) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RecordingExternalID(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNRecordingExtra2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExtraᚄ(ctx context.Context, sel ast.SelectionSet, v []*RecordingExtra) graphql.Marshaler {

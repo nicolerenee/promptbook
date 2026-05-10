@@ -8,6 +8,7 @@ package graph
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/rs/zerolog"
@@ -75,7 +76,12 @@ func (p LibraryPlan) Configured() bool {
 // rewrite return a typed error so the rest of the schema stays
 // usable; in production it's wired whenever the image cache is.
 type Resolver struct {
-	client       *ent.Client
+	client *ent.Client
+	// sqlDB shares client's connection pool. Used by enrichment
+	// resolvers that read from tables without an ent type (today:
+	// external_ids). May be nil in tests that don't exercise that
+	// surface; the external_ids resolver returns [] in that case.
+	sqlDB        *sql.DB
 	imageCache   *imagecache.Cache
 	ingestEngine IngestRunner
 	libraryPlan  LibraryPlan
@@ -89,8 +95,14 @@ type Resolver struct {
 // refresh service are all optional; pass nil when the surface is not
 // configured at the server layer. libraryPlan may be the zero value
 // when no library.root / templates are configured.
+//
+// sqlDB shares the ent client's connection pool. The
+// Recording.externalIDs resolver reads through it (the external_ids
+// table doesn't have an ent type); nil is tolerated and the resolver
+// returns an empty slice in that mode.
 func NewSchema(
 	client *ent.Client,
+	sqlDB *sql.DB,
 	cache *imagecache.Cache,
 	ingestEngine IngestRunner,
 	libraryPlan LibraryPlan,
@@ -100,6 +112,7 @@ func NewSchema(
 	return NewExecutableSchema(Config{
 		Resolvers: &Resolver{
 			client:       client,
+			sqlDB:        sqlDB,
 			imageCache:   cache,
 			ingestEngine: ingestEngine,
 			libraryPlan:  libraryPlan,

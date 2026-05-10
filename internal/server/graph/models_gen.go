@@ -136,6 +136,13 @@ type QueueExternalID struct {
 	URL        *string `json:"url,omitempty"`
 }
 
+type RecordingExternalID struct {
+	Provider   string  `json:"provider"`
+	Label      string  `json:"label"`
+	ExternalID string  `json:"externalID"`
+	URL        *string `json:"url,omitempty"`
+}
+
 type RecordingExtra struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`

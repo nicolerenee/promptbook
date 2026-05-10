@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"time"
 
 	"entgo.io/contrib/entgql"
@@ -49,13 +50,14 @@ const websocketKeepAlive = 10 * time.Second
 // returns a typed error in that case.
 func newGraphQLHandler(
 	client *ent.Client,
+	sqlDB *sql.DB,
 	cache *imagecache.Cache,
 	ingestEngine graph.IngestRunner,
 	libraryPlan graph.LibraryPlan,
 	nfoRefresh *nforefresh.Service,
 	logger zerolog.Logger,
 ) *handler.Server {
-	srv := handler.New(graph.NewSchema(client, cache, ingestEngine, libraryPlan, nfoRefresh, logger))
+	srv := handler.New(graph.NewSchema(client, sqlDB, cache, ingestEngine, libraryPlan, nfoRefresh, logger))
 	srv.AddTransport(transport.Websocket{KeepAlivePingInterval: websocketKeepAlive})
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
@@ -84,7 +86,7 @@ func newGraphQLHandler(
 // same surfaces the legacy REST handlers used to.
 func (s *Server) registerGraphQL() {
 	gql := newGraphQLHandler(
-		s.db, s.imageCache, s.ingestEngine, s.libraryPlan(),
+		s.db, s.sqlDB, s.imageCache, s.ingestEngine, s.libraryPlan(),
 		s.nfoRefresh, s.logger,
 	)
 	s.echo.POST("/graphql", echo.WrapHandler(gql))

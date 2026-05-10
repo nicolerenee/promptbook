@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
@@ -45,7 +46,14 @@ type EncoraRecordingClient interface {
 // setups (no API key) leave the Encora field nil and skip step 1
 // without error so probe + nforefresh + image refresh still run.
 type RefreshRecordingFullJob struct {
-	DB         *DBConn
+	DB *DBConn
+	// SQLDB shares DB's connection pool. Plumbed alongside so the
+	// post-fetch persist hook can write the recording's Encora id into
+	// the external_ids table via the externalids package (no ent type
+	// for that table — see internal/externalids for the rationale).
+	// Optional: a nil SQLDB skips the external_ids upsert and the
+	// recording still lands via the ent path.
+	SQLDB      *sql.DB
 	Encora     EncoraRecordingClient
 	Prober     probe.Prober
 	NFORefresh *nforefresh.Service
@@ -108,7 +116,7 @@ func (j *RefreshRecordingFullJob) refreshFromEncora(ctx context.Context, recID i
 			Msg("refresh-recording-full: encora detail fetch failed; continuing with local state")
 		return
 	}
-	if perr := pbsync.PersistRecording(ctx, j.DB, rec, time.Now); perr != nil {
+	if perr := pbsync.PersistRecording(ctx, j.DB, j.SQLDB, rec, time.Now); perr != nil {
 		j.Logger.Warn().
 			Err(perr).
 			Int64("recording_id", recID).

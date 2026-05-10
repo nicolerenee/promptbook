@@ -5,6 +5,7 @@ package ingest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/nfo"
@@ -55,7 +57,15 @@ type Client interface {
 
 // Engine bundles ingest dependencies. One Engine handles many paths.
 type Engine struct {
-	DB                *ent.Client
+	DB *ent.Client
+	// SQLDB is the underlying *sql.DB sharing DB's connection pool.
+	// Used by the externalids persistence path (no ent type for that
+	// table — see internal/externalids/externalids.go for the
+	// rationale). Optional: when nil, ingest skips the external_ids
+	// upsert and logs a debug-level warning. The CLI / server wiring
+	// always supplies it; tests that don't exercise the external-id
+	// path can leave it nil.
+	SQLDB             *sql.DB
 	Client            Client
 	LibraryRoot       string
 	FolderTemplate    string
@@ -140,6 +150,20 @@ type Options struct {
 	// path; the sentinel goes in the parent folder; extras stay in
 	// place as well.
 	ExternallyManaged bool
+	// ExternalIDs are the third-party provider ids the caller wants
+	// stamped onto the recording's external_ids table (TMDB / IMDB /
+	// future providers). Each entry's RecordingID is overwritten with
+	// the resolved recording id at persistence time, so callers can
+	// pass through the scanner-supplied list verbatim (the scanner
+	// stamps RecordingID=0 at classify time).
+	//
+	// Empty / nil leaves the external_ids table untouched. Encora's
+	// own row is upserted by the sync hook in sync.PersistRecording
+	// independently of this list, so the row is in place regardless
+	// of what additional providers the caller supplies. Skipped when
+	// ingest didn't successfully resolve a recording id (no row to
+	// anchor the upsert on).
+	ExternalIDs []externalids.ExternalID
 }
 
 // FileAssignment routes one source file to a role inside a multi-
@@ -262,7 +286,12 @@ type Result struct {
 // untouched when assignments is empty.
 func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result, error) {
 	if len(opts.FileAssignments) > 0 {
-		return e.ingestWithAssignments(ctx, src, opts)
+		res, err := e.ingestWithAssignments(ctx, src, opts)
+		if err != nil {
+			return res, err
+		}
+		e.persistExternalIDs(ctx, res, opts)
+		return res, nil
 	}
 
 	src = filepath.Clean(src)
@@ -273,7 +302,9 @@ func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result,
 
 	if !info.IsDir() {
 		item := e.ingestOne(ctx, src, opts)
-		return &Result{Items: []ItemResult{item}}, nil
+		res := &Result{Items: []ItemResult{item}}
+		e.persistExternalIDs(ctx, res, opts)
+		return res, nil
 	}
 
 	if opts.FlagEncoraID != 0 {
@@ -297,7 +328,64 @@ func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result,
 	if walkErr != nil {
 		return res, fmt.Errorf("walk src: %w", walkErr)
 	}
+	e.persistExternalIDs(ctx, res, opts)
 	return res, nil
+}
+
+// persistExternalIDs writes opts.ExternalIDs into the external_ids
+// table for every successfully-ingested recording in the batch. Each
+// supplied entry has its RecordingID overwritten with the resolved
+// id from the first non-zero EncoraID in the result, since one
+// ingest call lands one recording (multipart or single-file, but
+// always one recording id). Skipped silently when opts.ExternalIDs
+// is empty, when no main / part item landed (no recording to anchor
+// the rows on), or when SQLDB is nil (test fixtures).
+//
+// Failures are logged at warn level and dropped; the main ingest
+// flow has already moved files + written version rows by the time we
+// get here, so a row-write failure shouldn't fail the whole call.
+// The next sync / ingest cycle will retry the upsert (UpsertMany is
+// idempotent under the composite PK).
+func (e *Engine) persistExternalIDs(ctx context.Context, res *Result, opts Options) {
+	if len(opts.ExternalIDs) == 0 {
+		return
+	}
+	if e.SQLDB == nil {
+		e.Logger.Debug().Msg("ingest: skipping external_ids upsert (SQLDB not configured)")
+		return
+	}
+	var recordingID int64
+	for _, item := range res.Items {
+		if item.EncoraID > 0 && item.Action != ActionSkipped {
+			recordingID = item.EncoraID
+			break
+		}
+	}
+	if recordingID == 0 {
+		// No recording landed in the batch — no row to anchor the
+		// external ids on.
+		return
+	}
+	rows := make([]externalids.ExternalID, 0, len(opts.ExternalIDs))
+	for _, eid := range opts.ExternalIDs {
+		if eid.Provider == "" || eid.ExternalID == "" {
+			continue
+		}
+		rows = append(rows, externalids.ExternalID{
+			RecordingID: recordingID,
+			Provider:    eid.Provider,
+			ExternalID:  eid.ExternalID,
+		})
+	}
+	if len(rows) == 0 {
+		return
+	}
+	if err := externalids.UpsertMany(ctx, e.SQLDB, rows); err != nil {
+		e.Logger.Warn().Err(err).
+			Int64("recording_id", recordingID).
+			Int("rows", len(rows)).
+			Msg("ingest: failed to upsert external_ids")
+	}
 }
 
 // ingestOne runs the full pipeline for a single video path.
@@ -788,7 +876,7 @@ func (e *Engine) lookupOrAdd(
 		return nil, false, fmt.Errorf("fetch recording %d: %w", id, fetchErr)
 	}
 
-	if perr := syncpkg.PersistRecording(ctx, e.DB, recording, time.Now); perr != nil {
+	if perr := syncpkg.PersistRecording(ctx, e.DB, e.SQLDB, recording, time.Now); perr != nil {
 		return nil, false, fmt.Errorf("persist recording %d: %w", id, perr)
 	}
 

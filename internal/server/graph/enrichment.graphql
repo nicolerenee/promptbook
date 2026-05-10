@@ -133,6 +133,27 @@ extend type Recording {
   # display surface; the SPA renders folders as collapsible tree
   # nodes.
   extras: [RecordingExtra!]!
+  # externalIDs lists every third-party provider id attached to the
+  # recording — Encora (back-filled at migration time) plus any
+  # TMDB / IMDB / future-provider ids the importer wrote. The list
+  # is ordered alphabetically by provider for deterministic chip
+  # rendering; the SPA decides whether to reorder by user-facing
+  # priority. Empty when the recording has no rows in external_ids,
+  # which shouldn't happen for synced Encora recordings.
+  externalIDs: [RecordingExternalID!]!
+}
+
+# RecordingExternalID is one chip on the recording detail header.
+# provider is the lowercase provider token; label is the human-
+# readable name ("Encora", "TMDB", "IMDB") the chip body renders;
+# externalID is the raw id (digits for TMDB/Encora, "tt"+digits for
+# IMDB); url is the canonical public web link, or null for an
+# unknown provider.
+type RecordingExternalID {
+  provider: String!
+  label: String!
+  externalID: String!
+  url: String
 }
 
 # RecordingExtra is one row in the Recording.extras list — a non-main

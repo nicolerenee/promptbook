@@ -48,15 +48,16 @@ func runCollectionSync(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("build encora client: %w", err)
 	}
 
-	_, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
+	sqlDB, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = sqlDB.Close() }()
 
 	res, err := sync.Sync(ctx, client, db, sync.Options{
 		BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
 		Logger:       log.Logger,
+		SQLDB:        sqlDB,
 	})
 	if err != nil {
 		return fmt.Errorf("sync: %w", err)

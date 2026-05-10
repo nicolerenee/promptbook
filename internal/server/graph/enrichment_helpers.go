@@ -73,6 +73,45 @@ func (r *Resolver) recordingExtras(
 	return out, nil
 }
 
+// recordingExternalIDs is the resolver body for
+// Recording.externalIDs. Reads every (provider, external_id) row
+// from the external_ids table, ordered alphabetically by provider
+// per externalids.ListForRecording's contract, and projects each
+// row onto the GraphQL chip shape (provider / label / externalID /
+// url).
+//
+// Returns an empty slice when the recording has no rows in
+// external_ids (shouldn't happen for synced recordings — the
+// migration's back-fill seeded encora rows for every existing
+// recording, and sync.PersistRecording stamps new ones) or when the
+// resolver's sqlDB handle is nil (test fixtures that didn't wire it).
+func (r *Resolver) recordingExternalIDs(
+	ctx context.Context, recordingID int64,
+) ([]*RecordingExternalID, error) {
+	if r.sqlDB == nil {
+		return []*RecordingExternalID{}, nil
+	}
+	rows, err := externalids.ListForRecording(ctx, r.sqlDB, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list external_ids for recording %d: %w", recordingID, err)
+	}
+	out := make([]*RecordingExternalID, 0, len(rows))
+	for _, row := range rows {
+		entry := &RecordingExternalID{
+			Provider:   string(row.Provider),
+			Label:      externalids.LabelFor(row.Provider),
+			ExternalID: row.ExternalID,
+		}
+		if url := externalids.URLFor(row.Provider, row.ExternalID); url != "" {
+			urlCopy := url
+			entry.URL = &urlCopy
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
 // recordingMediaInfo is the resolver body for Recording.mediaInfo. It
 // reads the latest recording_versions row (largest file first, the
 // same order ListVersions returns) and decodes its media_info_json
@@ -1487,7 +1526,43 @@ func buildImportOptions(
 	}
 	opts.FileAssignments = importFileAssignmentsFromInput(input.FileAssignments)
 	opts.ExternallyManaged = optBool(input.ExternallyManaged)
+	opts.ExternalIDs = decodeClassificationExternalIDs(entry.ClassificationJSON)
 	return opts
+}
+
+// decodeClassificationExternalIDs pulls the external_ids list out of
+// the queue row's classification_json blob. Mirrors
+// decodeQueueClassification's external-ids decode but returns the
+// externalids.ExternalID wire shape ingest.Options consumes. Empty /
+// unparseable input yields nil so the importQueueEntry path falls
+// through to the legacy "no external ids" behaviour.
+func decodeClassificationExternalIDs(raw string) []externalids.ExternalID {
+	if raw == "" {
+		return nil
+	}
+	var decoded struct {
+		ExternalIDs []struct {
+			Provider   string `json:"provider"`
+			ExternalID string `json:"externalID"`
+		} `json:"externalIDs"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return nil
+	}
+	if len(decoded.ExternalIDs) == 0 {
+		return nil
+	}
+	out := make([]externalids.ExternalID, 0, len(decoded.ExternalIDs))
+	for _, eid := range decoded.ExternalIDs {
+		if eid.Provider == "" || eid.ExternalID == "" {
+			continue
+		}
+		out = append(out, externalids.ExternalID{
+			Provider:   externalids.Provider(eid.Provider),
+			ExternalID: eid.ExternalID,
+		})
+	}
+	return out
 }
 
 // maybeShortCircuitOnConflict runs the destination-conflict check
