@@ -142,19 +142,28 @@ func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.R
 	// 2=location (caption). Three slots are ALWAYS allocated; empty
 	// rows just don't draw anything in their slot, preserving vertical
 	// alignment across recordings of different metadata completeness.
+	//
+	// The title slot gets ~2x the vertical room of the eyebrow/caption
+	// slots so it dominates as the headline (Cresthaven-style). Center
+	// fractions are explicit per-slot rather than (i+0.5)/3 because
+	// the slots are unequal in height.
 	type slotCfg struct {
 		minChars int
 		weight   string
 		sizeCap  float64 // upper bound on font size to keep slot from overflowing.
+		center   float64 // vertical center of the slot as a fraction of band height.
 		override float64 // user-pinned absolute size (>0 wins over char budget).
 	}
 	slots := [overlayRowCount]slotCfg{
 		{minChars: eyebrowMinChars, weight: style.Eyebrow.Weight,
-			sizeCap: float64(bandH) * eyebrowSlotCap, override: resolved.EyebrowSizePx},
+			sizeCap: float64(bandH) * eyebrowSlotCap, center: eyebrowSlotCenter,
+			override: resolved.EyebrowSizePx},
 		{minChars: titleMinChars, weight: style.Title.Weight,
-			sizeCap: float64(bandH) * titleSlotCap, override: resolved.TitleSizePx},
+			sizeCap: float64(bandH) * titleSlotCap, center: titleSlotCenter,
+			override: resolved.TitleSizePx},
 		{minChars: captionMinChars, weight: style.Caption.Weight,
-			sizeCap: float64(bandH) * captionSlotCap, override: resolved.CaptionSizePx},
+			sizeCap: float64(bandH) * captionSlotCap, center: captionSlotCenter,
+			override: resolved.CaptionSizePx},
 	}
 
 	type rowDraw struct {
@@ -200,19 +209,17 @@ func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.R
 	// Paint the band only when there's something to draw on it.
 	draw.Draw(dst, bandRect, &image.Uniform{C: style.BandColor}, image.Point{}, draw.Over)
 
-	// Fixed slot positions: row i sits at (i + 0.5)/3 of the band
-	// height. Empty rows skip drawing but still consume their slot so
-	// the visible rows stay anchored regardless of which siblings have
-	// content. The "extra padding at top + bottom" the band has at
-	// 0.20 frac comes from the slot fonts being smaller than slot
-	// height — char budget caps fonts well below the slot ceiling on
-	// realistic posters.
+	// Fixed slot positions per slot configuration. Empty rows skip
+	// drawing but still consume their slot so the visible rows stay
+	// anchored regardless of which siblings have content. The "extra
+	// padding at top + bottom" the band has at 0.20 frac comes from
+	// the slot caps + slot centers being chosen to leave ~5 % margin
+	// at each end and ~5 % between adjacent slots.
 	for i, row := range draws {
 		if row.empty {
 			continue
 		}
-		fraction := (float64(i) + halfRow) / float64(overlayRowCount)
-		baselineY := bandRect.Min.Y + int(float64(bandRect.Dy())*fraction)
+		baselineY := bandRect.Min.Y + int(float64(bandRect.Dy())*slots[i].center)
 		drawCenteredAtBaseline(dst, row.text, row.face, style.TextColor, bandRect, baselineY)
 	}
 
@@ -244,40 +251,53 @@ func charBudgetSize(text string, minChars int, weight string, availableWidth int
 	return probeSize * float64(availableWidth) / float64(probeWidth)
 }
 
-// halfRow shifts each row's anchor from its top edge to its center
-// when distributing N rows over the band. Pulled out as a const so
-// mnd lint stays satisfied.
-const halfRow = 0.5
-
 // hPadFactor is multiplied by Style.PadX to compute the total
 // horizontal padding (left + right) reserved inside the band. Pulled
 // out as a const so mnd lint stays happy on the band-fit math.
 const hPadFactor = 2
 
-// Layout constants. Fonts are now driven primarily by character
-// budget (eyebrowMinChars / titleMinChars / captionMinChars below),
-// so the band-fraction sizes only act as upper-bound CAPS that keep
-// a row from overflowing its slot when char budget would be huge
-// (e.g., short text on a very wide image).
+// Layout constants. Fonts are driven primarily by character budget
+// (eyebrowMinChars / titleMinChars / captionMinChars), with a per-row
+// SLOT CAP that prevents a row from overflowing its allocated band
+// region when the budget would yield a huge font (short text on a
+// wide image). Per-recording overlay_style_json with size_px > 0
+// bypasses both knobs.
 //
-// Per-recording overlay_style_json with a positive size_px on a row
-// pins an absolute pixel size for that row, bypassing both the char
-// budget and the slot cap.
+// Visual hierarchy is title-centric: the title (tour name) is the
+// headline so it gets ~2x the vertical room of the eyebrow (date)
+// and caption (venue). Slot centers + caps are chosen so the band
+// reads as
+//
+//	┌─5% top padding───────────┐
+//	│  date (slot 1, ~20%)      │
+//	├─5% gap─────────┤
+//	│  TOUR (slot 2, ~40%)      │
+//	├─5% gap─────────┤
+//	│  venue (slot 3, ~20%)     │
+//	└─5% bottom padding─────────┘
 const (
-	// Per-row font caps as fractions of the band height. Each slot
-	// gets ~1/3 of the band; title sits a touch larger because the
-	// bold weight wants room and it carries the headline, while
-	// eyebrow + caption stay just under the slot ceiling.
-	eyebrowSlotCap = 0.30
-	titleSlotCap   = 0.34
-	captionSlotCap = 0.30
+	// Per-row font caps as fractions of the band height. Title at
+	// 0.40 dominates; eyebrow + caption at 0.20 stay quiet.
+	eyebrowSlotCap = 0.20
+	titleSlotCap   = 0.40
+	captionSlotCap = 0.20
+	// Per-row vertical centers as fractions of band height. Slot 1
+	// at 0.15 (centered in the band's top quarter), slot 2 at 0.50
+	// (band middle), slot 3 at 0.85 (centered in the bottom quarter).
+	// Empty rows still consume their slot so a 2-row recording aligns
+	// to the same Y coordinates as a 3-row one.
+	eyebrowSlotCenter = 0.15
+	titleSlotCenter   = 0.50
+	captionSlotCenter = 0.85
 	// Minimum character widths. The renderer sizes each row's font
 	// against max(minChars, len(text)) characters, so the row's type
 	// stays at a stable scale across recordings: a 4-char date
 	// "2024" and a 10-char date "2024-12-31" render at the same
-	// height because both are sized for the 12-char minimum.
+	// height because both are sized for the 12-char minimum. Title
+	// runs at a 10-char floor so short tour names like "BROADWAY"
+	// stay prominent — long tour names shrink to fit naturally.
 	eyebrowMinChars = 12
-	titleMinChars   = 15
+	titleMinChars   = 10
 	captionMinChars = 25
 	// 9% per side = 18% total horizontal margin. The previous 7%
 	// still read as edge-to-edge once a long date or venue used the
