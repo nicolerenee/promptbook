@@ -1348,6 +1348,20 @@ function renderHeader(loaded) {
   // visually line up with the date text rather than dominating it.
   // flex-wrap so narrow viewports can stack the trailing chips
   // beneath the text rather than overflowing.
+  // Cataloged timestamp lives alongside the other "facts about the
+  // recording" chips so it sits with the metadata, not with the file
+  // listing. Hidden when missing (e.g. orphan recordings the catalog
+  // sync hasn't tagged with a CollectedAt yet). Short label so it
+  // doesn't dominate the subtitle row; full timestamp survives in
+  // the badge's title attr for hover.
+  const cataloged = loaded.CollectedAt || '';
+  const catalogedBadge = cataloged
+    ? m('span', {
+        class: 'badge badge-sm badge-ghost',
+        title: 'Cataloged ' + cataloged,
+      }, 'Cataloged ' + cataloged)
+    : null;
+
   const subtitleRow = m('div', {
     class: 'flex flex-wrap items-center gap-2 text-sm opacity-70',
   }, [
@@ -1364,6 +1378,7 @@ function renderHeader(loaded) {
           String(wanters) + ' wants')
       : null,
     ...renderLinkBadges(loaded),
+    catalogedBadge,
   ]);
 
   return m('div', {
@@ -1896,15 +1911,14 @@ function extraDirSection(name, children) {
 // Extras tree, and the NFO disclosure row at the bottom.
 //
 // Section header carries the canonical on-disk folder so the user can
-// see the path without leaving the page. Cataloged timestamp renders
-// as a small footer badge at the bottom — it's reference data, not a
-// scan-the-row attribute, so it gets the lowest visual weight on the
-// card.
+// see the path without leaving the page — rendered as a dimmed
+// monospace line under the heading rather than a labeled key:value
+// pair, so the heading + path together read as one "where these
+// files live" header.
 function renderFilesSection(loaded) {
   const versions = loaded.Versions || [];
   const extras = loaded.extras || [];
   const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
-  const cataloged = loaded.CollectedAt || '';
   return m('div', { class: 'card bg-base-100 shadow-sm' },
     m('div', { class: 'card-body space-y-4' }, [
       m('div', { class: 'space-y-1' }, [
@@ -1918,13 +1932,6 @@ function renderFilesSection(loaded) {
       extras.length > 0 ? renderExtrasSection(loaded, folder) : null,
       m('div', { class: 'border-t border-base-200 pt-2' },
         renderNFORow(loaded)),
-      cataloged
-        ? m('div', { class: 'flex justify-end pt-1' },
-            m('span', {
-              class: 'badge badge-ghost badge-sm font-mono',
-              title: 'Cataloged ' + cataloged,
-            }, 'Cataloged ' + cataloged))
-        : null,
     ]));
 }
 
