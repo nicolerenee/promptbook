@@ -32,7 +32,16 @@ const (
 	// DefaultFFProbePath points at `ffprobe` on PATH. Override via
 	// library.ffprobePath / PROMPTBOOK_LIBRARY_FFPROBEPATH when the
 	// binary lives elsewhere.
-	DefaultFFProbePath         = "ffprobe"
+	DefaultFFProbePath = "ffprobe"
+	// DefaultFFmpegPath points at `ffmpeg` on PATH. ffmpeg is used by
+	// the picker's fanart-fallback path to extract still frames from
+	// the local video file when Encora has no curated screenshots for
+	// a recording. Override via library.ffmpegPath /
+	// PROMPTBOOK_LIBRARY_FFMPEGPATH when the binary lives elsewhere
+	// (e.g. a vendored static build); the extractor surfaces a clear
+	// "not available" error if ffmpeg isn't reachable at extraction
+	// time.
+	DefaultFFmpegPath          = "ffmpeg"
 	DefaultWatchInterval       = 1 * time.Minute
 	DefaultStagemediaBaseURL   = "https://stagemedia.me"
 	DefaultStagemediaUserAgent = "promptbook/0.0.1"
@@ -85,6 +94,12 @@ type LibraryConfig struct {
 	// on PATH; the engine surfaces an error if the binary isn't
 	// reachable at probe time (no silent empty-mediainfo fallback).
 	FFProbePath string `mapstructure:"ffprobePath"`
+	// FFmpegPath is the ffmpeg binary used by the picker's fanart-
+	// fallback to extract still frames from the local video file.
+	// Empty falls back to "ffmpeg" on PATH; the picker surfaces an
+	// empty options array (with a logged reason) when ffmpeg is
+	// unavailable, so the rest of the modal stays usable.
+	FFmpegPath string `mapstructure:"ffmpegPath"`
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).
@@ -181,6 +196,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("library.fileTemplate", DefaultFileTemplate)
 	v.SetDefault("library.watchInterval", DefaultWatchInterval)
 	v.SetDefault("library.ffprobePath", DefaultFFProbePath)
+	v.SetDefault("library.ffmpegPath", DefaultFFmpegPath)
 	v.SetDefault("server.listen", DefaultListenAddr)
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
 	v.SetDefault("stagemedia.baseUrl", DefaultStagemediaBaseURL)

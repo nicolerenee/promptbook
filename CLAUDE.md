@@ -63,6 +63,15 @@ Phases queued (in order):
   under the Bitstream Vera Fonts license, see
   `internal/imagerender/assets/LICENSE`)
 
+External binaries (hard runtime dependencies):
+
+- `ffprobe` — used by the rename engine + the recording detail
+  page's media-info card. Configurable via `library.ffprobePath`.
+- `ffmpeg` — used by the picker's fanart-fallback when Encora has
+  no curated screenshots; extracts 10 evenly-distributed still
+  frames from the local video file. Configurable via
+  `library.ffmpegPath`.
+
 ## Layout
 
 ```text

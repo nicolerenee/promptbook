@@ -1945,7 +1945,11 @@ function applyHighlight(vnode) {
 // the result on state.recording.pickerOptions[kind]. Errors land on
 // pickerOptionsError[kind] so the picker tab can render an inline
 // alert. Loading flips pickerOptionsLoading[kind] for the duration.
-function loadOptions(id, kind) {
+//
+// opts.refresh appends ?refresh=true so the fanart fallback's frame
+// cache gets scrubbed before re-extracting — Re-fetch on the Fanart
+// tab uses this to re-roll the random frame offsets.
+function loadOptions(id, kind, opts) {
   state.recording.pickerOptionsLoading = state.recording.pickerOptionsLoading || {};
   state.recording.pickerOptions = state.recording.pickerOptions || {};
   state.recording.pickerOptionsError = state.recording.pickerOptionsError || {};
@@ -1956,7 +1960,10 @@ function loadOptions(id, kind) {
   // stale strip while the new fetch flies than a flash to skeletons.
   m.redraw();
 
-  return api.get('/recordings/' + encodeURIComponent(id) + '/' + kind + '-options')
+  const refresh = opts && opts.refresh;
+  const path = '/recordings/' + encodeURIComponent(id) + '/' + kind + '-options' +
+    (refresh ? '?refresh=true' : '');
+  return api.get(path)
     .then((body) => {
       state.recording.pickerOptions[kind] =
         (body && Array.isArray(body.options)) ? body.options : [];
@@ -2043,6 +2050,17 @@ function renderPickerTab(loaded, kind) {
   const genByKind = state.recording.pickerOptionsGen || {};
   const stagedByKind = state.recording.pickerStaged || {};
   const stagedURL = stagedByKind[kind] || null;
+  // Frame-fallback caption: when the fanart options came back with
+  // source="frames" the server is showing locally-extracted stills,
+  // not curated Encora screenshots. Surfacing this so the user
+  // doesn't think they're picking from upstream art.
+  const optionsList = optionsByKind[kind];
+  const isFrameFallback = kind === 'fanart' &&
+    Array.isArray(optionsList) && optionsList.length > 0 &&
+    optionsList.every((o) => o && o.source === 'frames');
+  const optionsCaption = isFrameFallback
+    ? 'Random frames from your local file. Click Re-fetch for a different set.'
+    : null;
 
   // Preview tile only on the poster row — fanart isn't burned-in,
   // so the staged thumbnail IS the preview already. The server
@@ -2080,8 +2098,9 @@ function renderPickerTab(loaded, kind) {
     layoutControls: layoutSelectors,
     onPick: (url) => stagePickerChoice(kind, url),
     onUpload: (file) => runUpload(uploadPath, id, file),
-    onRefetch: () => loadOptions(id, kind),
+    onRefetch: () => loadOptions(id, kind, { refresh: kind === 'fanart' }),
     uploadLabel: kind === 'fanart' ? 'Upload fanart' : 'Upload poster',
+    optionsCaption,
   });
 }
 

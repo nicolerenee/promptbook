@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -268,6 +269,13 @@ func (s *Server) handleUploadActorHeadshot(c echo.Context) error {
 // The existing slot is removed first so the picker's "set this URL"
 // always lands fresh bytes (FetchRecordingFanart is idempotent on
 // existing files and would otherwise short-circuit the download).
+//
+// Same-origin frame-extract URLs (the fanart-fallback path) are
+// handled directly off disk instead of going through the HTTP
+// fetcher — those URLs are relative paths the cache itself wrote,
+// no remote round-trip is appropriate. After a successful copy the
+// frames cache is cleared (the chosen frame is now in fanart.jpg;
+// the rest are no longer useful).
 func (s *Server) handleSetRecordingFanartFromURL(c echo.Context) error {
 	id, err := parseRecordingIDParam(c)
 	if err != nil {
@@ -283,6 +291,27 @@ func (s *Server) handleSetRecordingFanartFromURL(c echo.Context) error {
 	if parseErr != nil {
 		return parseErr
 	}
+
+	// Same-origin frame-extract path: copy from the cache directory
+	// straight into the fanart slot, then scrub the frames cache.
+	if framePath, ok := s.fanartFrameSourcePath(id, url); ok {
+		if copyErr := copyFileAtomic(
+			framePath, s.ImageCache().RecordingFanartPath(id),
+		); copyErr != nil {
+			return c.JSON(http.StatusInternalServerError, uploadResponse{
+				Error: copyErr.Error(),
+			})
+		}
+		if clearErr := s.ImageCache().ClearFrames(id); clearErr != nil {
+			s.logger.Warn().
+				Err(clearErr).
+				Int64("recording_id", id).
+				Msg("fanart-from-url: clear frames cache failed")
+		}
+		s.triggerNFORefresh(nfoRefreshRecording, id)
+		return c.JSON(http.StatusOK, uploadResponse{OK: true})
+	}
+
 	_ = removeIfExists(s.ImageCache().RecordingFanartPath(id))
 	if _, fetchErr := s.ImageCache().FetchRecordingFanart(
 		c.Request().Context(), id, url); fetchErr != nil {
@@ -291,6 +320,73 @@ func (s *Server) handleSetRecordingFanartFromURL(c echo.Context) error {
 	}
 	s.triggerNFORefresh(nfoRefreshRecording, id)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// fanartFrameSourcePath maps a same-origin frame URL of the form
+// /images/frames/recordings/<id>/<idx>.jpg back to its disk path.
+// Returns ok=false for any URL that isn't this exact shape, or whose
+// recording id doesn't match the request's recording (defends
+// against a malicious client trying to escape its slot via a
+// crafted URL — the picker only ever produces a same-id URL on the
+// happy path).
+func (s *Server) fanartFrameSourcePath(
+	recordingID int64, url string,
+) (string, bool) {
+	const prefix = "/images/"
+	if !strings.HasPrefix(url, prefix) {
+		return "", false
+	}
+	rel := strings.TrimPrefix(url, prefix)
+	urlRecID, idx, ok := parseFrameImagePath("/" + rel)
+	if !ok || urlRecID != recordingID {
+		return "", false
+	}
+	if s.imageCache == nil || s.imageCache.Disabled() {
+		return "", false
+	}
+	framePath := s.imageCache.FramePath(recordingID, idx)
+	if framePath == "" {
+		return "", false
+	}
+	info, statErr := os.Stat(framePath)
+	if statErr != nil || info.IsDir() {
+		return "", false
+	}
+	return framePath, true
+}
+
+// copyFileAtomic copies src to dst via a sibling .tmp + rename so
+// the destination file is never half-written. Mirrors
+// imagecache.writeAtomic's pattern. The parent directory is
+// created if it doesn't exist.
+func copyFileAtomic(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open frame source %s: %w", src, err)
+	}
+	defer func() { _ = in.Close() }()
+	if mkErr := os.MkdirAll(filepath.Dir(dst), 0o750); mkErr != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), mkErr)
+	}
+	tmp := dst + ".tmp"
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	if _, copyErr := io.Copy(out, in); copyErr != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("copy frame %s -> %s: %w", src, tmp, copyErr)
+	}
+	if closeErr := out.Close(); closeErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close %s: %w", tmp, closeErr)
+	}
+	if renameErr := os.Rename(tmp, dst); renameErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename %s -> %s: %w", tmp, dst, renameErr)
+	}
+	return nil
 }
 
 // handleSetRecordingPosterFromURL downloads the URL into poster-src.jpg

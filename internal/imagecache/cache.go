@@ -50,6 +50,13 @@ const (
 	actorsDir     = "actors"
 	showsDir      = "shows"
 	recordingsDir = "recordings"
+	// framesDir holds frame extracts the picker's fanart fallback
+	// emits when Encora has no curated screenshots. Each recording
+	// gets its own subdirectory under frames/recordings/<id>/, with
+	// numeric .jpg files (0.jpg, 1.jpg, …) the picker can address
+	// without persisting a manifest. Cleared via ClearFrames after
+	// the user picks one.
+	framesDir = "frames"
 
 	// Per-slot filenames inside the per-entity subdirectories.
 	bannerFile    = "banner.jpg"
@@ -184,6 +191,63 @@ func (c *Cache) RecordingPosterSrcPath(recordingID int64) string {
 	}
 	return filepath.Join(c.Root, recordingsDir,
 		strconv.FormatInt(recordingID, 10), posterSrcFile)
+}
+
+// FramesPath returns the directory under the cache root where this
+// recording's frame extracts live. Created lazily by the extractor;
+// cleared by ClearFrames or when the user picks a fanart from the
+// frame strip. Empty when the cache is disabled — callers must
+// nil-check before MkdirAll'ing.
+func (c *Cache) FramesPath(recordingID int64) string {
+	if c.Disabled() {
+		return ""
+	}
+	return filepath.Join(c.Root, framesDir, recordingsDir,
+		strconv.FormatInt(recordingID, 10))
+}
+
+// FramePath returns the canonical filesystem path for the idx-th
+// (0-based) frame extract for recordingID. Used by the picker-options
+// handler when responding with the fanart-fallback strip and by the
+// /images/frames/* route when serving them. Empty when the cache is
+// disabled.
+func (c *Cache) FramePath(recordingID int64, idx int) string {
+	if c.Disabled() {
+		return ""
+	}
+	return filepath.Join(c.FramesPath(recordingID), strconv.Itoa(idx)+fileExt)
+}
+
+// FrameURL returns the public URL for the idx-th frame extract
+// (0-based), or "" when the cache is disabled. The picker options
+// endpoint surfaces these so the SPA's <img> elements can fetch them
+// over the existing /images/* mount without any cross-origin dance.
+func (c *Cache) FrameURL(recordingID int64, idx int) string {
+	if c.Disabled() {
+		return ""
+	}
+	return "/images/" + framesDir + "/" + recordingsDir + "/" +
+		strconv.FormatInt(recordingID, 10) + "/" + strconv.Itoa(idx) + fileExt
+}
+
+// ClearFrames removes the recording's frames directory so the next
+// fanart-options request triggers a fresh extraction. Called on the
+// re-fetch path (so the user gets a different random spread on each
+// click) and after the user picks a frame as fanart (the chosen
+// frame is now copied into fanart.jpg; the extracts are no longer
+// useful). Missing directory is not an error.
+func (c *Cache) ClearFrames(recordingID int64) error {
+	if c.Disabled() {
+		return nil
+	}
+	dir := c.FramesPath(recordingID)
+	if dir == "" {
+		return nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("clear frames %s: %w", dir, err)
+	}
+	return nil
 }
 
 // HasHeadshot reports whether an actor's headshot file is on disk.

@@ -11,15 +11,19 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -278,6 +282,264 @@ func TestPickerActorHeadshotOptions(t *testing.T) {
 	require.Len(t, body.Options, 1)
 	assert.Equal(t, wantURL, body.Options[0].URL)
 	assert.Equal(t, "stagemedia", body.Options[0].Source)
+}
+
+// fakeFrameExtractor stubs server.FrameExtractor by writing N
+// touch-files (0.jpg .. (count-1).jpg) into outDir on Extract. The
+// recorded slice lets tests assert how many times the extractor
+// fired across a session — useful for proving the cache short-
+// circuits a second open and the refresh=true branch re-extracts.
+type fakeFrameExtractor struct {
+	mu       sync.Mutex
+	calls    []fakeFrameExtractCall
+	count    int  // override for the number of frames to write; 0 -> requested count.
+	failOnce bool // when true the first call returns an error and writes nothing.
+}
+
+type fakeFrameExtractCall struct {
+	videoPath string
+	outDir    string
+	duration  float64
+	count     int
+}
+
+func (f *fakeFrameExtractor) Extract(
+	_ context.Context,
+	videoPath, outDir string,
+	durationSeconds float64,
+	count int,
+	_ probe.FrameRandSource,
+) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fakeFrameExtractCall{
+		videoPath: videoPath, outDir: outDir,
+		duration: durationSeconds, count: count,
+	})
+	if f.failOnce {
+		f.failOnce = false
+		return nil, errors.New("synthetic extract failure")
+	}
+	if mkErr := os.MkdirAll(outDir, 0o750); mkErr != nil {
+		return nil, mkErr
+	}
+	emit := f.count
+	if emit == 0 {
+		emit = count
+	}
+	out := make([]string, 0, emit)
+	for i := range emit {
+		p := filepath.Join(outDir, strconv.Itoa(i)+".jpg")
+		if err := os.WriteFile(p, []byte{0xFF, 0xD8, 0xFF, 0xD9}, 0o600); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+func (f *fakeFrameExtractor) Calls() []fakeFrameExtractCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]fakeFrameExtractCall, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
+// frameFallbackRecordingID is the fixture recording every frame-
+// fallback test exercises. Recording 90100222 carries has_screenshots=true
+// in collection.json, so the new fanart handler still hits the
+// (faked-empty) Encora screenshots client before falling through to
+// the frame extractor — the right path for the fallback to exercise.
+const frameFallbackRecordingID int64 = 90100222
+
+// frameFallbackServer wires the fixture sync + an image cache + a
+// fake frame extractor + (optionally) a fake encora screenshots
+// client. Returns the server and the fake extractor so individual
+// tests can assert on per-call state. mediaInfoJSON populates the
+// recording version's media-info blob; the fanart handler decodes
+// it directly to skip a live ffprobe pass.
+func frameFallbackServer(
+	t *testing.T,
+	enc server.EncoraScreenshotClient,
+	mediaInfoJSON string,
+) (*server.Server, *fakeFrameExtractor) {
+	t.Helper()
+	rec := frameFallbackRecordingID
+
+	mux := http.NewServeMux()
+	for path, file := range map[string]string{
+		"/api/profile":    "profile.json",
+		"/api/collection": "collection.json",
+		"/api/wants":      "wants.json",
+	} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			b, err := readFixture(t, file)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("X-Ratelimit-Remaining", "25")
+			_, _ = w.Write(b)
+		})
+	}
+	upstream := httptest.NewServer(mux)
+	t.Cleanup(upstream.Close)
+
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
+	require.NoError(t, err)
+	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
+	require.NoError(t, err)
+
+	// Lay down a real (but tiny) file at the recording's primary
+	// version path so the fanart-source resolver's os.Stat passes.
+	videoPath := filepath.Join(t.TempDir(), "recording.mkv")
+	require.NoError(t, os.WriteFile(videoPath, []byte("fake video"), 0o600))
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID:   rec,
+		FilePath:      videoPath,
+		FileSizeBytes: 1024,
+		Container:     "MKV",
+		MediaInfoJSON: mediaInfoJSON,
+	}))
+
+	cache := imagecache.New(t.TempDir(), nil, zerolog.Nop())
+	fake := &fakeFrameExtractor{}
+
+	srv, err := server.New(server.Options{
+		DB:                db,
+		EncoraScreenshots: enc,
+		ImageCache:        cache,
+		FrameExtractor:    fake,
+	})
+	require.NoError(t, err)
+	return srv, fake
+}
+
+// TestPickerRecordingFanartOptionsFrameFallback exercises the
+// frame-extract fallback. Recording 90100222 has has_screenshots=true in
+// the fixture but our fake screenshots client returns an empty list,
+// so the handler should fall through to the local frame-extractor
+// and emit 10 same-origin /images/frames/recordings/<id>/<idx>.jpg
+// URLs tagged source="frames".
+func TestPickerRecordingFanartOptionsFrameFallback(t *testing.T) {
+	t.Parallel()
+
+	recID := frameFallbackRecordingID
+	enc := &fakeScreenshotClient{} // empty urls.
+	mediaInfo := `{"durationSeconds": 7200, "videoCodec": "h264"}`
+	srv, fake := frameFallbackServer(t, enc, mediaInfo)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-options", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Options []struct {
+			URL    string `json:"url"`
+			Source string `json:"source"`
+		} `json:"options"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Options, 10, "frame fallback should emit 10 options")
+	for i, opt := range body.Options {
+		assert.Equal(t, "frames", opt.Source)
+		want := "/images/frames/recordings/" + strconv.FormatInt(recID, 10) +
+			"/" + strconv.Itoa(i) + ".jpg"
+		assert.Equal(t, want, opt.URL)
+	}
+
+	// Extractor was called exactly once with the configured count.
+	calls := fake.Calls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, 10, calls[0].count)
+	assert.InDelta(t, 7200.0, calls[0].duration, 1e-9)
+}
+
+// TestPickerRecordingFanartOptionsFramesCacheHit confirms a second
+// fanart-options call without ?refresh=true reuses the existing
+// frame extracts on disk instead of re-running ffmpeg.
+func TestPickerRecordingFanartOptionsFramesCacheHit(t *testing.T) {
+	t.Parallel()
+
+	recID := frameFallbackRecordingID
+	enc := &fakeScreenshotClient{}
+	mediaInfo := `{"durationSeconds": 3600}`
+	srv, fake := frameFallbackServer(t, enc, mediaInfo)
+
+	for range 2 {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+			"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-options", nil)
+		srv.Handler().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	}
+	assert.Len(t, fake.Calls(), 1, "cached frames should short-circuit second call")
+}
+
+// TestPickerRecordingFanartOptionsRefresh confirms ?refresh=true
+// scrubs the cache before re-extracting so the user gets a fresh
+// random spread on Re-fetch.
+func TestPickerRecordingFanartOptionsRefresh(t *testing.T) {
+	t.Parallel()
+
+	recID := frameFallbackRecordingID
+	enc := &fakeScreenshotClient{}
+	mediaInfo := `{"durationSeconds": 3600}`
+	srv, fake := frameFallbackServer(t, enc, mediaInfo)
+
+	// First call populates the cache.
+	rr1 := httptest.NewRecorder()
+	req1 := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-options", nil)
+	srv.Handler().ServeHTTP(rr1, req1)
+	require.Equal(t, http.StatusOK, rr1.Code)
+
+	// Second call with refresh=true clears + re-extracts.
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-options?refresh=true", nil)
+	srv.Handler().ServeHTTP(rr2, req2)
+	require.Equal(t, http.StatusOK, rr2.Code)
+
+	assert.Len(t, fake.Calls(), 2, "refresh=true should re-extract")
+}
+
+// TestPickerRecordingFanartOptionsEncoraWins covers the priority
+// path: when Encora returns curated screenshots they win over the
+// frame fallback (no extractor call fires).
+func TestPickerRecordingFanartOptionsEncoraWins(t *testing.T) {
+	t.Parallel()
+
+	recID := frameFallbackRecordingID
+	enc := &fakeScreenshotClient{
+		urls: []string{"https://encora.example/sshot/01.jpg"},
+	}
+	mediaInfo := `{"durationSeconds": 3600}`
+	srv, fake := frameFallbackServer(t, enc, mediaInfo)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v1/recordings/"+strconv.FormatInt(recID, 10)+"/fanart-options", nil)
+	srv.Handler().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var body struct {
+		Options []struct {
+			URL    string `json:"url"`
+			Source string `json:"source"`
+		} `json:"options"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Options, 1)
+	assert.Equal(t, "encora", body.Options[0].Source)
+	assert.Empty(t, fake.Calls(), "frame extractor must not run when encora has options")
 }
 
 // TestPickerOptionsRecordingNotFound asserts unknown recording ids

@@ -74,6 +74,25 @@ type EncoraScreenshotClient interface {
 	Screenshots(ctx context.Context, id int64) ([]string, encora.RateLimitInfo, error)
 }
 
+// FrameExtractor is the ffmpeg shell-out surface the picker's fanart
+// fallback consumes when Encora has no curated screenshots for a
+// recording. The real probe.FrameExtractor satisfies this; tests can
+// substitute a fake that lays down touch-files in outDir so the
+// fallback path stays exercisable without ffmpeg on PATH.
+//
+// The interface keeps the rng argument concrete (probe.FrameRandSource
+// is itself an interface) so handlers and tests share a single typed
+// seam — no duck-typed any.
+type FrameExtractor interface {
+	Extract(
+		ctx context.Context,
+		videoPath, outDir string,
+		durationSeconds float64,
+		count int,
+		rng probe.FrameRandSource,
+	) ([]string, error)
+}
+
 // Server is the HTTP entry point.
 type Server struct {
 	echo              *echo.Echo
@@ -118,6 +137,12 @@ type Server struct {
 	// back to probe.FFProbe at libraryPlan() time, which is the
 	// production wiring; tests inject a stub.
 	prober probe.Prober
+	// frameExtractor is the ffmpeg shell-out the picker's fanart
+	// fallback uses when Encora has no curated screenshots for a
+	// recording. Defined as an interface so tests can substitute a
+	// fake that drops touch-files into outDir without invoking real
+	// ffmpeg. nil falls back to probe.FrameExtractor at handler time.
+	frameExtractor FrameExtractor
 	// sleeper is the function the apply batch driver uses to honor a
 	// 429's Retry-After before issuing the next request. Defaults to
 	// time.Sleep; tests inject a recorder to assert the call without
@@ -158,11 +183,12 @@ type Options struct {
 	// split so the apply pipeline can never reach the remove/add-wants
 	// methods by accident.
 	EncoraDestructive EncoraDestructiveClient
-	// EncoraScreenshots is optional. When nil, the picker's
-	// fanart-options endpoint responds 503. Production wiring passes
-	// the same *encora.Client instance the apply pipeline uses; the
-	// surface is split so picker reads can't accidentally reach a
-	// write method.
+	// EncoraScreenshots is optional. When nil, the picker's fanart-
+	// options endpoint skips the upstream call and falls straight
+	// through to the local frame-extract fallback. Production wiring
+	// passes the same *encora.Client instance the apply pipeline
+	// uses; the surface is split so picker reads can't accidentally
+	// reach a write method.
 	EncoraScreenshots EncoraScreenshotClient
 	// IngestEngine is optional. When nil, POST /api/v1/queue/{id}/import
 	// responds 503 so read-only queue views still work without ingest
@@ -210,6 +236,11 @@ type Options struct {
 	// stub satisfying probe.Prober so the per-recording rename
 	// preview / apply paths run without an ffprobe binary on PATH.
 	Prober probe.Prober
+	// FrameExtractor is an optional override for the picker's fanart-
+	// fallback frame extractor. nil falls back to probe.FrameExtractor
+	// with the configured FFmpegPath. Tests inject a fake so the
+	// fallback path runs without a real ffmpeg binary.
+	FrameExtractor FrameExtractor
 	// NFORefresh is an optional override for the nfo refresh service
 	// the regenerateRecordingNFO mutation + the apply-rename's
 	// post-move rewrite drive. nil falls back to constructing one
@@ -264,6 +295,7 @@ func New(opts Options) (*Server, error) {
 		imageRenderer:     opts.ImageRenderer,
 		jobRunner:         opts.JobRunner,
 		prober:            opts.Prober,
+		frameExtractor:    opts.FrameExtractor,
 		sleeper:           sleeper,
 		version:           version,
 		config:            opts.Config,
@@ -338,6 +370,18 @@ func (s *Server) proberOrFallback() probe.Prober {
 	return probe.FFProbe{Path: s.config.Library.FFProbePath}
 }
 
+// frameExtractorOrFallback returns the configured FrameExtractor
+// override, or a fresh probe.FrameExtractor with the configured
+// ffmpegPath when none was supplied. Picker handlers consume this so
+// production wiring picks up the configured ffmpeg path automatically
+// while tests inject a fake via Options.FrameExtractor.
+func (s *Server) frameExtractorOrFallback() FrameExtractor {
+	if s.frameExtractor != nil {
+		return s.frameExtractor
+	}
+	return probe.FrameExtractor{Path: s.config.Library.FFmpegPath}
+}
+
 // libraryPlan projects the loaded library config into the
 // graph.LibraryPlan shape the previewQueueImport resolver needs. The
 // fallthrough zero value (root="" or empty templates) marks the plan
@@ -364,6 +408,11 @@ var _ EncoraWriteClient = (*encora.Client)(nil)
 // EncoraScreenshotClient so production wiring can pass the same client
 // on Options.EncoraScreenshots.
 var _ EncoraScreenshotClient = (*encora.Client)(nil)
+
+// Compile-time guard: probe.FrameExtractor must satisfy FrameExtractor
+// so production wiring can pass it on Options.FrameExtractor without a
+// wrapper.
+var _ FrameExtractor = probe.FrameExtractor{}
 
 // Compile-time guard: the real *stagemedia.Client must satisfy
 // StagemediaImageClient so production wiring can pass it on

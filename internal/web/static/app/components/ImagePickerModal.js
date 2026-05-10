@@ -181,6 +181,11 @@ export function renderImageErrorToast({ error, onDismiss }) {
 //   onUpload(file)— fired when the user picks a file via Upload.
 //   onRefetch()   — fired when the user hits "Re-fetch upstream options".
 //   uploadLabel   — Upload button label ("Upload poster", etc.).
+//   optionsCaption — optional small italic text rendered under the
+//                    upstream-options strip. Used by the fanart
+//                    fallback to surface "Random frames from your
+//                    local file" so the user knows the options
+//                    aren't curated upstream art.
 //
 // Skeleton + error + empty states all match DaisyUI conventions
 // (skeleton-rectangle, alert-error, neutral muted text).
@@ -189,7 +194,7 @@ export function renderUpstreamPicker(attrs) {
     currentURL, currentLabel, currentAlt,
     aspect, options, loading, error, busy, loadGen, staged, previewURL,
     layoutControls,
-    onPick, onUpload, onRefetch, uploadLabel,
+    onPick, onUpload, onRefetch, uploadLabel, optionsCaption,
   } = attrs;
 
   // Aspect drives both the thumbnail and the "current" preview tile.
@@ -290,6 +295,9 @@ export function renderUpstreamPicker(attrs) {
         options, loading, error, busy, onPick, thumbClass, onRefetch, loadGen,
         staged,
       }),
+      optionsCaption
+        ? m('p', { class: 'text-xs italic opacity-70' }, optionsCaption)
+        : null,
     ]),
   ]);
 }
@@ -378,8 +386,18 @@ function renderUpstreamStrip(attrs) {
 // browser fetches it same-origin. gen, when non-zero, is appended as
 // &gen= (outside the encoded url param) so a Re-fetch evicts the
 // cached load without changing the upstream URL the server forwards.
+//
+// Same-origin URLs (relative paths like /images/...) bypass the proxy
+// entirely — they're already same-origin so wrapping them in the
+// upstream proxy would just trip the allowlist and 400. The fanart-
+// fallback frame URLs are this shape; the picker grid renders them
+// directly off the local /images/* mount.
 function proxyURL(url, gen) {
   if (!url) return url;
+  if (url.charAt(0) === '/') {
+    if (!gen) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'gen=' + gen;
+  }
   let out = '/api/v1/upstream-image?url=' + encodeURIComponent(url);
   if (gen) out += '&gen=' + gen;
   return out;

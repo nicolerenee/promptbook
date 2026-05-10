@@ -29,14 +29,21 @@ import (
 //
 // Path shapes recognised:
 //
-//	/images/actors/<id>.jpg              → headshot
-//	/images/shows/<id>/banner.jpg        → show banner
-//	/images/recordings/<id>/fanart.jpg   → recording fanart
-//	/images/recordings/<id>/poster.jpg   → recording poster
+//	/images/actors/<id>.jpg                       → headshot
+//	/images/shows/<id>/banner.jpg                 → show banner
+//	/images/recordings/<id>/fanart.jpg            → recording fanart
+//	/images/recordings/<id>/poster.jpg            → recording poster
+//	/images/frames/recordings/<id>/<idx>.jpg      → fanart-fallback frame extract
 //
 // Anything else returns 404. Trailing extension matching is loose on
 // purpose — the cache always stores .jpg, so a request for .png or
 // .webp falls into the placeholder path naturally.
+//
+// Frame-extract URLs serve straight off disk and 404 on miss (no
+// placeholder fallback). Frames are transient — the picker generates
+// them on demand and clears them after the user makes a choice — so
+// "the file isn't there" is a real signal the SPA should respect
+// rather than mask with a synthetic SVG.
 func (s *Server) imagesHandler(c echo.Context) error {
 	cache := s.imageCache
 	if cache == nil || cache.Disabled() {
@@ -46,6 +53,23 @@ func (s *Server) imagesHandler(c echo.Context) error {
 	rel := strings.TrimPrefix(c.Request().URL.Path, "/images/")
 	rel = path.Clean("/" + rel)
 	if strings.Contains(rel, "..") || rel == "/" {
+		return c.NoContent(http.StatusNotFound)
+	}
+
+	// Frame-extract URLs are handled separately because they don't fit
+	// the placeholder.Kind enum (no human-readable label, no SVG
+	// fallback) and because the file path is computed differently —
+	// the cache exposes FramePath, not a placeholder slot.
+	if framePath, idx, ok := parseFrameImagePath(rel); ok {
+		diskPath := cache.FramePath(framePath, idx)
+		if diskPath == "" {
+			return c.NoContent(http.StatusNotFound)
+		}
+		if info, err := os.Stat(diskPath); err == nil && !info.IsDir() {
+			c.Response().Header().Set("Cache-Control", "no-cache")
+			http.ServeFile(c.Response().Writer, c.Request(), diskPath)
+			return nil
+		}
 		return c.NoContent(http.StatusNotFound)
 	}
 
@@ -110,6 +134,35 @@ func (s imageSlot) diskPath(cache *imagecache.Cache) string {
 	}
 }
 
+// imagePathRecordings is the URL segment under /images/* that
+// corresponds to recording-keyed slot files. Pulled out as a
+// constant because parseImagePath + parseFrameImagePath both spell
+// it (goconst flags >2 occurrences).
+const imagePathRecordings = "recordings"
+
+// parseFrameImagePath recognizes the fanart-fallback frame URL shape
+// /frames/recordings/<recording_id>/<idx>.jpg. Returns
+// (recordingID, idx, true) on a clean match, the zero values + false
+// for any other path. Index parsing strips the trailing extension
+// before strconv so the cache's `.jpg` storage convention drives the
+// URL surface uniformly.
+func parseFrameImagePath(rel string) (int64, int, bool) {
+	parts := strings.Split(strings.TrimPrefix(rel, "/"), "/")
+	if len(parts) != 4 || parts[0] != "frames" || parts[1] != imagePathRecordings {
+		return 0, 0, false
+	}
+	recID, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil || recID <= 0 {
+		return 0, 0, false
+	}
+	idxStr := strings.TrimSuffix(parts[3], filepath.Ext(parts[3]))
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil || idx < 0 {
+		return 0, 0, false
+	}
+	return recID, idx, true
+}
+
 // parseImagePath inspects the request path (already stripped of the
 // /images/ prefix and clean-rooted at /) and returns the matching
 // imageSlot. Returns ok=false on any path that doesn't exactly fit
@@ -129,13 +182,13 @@ func parseImagePath(rel string) (imageSlot, bool) {
 			return imageSlot{}, false
 		}
 		return imageSlot{Kind: placeholder.KindShowBanner, ID: id}, true
-	case len(parts) == 3 && parts[0] == "recordings" && parts[2] == "fanart.jpg":
+	case len(parts) == 3 && parts[0] == imagePathRecordings && parts[2] == "fanart.jpg":
 		id, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil || id <= 0 {
 			return imageSlot{}, false
 		}
 		return imageSlot{Kind: placeholder.KindRecordingFanart, ID: id}, true
-	case len(parts) == 3 && parts[0] == "recordings" && parts[2] == "poster.jpg":
+	case len(parts) == 3 && parts[0] == imagePathRecordings && parts[2] == "poster.jpg":
 		id, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil || id <= 0 {
 			return imageSlot{}, false
