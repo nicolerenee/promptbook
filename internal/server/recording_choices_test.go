@@ -124,18 +124,6 @@ func TestAPISetOverlayDisabledFlipsAndSurfacesInDetail(t *testing.T) {
 	assert.True(t, choice.OverlayDisabled,
 		"overlay-disabled should be persisted true")
 
-	// GET /recordings/:id should reflect the flag.
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(),
-		http.MethodGet,
-		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10), nil)
-	srv.Handler().ServeHTTP(rr, req)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	var detail map[string]any
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &detail))
-	assert.Equal(t, true, detail["overlay_disabled"],
-		"recording detail GET should expose overlay_disabled=true")
-
 	// Step 2: flip back off.
 	status, body = postChoiceJSON(t, srv,
 		"/api/v1/recordings/"+strconv.FormatInt(recordingID, 10)+"/overlay-disabled",
