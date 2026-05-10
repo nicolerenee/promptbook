@@ -29,6 +29,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
+	"github.com/nicolerenee/promptbook/internal/tmdb"
 	"github.com/nicolerenee/promptbook/internal/web"
 )
 
@@ -94,6 +95,17 @@ type FrameExtractor interface {
 	) ([]string, error)
 }
 
+// TMDBClient is the slice of *tmdb.Client the picker consumes for
+// poster + fanart suggestions on recordings with a TMDB / IMDB
+// external id. Two endpoints today: Images for the curated poster +
+// backdrop arrays, FindByIMDBID for the IMDB → TMDB resolution path
+// when only an IMDB id is present. Defined as an interface so tests
+// can substitute a fake without spinning up an httptest server.
+type TMDBClient interface {
+	Images(ctx context.Context, tmdbID int64) (tmdb.Images, error)
+	FindByIMDBID(ctx context.Context, imdbID string) (int64, bool, error)
+}
+
 // Server is the HTTP entry point.
 type Server struct {
 	echo *echo.Echo
@@ -113,6 +125,10 @@ type Server struct {
 	// so other endpoints stay alive. Production wiring passes the same
 	// *encora.Client the write/destructive surfaces use.
 	encoraScreenshots EncoraScreenshotClient
+	// tmdb is the TMDB poster + fanart picker source. nil when no
+	// TMDB API key was configured — the picker silently skips the
+	// TMDB group in that mode. Production wiring passes *tmdb.Client.
+	tmdb TMDBClient
 	// imageCache is the on-disk poster/headshot cache. nil when no
 	// library.imageRoot was configured. Handlers nil-check before
 	// calling into it; the cache itself also has a Disabled() guard
@@ -201,6 +217,11 @@ type Options struct {
 	// uses; the surface is split so picker reads can't accidentally
 	// reach a write method.
 	EncoraScreenshots EncoraScreenshotClient
+	// TMDB is optional. When nil, the picker's poster + fanart
+	// endpoints skip the TMDB source group cleanly. Production
+	// wiring passes a real *tmdb.Client built from tmdb.apiKey;
+	// tests substitute a fake satisfying TMDBClient.
+	TMDB TMDBClient
 	// IngestEngine is optional. When nil, POST /api/v1/queue/{id}/import
 	// responds 503 so read-only queue views still work without ingest
 	// wiring (e.g. when no library.root is configured). Tests pass a stub
@@ -302,6 +323,7 @@ func New(opts Options) (*Server, error) {
 		encora:            opts.Encora,
 		encoraDestructive: opts.EncoraDestructive,
 		encoraScreenshots: opts.EncoraScreenshots,
+		tmdb:              opts.TMDB,
 		ingestEngine:      opts.IngestEngine,
 		imageCache:        opts.ImageCache,
 		imageRenderer:     opts.ImageRenderer,
@@ -349,6 +371,12 @@ func (s *Server) Handler() http.Handler { return s.echo }
 // Stagemedia returns the configured StageMedia image client, or nil
 // when stagemedia is disabled. Handlers must nil-check before use.
 func (s *Server) Stagemedia() StagemediaImageClient { return s.stagemedia }
+
+// SQLDB exposes the underlying *sql.DB so tests can drive the
+// external_ids surface (no ent type for it; the package-level
+// helpers in internal/externalids work against the raw *sql.DB).
+// Returns nil when no handle was wired.
+func (s *Server) SQLDB() *sql.DB { return s.sqlDB }
 
 // Encora returns the configured Encora write client, or nil when no
 // API key was supplied. Apply handlers nil-check this and return 503

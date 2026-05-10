@@ -23,6 +23,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	"github.com/nicolerenee/promptbook/internal/sync"
+	"github.com/nicolerenee/promptbook/internal/tmdb"
 )
 
 // imageFetchHTTPTimeout caps any single image download from the local
@@ -120,6 +121,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		smOpt = smClient
 	}
 
+	tmdbOpt, err := buildServeTMDBClient()
+	if err != nil {
+		return err
+	}
+
 	// Image cache is nil when library.imageRoot is empty so the
 	// /images/* route stays unregistered and detail-page handlers
 	// fall back to the upstream URL. The single shared *http.Client
@@ -155,6 +161,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		SQLDB:             sqlDB,
 		Logger:            log.Logger,
 		Stagemedia:        smOpt,
+		TMDB:              tmdbOpt,
 		Encora:            encOpt,
 		EncoraDestructive: encDestrucOpt,
 		EncoraScreenshots: encScreenshotOpt,
@@ -206,6 +213,27 @@ func buildNFORefresh(
 // client and a library root are configured. Returns nil otherwise so
 // the queue-import handler 503s instead of failing requests at run
 // time.
+// buildServeTMDBClient constructs the *tmdb.Client the serve command
+// uses (or returns nil + nil on missing api key). Same "build or
+// no-op" shape as buildServeEncoraClient; the picker_options
+// handlers nil-check before reading.
+func buildServeTMDBClient() (server.TMDBClient, error) {
+	if appConfig.TMDB.APIKey == "" {
+		log.Info().Msg("tmdb disabled (no api key configured)")
+		return nil, nil //nolint:nilnil // by design — caller treats nil as "disabled".
+	}
+	client, err := tmdb.New(tmdb.Options{
+		BaseURL:   appConfig.TMDB.BaseURL,
+		APIKey:    appConfig.TMDB.APIKey,
+		UserAgent: appConfig.TMDB.UserAgent,
+		Logger:    log.Logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build tmdb client: %w", err)
+	}
+	return client, nil
+}
+
 // buildServeEncoraClient constructs the *encora.Client the serve
 // command uses (or returns nil + nil on missing api key). Extracted
 // from runServe so the parent function stays under the funlen

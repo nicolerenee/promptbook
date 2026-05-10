@@ -45,6 +45,14 @@ const (
 	DefaultWatchInterval       = 1 * time.Minute
 	DefaultStagemediaBaseURL   = "https://stagemedia.me"
 	DefaultStagemediaUserAgent = "promptbook/0.0.1"
+	// DefaultTMDBBaseURL is TMDB's v3 API root. Override via
+	// tmdb.baseUrl / PROMPTBOOK_TMDB_BASEURL only for offline testing
+	// (e.g. an httptest server). Production should always speak to
+	// the canonical API root.
+	DefaultTMDBBaseURL = "https://api.themoviedb.org/3"
+	// DefaultTMDBUserAgent identifies promptbook to TMDB. Honored by
+	// the User-Agent header on every outbound request.
+	DefaultTMDBUserAgent = "promptbook/0.0.1"
 )
 
 // Config is the top-level application configuration.
@@ -54,6 +62,7 @@ type Config struct {
 	Library    LibraryConfig    `mapstructure:"library"`
 	Server     ServerConfig     `mapstructure:"server"`
 	Stagemedia StagemediaConfig `mapstructure:"stagemedia"`
+	TMDB       TMDBConfig       `mapstructure:"tmdb"`
 }
 
 // EncoraConfig holds Encora API client configuration.
@@ -132,6 +141,17 @@ type StagemediaConfig struct {
 	UserAgent string `mapstructure:"userAgent"`
 }
 
+// TMDBConfig holds TMDB API client configuration. Optional — leave
+// APIKey blank to disable the TMDB picker source (poster + fanart
+// suggestions for recordings that carry a TMDB / IMDB external id).
+// The picker handlers nil-check and degrade to "no TMDB options"
+// cleanly when the key is unset.
+type TMDBConfig struct {
+	BaseURL   string `mapstructure:"baseUrl"`
+	APIKey    string `mapstructure:"apiKey"`
+	UserAgent string `mapstructure:"userAgent"`
+}
+
 // LoadOptions configures how configuration is loaded.
 type LoadOptions struct {
 	// ConfigFile is an explicit config file path. If empty, default locations are searched.
@@ -201,6 +221,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
 	v.SetDefault("stagemedia.baseUrl", DefaultStagemediaBaseURL)
 	v.SetDefault("stagemedia.userAgent", DefaultStagemediaUserAgent)
+	v.SetDefault("tmdb.baseUrl", DefaultTMDBBaseURL)
+	v.SetDefault("tmdb.userAgent", DefaultTMDBUserAgent)
 }
 
 // asConfigNotFound reports whether err is viper.ConfigFileNotFoundError.

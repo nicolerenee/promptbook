@@ -71,6 +71,20 @@ func fixtureBackedServerWithClients(
 	enc server.EncoraScreenshotClient,
 ) *server.Server {
 	t.Helper()
+	return fixtureBackedServerWithAllClients(t, sm, enc, nil)
+}
+
+// fixtureBackedServerWithAllClients is fixtureBackedServerWithClients
+// plus an optional TMDB client. Pulled out as a sibling helper so
+// the existing signature stays the same for callers that don't care
+// about the TMDB picker source.
+func fixtureBackedServerWithAllClients(
+	t *testing.T,
+	sm server.StagemediaImageClient,
+	enc server.EncoraScreenshotClient,
+	tm server.TMDBClient,
+) *server.Server {
+	t.Helper()
 
 	mux := http.NewServeMux()
 	for path, file := range map[string]string{
@@ -97,13 +111,15 @@ func fixtureBackedServerWithClients(
 
 	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
 	require.NoError(t, err)
-	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
+	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2, SQLDB: sqlDB})
 	require.NoError(t, err)
 
 	srv, err := server.New(server.Options{
 		DB:                db,
+		SQLDB:             sqlDB,
 		Stagemedia:        sm,
 		EncoraScreenshots: enc,
+		TMDB:              tm,
 	})
 	require.NoError(t, err)
 	return srv

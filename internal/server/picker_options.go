@@ -151,14 +151,19 @@ func (s *Server) handleListShowPosterOptions(c echo.Context) error {
 // handleListRecordingPosterOptions handles
 // GET /api/v1/recordings/:id/poster-options. Posters are keyed on the
 // recording's show, not the recording itself — recordings inherit
-// their poster from the show under the v2 layout.
+// their poster from the show under the v2 layout. TMDB is layered on
+// top of the stagemedia source when the recording carries a TMDB /
+// IMDB external id; otherwise the response is stagemedia-only.
+//
+// Note: requireStagemedia is intentionally NOT called at the top of
+// this handler — the TMDB source can stand alone for a recording
+// whose show has no stagemedia data but a TMDB id is on file. The
+// stagemedia fetcher itself handles its own nil-check and returns
+// an empty slice when not configured.
 func (s *Server) handleListRecordingPosterOptions(c echo.Context) error {
 	id, err := parseRecordingIDParam(c)
 	if err != nil {
 		return err
-	}
-	if smErr := s.requireStagemedia(); smErr != nil {
-		return smErr
 	}
 	loaded, loadErr := storage.LoadRecording(c.Request().Context(), s.db, id)
 	if errors.Is(loadErr, storage.ErrRecordingNotFound) {
@@ -167,18 +172,46 @@ func (s *Server) handleListRecordingPosterOptions(c echo.Context) error {
 	if loadErr != nil {
 		return loadErr
 	}
-	showID := loaded.Recording.Metadata.ShowID
-	options, fetchErr := s.fetchShowPosterOptions(c.Request().Context(), showID)
+
+	stagemediaOptions, fetchErr := s.fetchRecordingShowPosterOptions(
+		c.Request().Context(), id, loaded.Recording.Metadata.ShowID,
+	)
+	if fetchErr != nil {
+		return fetchErr
+	}
+
+	tmdbOptions := s.fetchTMDBPosterOptions(c.Request().Context(), id)
+
+	// stagemedia first (the existing canonical source), TMDB second
+	// as a fallback / alternate. Pre-size into a fresh slice so
+	// stagemediaOptions's backing array isn't mutated.
+	options := make([]pickerOption, 0, len(stagemediaOptions)+len(tmdbOptions))
+	options = append(options, stagemediaOptions...)
+	options = append(options, tmdbOptions...)
+	return c.JSON(http.StatusOK, pickerOptionsResponse{Options: options})
+}
+
+// fetchRecordingShowPosterOptions encapsulates the show-poster fetch
+// path the poster handler dispatches when stagemedia is configured.
+// Returns ([], nil) when stagemedia isn't configured — the TMDB
+// source can still stand alone for the recording.
+func (s *Server) fetchRecordingShowPosterOptions(
+	ctx context.Context, recordingID, showID int64,
+) ([]pickerOption, error) {
+	if s.Stagemedia() == nil {
+		return []pickerOption{}, nil
+	}
+	options, fetchErr := s.fetchShowPosterOptions(ctx, showID)
 	if fetchErr != nil {
 		s.logger.Warn().
 			Err(fetchErr).
-			Int64("recording_id", id).
+			Int64("recording_id", recordingID).
 			Int64("show_id", showID).
 			Msg("picker: recording poster options fetch failed")
-		return echo.NewHTTPError(http.StatusBadGateway,
+		return nil, echo.NewHTTPError(http.StatusBadGateway,
 			"upstream poster fetch failed: "+fetchErr.Error())
 	}
-	return c.JSON(http.StatusOK, pickerOptionsResponse{Options: options})
+	return options, nil
 }
 
 // handleListRecordingFanartOptions handles
@@ -235,11 +268,24 @@ func (s *Server) handleListRecordingFanartOptions(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadGateway,
 			"upstream screenshots fetch failed: "+encoraErr.Error())
 	}
-	if len(encoraOptions) > 0 {
-		return c.JSON(http.StatusOK, pickerOptionsResponse{Options: encoraOptions})
+
+	// TMDB source layers on top of the Encora result for recordings
+	// tagged with a TMDB / IMDB external id. Empty when the recording
+	// has neither id (Encora-only recordings — most of the catalog)
+	// or when the TMDB client isn't configured.
+	tmdbOptions := s.fetchTMDBFanartOptions(c.Request().Context(), id)
+
+	if len(encoraOptions) > 0 || len(tmdbOptions) > 0 {
+		// Encora first (curated proshot screenshots are the best
+		// fallback when present), TMDB second. Pre-size into a fresh
+		// slice so encoraOptions's backing array isn't mutated.
+		options := make([]pickerOption, 0, len(encoraOptions)+len(tmdbOptions))
+		options = append(options, encoraOptions...)
+		options = append(options, tmdbOptions...)
+		return c.JSON(http.StatusOK, pickerOptionsResponse{Options: options})
 	}
 
-	// Encora had nothing — try the frame fallback.
+	// Encora + TMDB both empty — try the local frame fallback.
 	frameOptions := s.fanartFrameOptions(c.Request().Context(), id, refresh)
 	return c.JSON(http.StatusOK, pickerOptionsResponse{Options: frameOptions})
 }
