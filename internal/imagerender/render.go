@@ -98,9 +98,14 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	if err != nil && !errors.Is(err, storage.ErrRecordingNotFound) {
 		return fmt.Errorf("imagerender: load recording %d: %w", recordingID, err)
 	}
-	autoText := autoOverlayText(loaded)
-	overlayText := choice.ResolveOverlayText(autoText)
-	rows := splitOverlay(overlayText)
+	// Auto path emits the three rows directly so we don't round-trip
+	// through a "\n"-joined string. The override path still parses the
+	// user-typed string (single textarea on the SPA) into 3 slots via
+	// splitOverlay; positions still map line-by-line.
+	rows := autoOverlayRows(loaded)
+	if choice.OverlayTextOverride != nil {
+		rows = splitOverlay(*choice.OverlayTextOverride)
+	}
 
 	style := DefaultStyle
 	if choice.OverlayStyleJSON != nil && *choice.OverlayStyleJSON != "" {
@@ -132,38 +137,32 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	return nil
 }
 
-// autoOverlayText returns the default label burned into the recording
-// poster when the user hasn't supplied an override.
+// autoOverlayRows returns the three default rows burned into the
+// recording poster when the user hasn't supplied an override, in
+// fixed slot order: [date, tour, location]. Empty strings stand in
+// for missing fields — compose() preserves slot position by drawing
+// at fixed band fractions, so a recording missing the location
+// renders the date + tour at the same Y coordinates as a complete
+// 3-row recording would.
 //
-// Layout (per the brand spec):
-//
-//	Line 1 (top, smaller):  date
-//	Line 2 (middle, larger): tour
-//	Line 3 (bottom, smaller): "Venue, City"
-//
-// Empty fields collapse cleanly. If every line is empty (the recording
-// has no metadata at all) the show name takes line 2 as a last-resort
-// fallback so the band never renders blank.
-func autoOverlayText(loaded *storage.LoadedRecording) string {
+// Falls back to the show name on the tour row when every other field
+// is empty so the band never renders entirely blank.
+func autoOverlayRows(loaded *storage.LoadedRecording) []string {
+	rows := make([]string, overlayRowCount)
 	if loaded == nil {
-		return ""
+		return rows
 	}
 	r := loaded.Recording
-	date := smartDate(r.Date)
-	tour := strings.TrimSpace(r.Tour)
-	venue := strings.TrimSpace(r.Metadata.Venue)
-	city := strings.TrimSpace(r.Metadata.City)
-	location := joinSep(venue, city, ", ")
-	if date == "" && tour == "" && location == "" {
+	rows[0] = smartDate(r.Date)
+	rows[1] = strings.TrimSpace(r.Tour)
+	rows[2] = joinSep(strings.TrimSpace(r.Metadata.Venue),
+		strings.TrimSpace(r.Metadata.City), ", ")
+	if rows[0] == "" && rows[1] == "" && rows[2] == "" {
 		// Nothing identifying — fall back to the show name on the
-		// middle row so the band has at least one readable line.
-		tour = strings.TrimSpace(r.Show)
+		// title row so the band has at least one readable line.
+		rows[1] = strings.TrimSpace(r.Show)
 	}
-	// Always emit three "\n"-separated rows (some may be empty);
-	// splitOverlay preserves position so an empty row stays empty
-	// rather than collapsing the layout. compose filters empties at
-	// draw time.
-	return date + "\n" + tour + "\n" + location
+	return rows
 }
 
 // joinSep returns "a<sep>b" when both parts are non-empty, the
@@ -183,35 +182,26 @@ func joinSep(a, b, sep string) string {
 	}
 }
 
-// splitOverlay returns the three rows the renderer expects: date,
-// tour, location. An overlay-text blob with three "\n"-separated
-// segments hits the happy path. Two segments are interpreted as
-// tour + location (the "no date known" case). One segment lands on
-// the middle row alone. Trailing or leading empty rows preserve their
-// position so the user's chosen layout doesn't get reshuffled.
+// splitOverlay parses a user-typed override string into the three
+// rows compose() expects, in fixed slot order: [date, tour, location].
+// Used only for the override path — the auto path goes straight to
+// autoOverlayRows() without round-tripping through a "\n"-joined
+// string. The split is strictly positional: line 1 = date, line 2
+// = tour, line 3 = venue. To leave a slot empty, type a blank line
+// for it (e.g., "\nMY TITLE\nMY VENUE" puts text on the title +
+// caption rows only). Trailing missing rows are treated as empty so
+// "DATE\nTOUR" parses cleanly with an empty caption slot.
 func splitOverlay(text string) []string {
 	out := []string{"", "", ""}
-	text = strings.TrimRight(text, "\n")
 	if text == "" {
 		return out
 	}
 	parts := strings.Split(text, "\n")
-	const (
-		idxEyebrow   = 0
-		idxTitle     = 1
-		idxCaption   = 2
-		twoLineParts = 2
-	)
-	switch len(parts) {
-	case 1:
-		out[idxTitle] = strings.TrimSpace(parts[0])
-	case twoLineParts:
-		out[idxTitle] = strings.TrimSpace(parts[0])
-		out[idxCaption] = strings.TrimSpace(parts[1])
-	default:
-		out[idxEyebrow] = strings.TrimSpace(parts[0])
-		out[idxTitle] = strings.TrimSpace(parts[1])
-		out[idxCaption] = strings.TrimSpace(parts[2])
+	for i := range overlayRowCount {
+		if i >= len(parts) {
+			break
+		}
+		out[i] = strings.TrimSpace(parts[i])
 	}
 	return out
 }
