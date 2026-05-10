@@ -24,22 +24,41 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 )
 
-// fakePNG is a 1x1 transparent PNG byte sequence — enough payload that
-// the cache writer's len(body) > 0 guard passes without us shipping an
-// image fixture. The cache happily saves PNG bytes under .jpg; the
-// extension dance is documented at the package level.
+// fakePNG is a tiny but real 1x1 PNG built at package-init time. The
+// hand-rolled byte literal that used to live here was malformed (the
+// IDAT chunk's deflate stream was corrupt), which the old tests never
+// noticed because fetchTo streamed bytes through unchanged. Now that
+// fetchTo decodes + re-encodes to JPEG, the upstream payload has to
+// be a real image — so we build one with png.Encode.
 //
 //nolint:gochecknoglobals // fixture data shared by table tests
-var fakePNG = []byte{
-	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-	0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-	0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
-	0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00,
-	0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-	0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-	0x42, 0x60, 0x82,
+var fakePNG = func() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		panic("imagecache test fixture: png.Encode: " + err.Error())
+	}
+	return buf.Bytes()
+}()
+
+// assertJPEGAt verifies the file at path decodes as a JPEG and (when
+// w/h are non-zero) matches the expected dimensions. Replaces the
+// older byte-identity check that no longer works now that fetchTo
+// re-encodes upstream bytes to JPEG.
+func assertJPEGAt(t *testing.T, path string, w, h int) {
+	t.Helper()
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	img, err := jpeg.Decode(f)
+	require.NoError(t, err, "expected a valid JPEG at %s", path)
+	if w > 0 {
+		assert.Equal(t, w, img.Bounds().Dx())
+	}
+	if h > 0 {
+		assert.Equal(t, h, img.Bounds().Dy())
+	}
 }
 
 // imageServer returns an httptest server that serves fakePNG with a
@@ -194,9 +213,10 @@ func TestFetchHeadshotRoundTrip(t *testing.T) {
 	assert.Equal(t, c.HeadshotPath(actorID), dest)
 	assert.FileExists(t, dest)
 
-	body, err := os.ReadFile(dest)
-	require.NoError(t, err)
-	assert.Equal(t, fakePNG, body)
+	// The on-disk file is a JPEG (re-encoded from the PNG body), so
+	// byte-identity with fakePNG no longer holds. Verify the decode
+	// + dimensions instead.
+	assertJPEGAt(t, dest, 1, 1)
 	assert.Equal(t, "/images/actors/"+strconv.FormatInt(actorID, 10)+".jpg",
 		c.HeadshotURL(actorID))
 
@@ -416,7 +436,7 @@ func TestSaveUploadedRejectsUndecodable(t *testing.T) {
 	err := c.SaveUploadedHeadshot(
 		t.Context(), 1, strings.NewReader("not an image"))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "decode upload")
+	assert.Contains(t, err.Error(), "decode")
 	assert.False(t, c.HasHeadshot(1),
 		"failed decode must not leave a half-written file on disk")
 }

@@ -383,6 +383,12 @@ func (c *Cache) fileExists(path string) bool {
 // exists the function returns without a network call. Errors from the
 // upstream fetch are returned to the caller — they're expected to log
 // and continue, never propagate up to fail a sync run.
+//
+// The fetched bytes are normalized to JPEG before being written: every
+// cached file ends in `.jpg` and downstream consumers (the renderer,
+// the browser via /images/*) expect a real JPEG. Without the
+// re-encode an upstream PNG/WebP would land at `*.jpg` with non-JPEG
+// magic bytes and break poster regeneration with "missing SOI marker".
 func (c *Cache) fetchTo(ctx context.Context, dest, url string) (string, error) {
 	if dest == "" {
 		return "", ErrDisabled
@@ -397,15 +403,39 @@ func (c *Cache) fetchTo(ctx context.Context, dest, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if writeErr := writeAtomic(dest, body); writeErr != nil {
+	jpegBytes, err := encodeAsJPEG(body)
+	if err != nil {
+		return "", fmt.Errorf("imagecache: %s: %w", url, err)
+	}
+	if writeErr := writeAtomic(dest, jpegBytes); writeErr != nil {
 		return "", writeErr
 	}
 	c.Logger.Debug().
 		Str("url", url).
 		Str("dest", dest).
-		Int("bytes", len(body)).
+		Int("bytes", len(jpegBytes)).
 		Msg("imagecache: stored")
 	return dest, nil
+}
+
+// encodeAsJPEG decodes any image format Go's stdlib registers
+// (image/jpeg, image/png, image/gif via the blank imports at the top
+// of this file) and re-encodes it as a JPEG at uploadJPEGQuality.
+// Used by both fetchTo and writeUploadedJPEG so cached files are
+// always real JPEGs regardless of the upstream Content-Type or the
+// uploader's source format. Returns an error when body isn't a
+// recognizable image — bubbled up to the caller, which converts it
+// to a 4xx for uploads or a soft-fail log line for fetches.
+func encodeAsJPEG(body []byte) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("decode image: %w", err)
+	}
+	var buf bytes.Buffer
+	if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: uploadJPEGQuality}); encErr != nil {
+		return nil, fmt.Errorf("encode jpeg: %w", encErr)
+	}
+	return buf.Bytes(), nil
 }
 
 // writeUploadedJPEG decodes body, re-encodes the result as a JPEG at
@@ -423,18 +453,21 @@ func (c *Cache) writeUploadedJPEG(dest string, body io.Reader) error {
 	if dest == "" {
 		return ErrDisabled
 	}
-	img, _, err := image.Decode(body)
+	raw, err := io.ReadAll(io.LimitReader(body, maxImageBytes+1))
 	if err != nil {
-		return fmt.Errorf("decode upload: %w", err)
+		return fmt.Errorf("read upload: %w", err)
 	}
-	var buf bytes.Buffer
-	if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: uploadJPEGQuality}); encErr != nil {
-		return fmt.Errorf("encode jpeg: %w", encErr)
+	if len(raw) > maxImageBytes {
+		return fmt.Errorf("upload exceeded %d bytes", maxImageBytes)
+	}
+	jpegBytes, err := encodeAsJPEG(raw)
+	if err != nil {
+		return fmt.Errorf("upload: %w", err)
 	}
 	if mkErr := os.MkdirAll(filepath.Dir(dest), dirMode); mkErr != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), mkErr)
 	}
-	return writeAtomic(dest, buf.Bytes())
+	return writeAtomic(dest, jpegBytes)
 }
 
 // writeAtomic writes body to a sibling .tmp path and renames it over

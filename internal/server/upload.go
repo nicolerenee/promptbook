@@ -74,8 +74,9 @@ func mapUploadError(err error) (int, uploadResponse) {
 			Error: "image cache not configured",
 		}
 	}
-	// SaveUploaded* wraps decode errors with "decode upload:".
-	if err != nil && strings.Contains(err.Error(), "decode upload") {
+	// SaveUploaded* surfaces decode failures via encodeAsJPEG, which
+	// wraps with "decode image:" inside an "upload: ..." envelope.
+	if err != nil && strings.Contains(err.Error(), "decode image") {
 		return http.StatusBadRequest, uploadResponse{
 			Error: "decode upload: not a recognised image (PNG/JPEG/GIF only)",
 		}
