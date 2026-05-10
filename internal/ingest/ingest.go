@@ -82,6 +82,14 @@ type Engine struct {
 	// nil or the probe call returns an error. Tests inject a stub;
 	// production wiring is probe.FFProbe{Path: cfg.Library.FFProbePath}.
 	Prober probe.Prober
+	// ProtectedDirs is the absolute-path set the post-apply cleanup
+	// refuses to remove even when empty. Populated with the configured
+	// library.root + every library.incomingDirs entry — the engine
+	// will happily clean up emptied sub-folders inside those roots
+	// (legacy show folders left behind after a rename, etc.) but
+	// never the roots themselves. Empty / nil disables the cleanup
+	// entirely; tests don't need to opt in.
+	ProtectedDirs []string
 }
 
 // Options tunes a single Ingest invocation.
@@ -299,6 +307,7 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 	// the source folder untouched. Surfacing them as proper "extras"
 	// in Jellyfin is a future feature; for now the user manages those
 	// files manually after the main recording lands.
+	srcParent := filepath.Dir(item.Plan.Source)
 	if _, applyErr := item.Plan.Apply(); applyErr != nil {
 		item.Err = applyErr
 		item.Action = ActionSkipped
@@ -308,6 +317,15 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 		e.Logger.Warn().Err(sidecarErr).Msg("failed to write sidecar")
 	}
 	item.Action = ActionMoved
+
+	// Best-effort cleanup of an emptied source folder. Folder-as-unit
+	// drops with leftover extras leave files behind, which protects
+	// them; legacy library folders (one .mp4 in a [encora-N] folder
+	// being renamed to the new template) end up empty after Apply
+	// and would otherwise litter the library forever. Failures are
+	// logged at debug — a non-empty parent or a permission issue
+	// isn't worth surfacing.
+	e.maybeRemoveEmptyDir(srcParent)
 
 	e.recordVersion(ctx, item)
 
@@ -334,6 +352,45 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 		return
 	}
 	item.NFOPath = nfoPath
+}
+
+// maybeRemoveEmptyDir checks dir and removes it when empty, unless
+// dir is one of the configured ProtectedDirs (the watched roots
+// themselves) or the path is missing. Errors get debug-logged and
+// dropped — emptied-source-folder cleanup is a polish, not load-
+// bearing.
+func (e *Engine) maybeRemoveEmptyDir(dir string) {
+	if dir == "" {
+		return
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		e.Logger.Debug().Err(err).Str("dir", dir).
+			Msg("post-apply: resolve abs path")
+		return
+	}
+	for _, p := range e.ProtectedDirs {
+		pAbs, perr := filepath.Abs(p)
+		if perr == nil && pAbs == abs {
+			return
+		}
+	}
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		e.Logger.Debug().Err(err).Str("dir", abs).
+			Msg("post-apply: read source dir")
+		return
+	}
+	if len(entries) > 0 {
+		return
+	}
+	if rmErr := os.Remove(abs); rmErr != nil {
+		e.Logger.Debug().Err(rmErr).Str("dir", abs).
+			Msg("post-apply: remove empty source dir")
+		return
+	}
+	e.Logger.Info().Str("dir", abs).
+		Msg("post-apply: removed emptied source folder")
 }
 
 // recordVersion writes a recording_versions row for the file we just

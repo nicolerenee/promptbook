@@ -228,10 +228,11 @@ func buildIngestEngine(
 		SubtitleFetcher: &ingest.HTTPSubtitleFetcher{
 			HTTP: &http.Client{Timeout: serveSubtitleHTTPTimeout},
 		},
-		Logger:     log.Logger,
-		ImageCache: imgCache,
-		Prober:     probe.FFProbe{Path: appConfig.Library.FFProbePath},
-		PublicURL:  appConfig.Server.PublicURL,
+		Logger:        log.Logger,
+		ImageCache:    imgCache,
+		Prober:        probe.FFProbe{Path: appConfig.Library.FFProbePath},
+		PublicURL:     appConfig.Server.PublicURL,
+		ProtectedDirs: append([]string{appConfig.Library.Root}, appConfig.Library.IncomingDirs...),
 	}
 }
 
