@@ -711,17 +711,20 @@ function renderRecordingsSection(detail) {
   const sorted = sortRows(recordings,
     { key: state.show.sortKey, dir: state.show.sortDir });
   const view = state.show.recordingsView || 'list';
-  return m('div', { class: 'space-y-2' }, [
-    m('div', { class: 'flex items-center justify-between gap-3 flex-wrap' }, [
-      m('h2', {
-        class: 'text-sm font-semibold uppercase tracking-wider opacity-70',
-      }, 'Recordings · ' + recordings.length),
-      ViewToggle(view),
-    ]),
-    view === 'grid'
-      ? renderRecordingsGrid(sorted)
-      : renderRecordingsList(sorted),
-  ]);
+  // Mirrors the wrapper Recording.js uses for its Files / Cast
+  // sections so the two pages read the same — bordered card with a
+  // card-title heading instead of the bare uppercase eyebrow.
+  return m('div', { class: 'card bg-base-100 shadow-sm' },
+    m('div', { class: 'card-body' }, [
+      m('div', { class: 'flex items-center justify-between gap-3 flex-wrap' }, [
+        m('h2', { class: 'card-title text-base' },
+          'Recordings · ' + recordings.length),
+        ViewToggle(view),
+      ]),
+      view === 'grid'
+        ? renderRecordingsGrid(sorted)
+        : renderRecordingsList(sorted),
+    ]));
 }
 
 const Show = {

@@ -1065,28 +1065,37 @@ function renderActionsCluster(loaded) {
   const regenBusy = !!state.recording.regeneratingNFO;
   const dangerBusy = !!state.recording.dangerBusy;
 
+  // Refresh + Edit mirror the show page's `renderEditImagesButton`
+  // shape: btn-sm + btn-ghost + gap-2 with an icon AND a text
+  // label. Bare icon-only btn-square produced visibly off-centre
+  // SVG content in some browsers (the tooltip pseudo-element can
+  // shift the inner glyph) and dropped the affordance below the
+  // discoverability bar — the show page reads cleaner with
+  // labelled buttons, and consistency between the two pages was
+  // the whole point of this redesign.
   const refreshBtn = m('button', {
     type: 'button',
-    class: 'btn btn-sm btn-ghost btn-square tooltip tooltip-bottom',
+    class: 'btn btn-sm btn-ghost gap-2',
     'aria-label': 'Refresh',
-    'data-tip': 'Refresh',
     disabled: refreshBusy,
     onclick: () => runRefreshFull(id),
-  }, refreshBusy
-    ? m('span', { class: 'loading loading-spinner loading-xs' })
-    : refreshIcon());
+  }, [
+    refreshBusy
+      ? m('span', { class: 'loading loading-spinner loading-xs' })
+      : refreshIcon(),
+    m('span', 'Refresh'),
+  ]);
 
   const editBtn = m('button', {
     type: 'button',
-    class: 'btn btn-sm btn-ghost btn-square tooltip tooltip-bottom',
+    class: 'btn btn-sm btn-ghost gap-2',
     'aria-label': 'Edit images',
-    'data-tip': 'Edit images',
     onclick: () => {
       state.recording.pickerOpen = true;
       state.recording.pickerTab = 'poster';
       maybeLoadPickerOptions(id, 'poster');
     },
-  }, photoIcon());
+  }, [photoIcon(), m('span', 'Edit images')]);
 
   // Build the More-menu items. Rename + NFO + History are always
   // present; the danger-zone entry is state-driven through
@@ -1097,27 +1106,17 @@ function renderActionsCluster(loaded) {
     m('li', m('a', {
       onclick: (ev) => {
         ev.preventDefault();
+        // Rename modal owns both the preview render + the apply
+        // button, so one menu entry is enough — a separate "Apply
+        // rename" would be confusing (it'd open the same modal
+        // anyway).
         state.recording.renameOpen = true;
         state.recording.renamePreview = null;
         state.recording.renameResult = null;
         state.recording.renameApplyError = null;
         loadRenamePreview(id);
       },
-    }, [pencilSquareIcon(), m('span', 'Preview rename')])),
-    m('li', m('a', {
-      onclick: (ev) => {
-        ev.preventDefault();
-        // Apply rename routes through the same modal as Preview —
-        // the modal is where the user confirms + runs the apply, so
-        // a separate "direct apply" entry would skip the
-        // confirmation users expect. Same flow as Preview rename.
-        state.recording.renameOpen = true;
-        state.recording.renamePreview = null;
-        state.recording.renameResult = null;
-        state.recording.renameApplyError = null;
-        loadRenamePreview(id);
-      },
-    }, [pencilSquareIcon(), m('span', 'Apply rename')])),
+    }, [pencilSquareIcon(), m('span', 'Rename')])),
     m('li', { class: regenBusy ? 'disabled' : '' }, m('a', {
       onclick: (ev) => {
         ev.preventDefault();
