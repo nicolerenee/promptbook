@@ -157,7 +157,7 @@ func (j *RefreshEncoraJob) fanOutRecordings(
 			continue
 		}
 		if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshRecordingImages,
-			jobs.JobArgs{"recording_id": recID}); e != nil && *firstErr == nil {
+			jobs.JobArgs{argKeyRecordingID: recID}); e != nil && *firstErr == nil {
 			*firstErr = fmt.Errorf("enqueue refresh-recording-images %d: %w", recID, e)
 		}
 		counts.recordings++
@@ -285,6 +285,86 @@ func (j *ScanLibraryRootJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 		Int("skipped", res.Skipped).
 		Int("errors", len(res.Errors)).
 		Msg("scan-library-root: pass complete")
+	return nil
+}
+
+// RefreshAllRecordingsJob walks every recording with at least one
+// recording_versions row and runs the refresh-recording-full pipeline
+// for each. Use case: a nightly auto-refresh that picks up external-
+// tool changes (Radarr replacing a file in place + renaming it) so
+// the user wakes up to a catalog that mirrors disk reality without
+// having to click Refresh on every recording.
+//
+// The aggregate-per-recording pipeline (encora re-pull, reconcile
+// file_path, re-stat + re-probe, NFO rewrite, image refresh) is
+// shared with the detail page's manual Refresh button — this job is
+// just the fan-out driver. Per-recording failures get a warn log and
+// the next id is attempted; only a list-recordings failure aborts.
+//
+// ctx cancellation is checked between recordings so a long pass can
+// be stopped cleanly via the runner's cancel handle (or shutdown).
+type RefreshAllRecordingsJob struct {
+	DB        *DBConn
+	PerRecord *RefreshRecordingFullJob
+	Logger    zerolog.Logger
+}
+
+// jobNameRefreshAllRecordings is the registry key. Stable string —
+// surfaced in logs, the job_runs.job_name column, and the UI run-now
+// route.
+const jobNameRefreshAllRecordings = "refresh-all-recordings"
+
+// argKeyRecordingID is the JobArgs key carrying the int64 recording
+// id every per-recording job + fan-out consumes. Pulled out as a
+// named constant so the goconst lint stays satisfied across the
+// half-dozen call sites.
+const argKeyRecordingID = "recording_id"
+
+// Name returns the registry key.
+func (j *RefreshAllRecordingsJob) Name() string { return jobNameRefreshAllRecordings }
+
+// Run executes one fan-out pass. Ignores args — the job is
+// unparameterized.
+func (j *RefreshAllRecordingsJob) Run(ctx context.Context, _ jobs.JobArgs) error {
+	if j.DB == nil {
+		return errors.New("refresh-all-recordings: db not configured")
+	}
+	if j.PerRecord == nil {
+		return errors.New("refresh-all-recordings: per-recording job not configured")
+	}
+	ids, err := storage.ListRecordingIDsWithVersions(ctx, j.DB)
+	if err != nil {
+		return fmt.Errorf("refresh-all-recordings: list recordings: %w", err)
+	}
+	j.Logger.Info().
+		Int("recordings", len(ids)).
+		Msg("refresh-all-recordings: pass starting")
+	var (
+		refreshed int
+		failed    int
+	)
+	for _, id := range ids {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			j.Logger.Warn().Err(ctxErr).
+				Int("refreshed", refreshed).
+				Int("failed", failed).
+				Msg("refresh-all-recordings: cancelled mid-pass")
+			return fmt.Errorf("refresh-all-recordings: cancelled: %w", ctxErr)
+		}
+		args := jobs.JobArgs{argKeyRecordingID: id}
+		if runErr := j.PerRecord.Run(ctx, args); runErr != nil {
+			failed++
+			j.Logger.Warn().Err(runErr).
+				Int64("recording_id", id).
+				Msg("refresh-all-recordings: per-recording refresh failed; continuing")
+			continue
+		}
+		refreshed++
+	}
+	j.Logger.Info().
+		Int("refreshed", refreshed).
+		Int("failed", failed).
+		Msg("refresh-all-recordings: pass complete")
 	return nil
 }
 

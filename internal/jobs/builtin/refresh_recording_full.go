@@ -84,7 +84,7 @@ func (j *RefreshRecordingFullJob) Name() string { return jobNameRefreshRecording
 // were valid — partial-success diagnostics live in the structured
 // log fields.
 func (j *RefreshRecordingFullJob) Run(ctx context.Context, args jobs.JobArgs) error {
-	recID := args.GetInt64("recording_id")
+	recID := args.GetInt64(argKeyRecordingID)
 	if recID <= 0 {
 		return errors.New("refresh-recording-full: missing or invalid recording_id arg")
 	}

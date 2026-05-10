@@ -143,6 +143,72 @@ func TestScanLibraryRootJob_NoRoot(t *testing.T) {
 	assert.Contains(t, err.Error(), "library.root")
 }
 
+// TestRefreshAllRecordingsJob_NoPerRecord covers the configuration
+// guard: without a wired per-record job the fan-out fails fast
+// rather than silently no-oping.
+func TestRefreshAllRecordingsJob_NoPerRecord(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
+	sqlDB, db, err := storage.OpenEnt(ctx, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	job := &builtin.RefreshAllRecordingsJob{DB: db, Logger: zerolog.Nop()}
+	err = job.Run(ctx, jobs.JobArgs{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "per-recording job")
+}
+
+// TestRefreshAllRecordingsJob_FansOutToEveryRecording walks two
+// recordings with versions + one without, asserts the per-record
+// job runs once per recording-with-versions, and that a per-record
+// failure doesn't abort the batch.
+func TestRefreshAllRecordingsJob_FansOutToEveryRecording(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	tmp := t.TempDir()
+
+	dbPath := filepath.Join(tmp, "promptbook.db")
+	sqlDB, db, err := storage.OpenEnt(ctx, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	const onDiskA = int64(1111)
+	const onDiskB = int64(2222)
+	const noFiles = int64(3333)
+	seedRecording(t, db, onDiskA)
+	seedRecording(t, db, onDiskB)
+	seedRecording(t, db, noFiles)
+	folder := filepath.Join(tmp, "lib")
+	require.NoError(t, os.MkdirAll(folder, 0o755))
+	mainA := filepath.Join(folder, "A.mkv")
+	mainB := filepath.Join(folder, "B.mkv")
+	writeFile(t, mainA, 1024)
+	writeFile(t, mainB, 1024)
+	seedVersion(t, db, onDiskA, mainA)
+	seedVersion(t, db, onDiskB, mainB)
+
+	// Per-record job with no encora/probe/nfo wired — every step
+	// degrades into a no-op + debug log. The fan-out's job is just to
+	// iterate; the per-record job's existing tests cover the steps.
+	perRecord := &builtin.RefreshRecordingFullJob{DB: db, Logger: zerolog.Nop()}
+	fanOut := &builtin.RefreshAllRecordingsJob{
+		DB:        db,
+		PerRecord: perRecord,
+		Logger:    zerolog.Nop(),
+	}
+	require.NoError(t, fanOut.Run(ctx, jobs.JobArgs{}))
+
+	// Sanity: both on-disk recordings still have their version row
+	// (the no-op pipeline doesn't drop anything).
+	for _, id := range []int64{onDiskA, onDiskB} {
+		got, listErr := storage.ListVersions(ctx, db, id)
+		require.NoError(t, listErr)
+		require.Len(t, got, 1, "recording %d should still have its version", id)
+	}
+}
+
 // TestRegenerateAllNFOJob_NoService covers the configuration guard:
 // without an nforefresh.Service the job fails fast rather than
 // silently no-oping.

@@ -39,10 +39,22 @@ const imageFetchHTTPTimeout = 60 * time.Second
 const serveSubtitleHTTPTimeout = 60 * time.Second
 
 // refreshEncoraInterval is the cadence the scheduled jobs framework
-// uses to mirror the user's Encora collection. 15 minutes plays nicely
-// with Encora's 30 req/min ceiling — even a large collection finishes
-// well inside the window with room left over for ad-hoc CLI calls.
-const refreshEncoraInterval = 15 * time.Minute
+// uses to mirror the user's Encora collection. Hourly is more than
+// enough — a typical collection sync hits /collection + /wants which
+// is ~2–3 paginated calls — and leaves the rest of the rate-limit
+// budget (30 req/min) free for ad-hoc CLI use + the refresh-all-
+// recordings nightly fan-out.
+const refreshEncoraInterval = 1 * time.Hour
+
+// refreshAllRecordingsInterval is the cadence of the nightly fan-out
+// that re-stats, re-probes, and rewrites NFO for every recording
+// with files on disk. Daily is the right shape: external tools
+// (Radarr) occasionally upgrade a file in place + rename it, the
+// reconciler picks that up on the next pass and the user sees the
+// fresh release-format string the morning after. Per-recording
+// failures don't abort the batch, so one bad file doesn't block
+// the rest of the catalog.
+const refreshAllRecordingsInterval = 24 * time.Hour
 
 // jobRunnerWorkers is the worker-pool size the scheduled-jobs runner
 // uses. Two matches the Radarr default and is enough to overlap the
@@ -309,9 +321,11 @@ func buildJobRunner(
 		runner, db, encClient, smClient, imgCache, imgRenderer, nfoRefresh,
 	)
 	registered += imageRegistered
-	registered += registerRefreshRecordingFull(
+	refreshOne, refreshOneCount := registerRefreshRecordingFull(
 		runner, db, sqlDB, encClient, nfoRefresh, imageRefreshJob,
 	)
+	registered += refreshOneCount
+	registered += registerRefreshAllRecordings(runner, db, refreshOne)
 	registered += registerScanIncoming(runner, db)
 	registered += registerScanLibraryRoot(runner, db)
 	registered += registerRegenerateAllNFO(runner, db, nfoRefresh)
@@ -432,7 +446,7 @@ func registerRefreshRecordingFull(
 	encClient *encora.Client,
 	nfoRefresh *nforefresh.Service,
 	imageRefreshJob *builtin.RefreshRecordingImagesJob,
-) int {
+) (*builtin.RefreshRecordingFullJob, int) {
 	job := &builtin.RefreshRecordingFullJob{
 		DB:           db,
 		SQLDB:        sqlDB,
@@ -449,6 +463,34 @@ func registerRefreshRecordingFull(
 	}
 	if err := runner.Register(jobs.JobDef{Job: job}); err != nil {
 		log.Error().Err(err).Msg("register refresh-recording-full job")
+		return nil, 0
+	}
+	return job, 1
+}
+
+// registerRefreshAllRecordings wires the nightly fan-out that runs
+// refresh-recording-full for every recording with files on disk.
+// Auto-fired every 24h so external-tool changes (Radarr in-place
+// upgrades) land in the catalog without the user clicking Refresh
+// per recording. Skipped when the per-recording job didn't register
+// (no nforefresh / probe / etc. wired) — the fan-out would have
+// nothing to fan out to.
+func registerRefreshAllRecordings(
+	runner *jobs.Runner, db *ent.Client, perRecord *builtin.RefreshRecordingFullJob,
+) int {
+	if perRecord == nil {
+		return 0
+	}
+	job := &builtin.RefreshAllRecordingsJob{
+		DB:        db,
+		PerRecord: perRecord,
+		Logger:    log.Logger,
+	}
+	if err := runner.Register(jobs.JobDef{
+		Job:      job,
+		Interval: refreshAllRecordingsInterval,
+	}); err != nil {
+		log.Error().Err(err).Msg("register refresh-all-recordings job")
 		return 0
 	}
 	return 1

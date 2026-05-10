@@ -51,7 +51,7 @@ func (j *RefreshRecordingImagesJob) Name() string { return jobNameRefreshRecordi
 //	recording_id: int64 (required, must be > 0)
 //	force:        bool  (optional; overwrite existing fanart + poster)
 func (j *RefreshRecordingImagesJob) Run(ctx context.Context, args jobs.JobArgs) error {
-	recID := args.GetInt64("recording_id")
+	recID := args.GetInt64(argKeyRecordingID)
 	if recID <= 0 {
 		return errors.New("refresh-recording-images: missing or invalid recording_id arg")
 	}
