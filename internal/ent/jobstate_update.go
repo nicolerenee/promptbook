@@ -18,8 +18,9 @@ import (
 // JobStateUpdate is the builder for updating JobState entities.
 type JobStateUpdate struct {
 	config
-	hooks    []Hook
-	mutation *JobStateMutation
+	hooks     []Hook
+	mutation  *JobStateMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the JobStateUpdate builder.
@@ -147,6 +148,12 @@ func (_u *JobStateUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *JobStateUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *JobStateUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *JobStateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(jobstate.Table, jobstate.Columns, sqlgraph.NewFieldSpec(jobstate.FieldID, field.TypeString))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -183,6 +190,7 @@ func (_u *JobStateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.LastStatusCleared() {
 		_spec.ClearField(jobstate.FieldLastStatus, field.TypeString)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{jobstate.Label}
@@ -198,9 +206,10 @@ func (_u *JobStateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // JobStateUpdateOne is the builder for updating a single JobState entity.
 type JobStateUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *JobStateMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *JobStateMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetLastStartedAt sets the "last_started_at" field.
@@ -335,6 +344,12 @@ func (_u *JobStateUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *JobStateUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *JobStateUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *JobStateUpdateOne) sqlSave(ctx context.Context) (_node *JobState, err error) {
 	_spec := sqlgraph.NewUpdateSpec(jobstate.Table, jobstate.Columns, sqlgraph.NewFieldSpec(jobstate.FieldID, field.TypeString))
 	id, ok := _u.mutation.ID()
@@ -388,6 +403,7 @@ func (_u *JobStateUpdateOne) sqlSave(ctx context.Context) (_node *JobState, err 
 	if _u.mutation.LastStatusCleared() {
 		_spec.ClearField(jobstate.FieldLastStatus, field.TypeString)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &JobState{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

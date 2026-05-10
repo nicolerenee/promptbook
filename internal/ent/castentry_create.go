@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
@@ -18,6 +19,7 @@ type CastEntryCreate struct {
 	config
 	mutation *CastEntryMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetRecordingID sets the "recording_id" field.
@@ -271,6 +273,7 @@ func (_c *CastEntryCreate) createSpec() (*CastEntry, *sqlgraph.CreateSpec) {
 		_node = &CastEntry{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(castentry.Table, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.PerformerID(); ok {
 		_spec.SetField(castentry.FieldPerformerID, field.TypeInt64, value)
 		_node.PerformerID = value
@@ -335,11 +338,511 @@ func (_c *CastEntryCreate) createSpec() (*CastEntry, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.CastEntry.Create().
+//		SetRecordingID(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.CastEntryUpsert) {
+//			SetRecordingID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *CastEntryCreate) OnConflict(opts ...sql.ConflictOption) *CastEntryUpsertOne {
+	_c.conflict = opts
+	return &CastEntryUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.CastEntry.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *CastEntryCreate) OnConflictColumns(columns ...string) *CastEntryUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &CastEntryUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// CastEntryUpsertOne is the builder for "upsert"-ing
+	//  one CastEntry node.
+	CastEntryUpsertOne struct {
+		create *CastEntryCreate
+	}
+
+	// CastEntryUpsert is the "OnConflict" setter.
+	CastEntryUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetRecordingID sets the "recording_id" field.
+func (u *CastEntryUpsert) SetRecordingID(v int64) *CastEntryUpsert {
+	u.Set(castentry.FieldRecordingID, v)
+	return u
+}
+
+// UpdateRecordingID sets the "recording_id" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateRecordingID() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldRecordingID)
+	return u
+}
+
+// SetPerformerID sets the "performer_id" field.
+func (u *CastEntryUpsert) SetPerformerID(v int64) *CastEntryUpsert {
+	u.Set(castentry.FieldPerformerID, v)
+	return u
+}
+
+// UpdatePerformerID sets the "performer_id" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdatePerformerID() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldPerformerID)
+	return u
+}
+
+// AddPerformerID adds v to the "performer_id" field.
+func (u *CastEntryUpsert) AddPerformerID(v int64) *CastEntryUpsert {
+	u.Add(castentry.FieldPerformerID, v)
+	return u
+}
+
+// SetPerformerName sets the "performer_name" field.
+func (u *CastEntryUpsert) SetPerformerName(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldPerformerName, v)
+	return u
+}
+
+// UpdatePerformerName sets the "performer_name" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdatePerformerName() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldPerformerName)
+	return u
+}
+
+// SetPerformerSlug sets the "performer_slug" field.
+func (u *CastEntryUpsert) SetPerformerSlug(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldPerformerSlug, v)
+	return u
+}
+
+// UpdatePerformerSlug sets the "performer_slug" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdatePerformerSlug() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldPerformerSlug)
+	return u
+}
+
+// SetPerformerURL sets the "performer_url" field.
+func (u *CastEntryUpsert) SetPerformerURL(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldPerformerURL, v)
+	return u
+}
+
+// UpdatePerformerURL sets the "performer_url" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdatePerformerURL() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldPerformerURL)
+	return u
+}
+
+// SetCharacterID sets the "character_id" field.
+func (u *CastEntryUpsert) SetCharacterID(v int64) *CastEntryUpsert {
+	u.Set(castentry.FieldCharacterID, v)
+	return u
+}
+
+// UpdateCharacterID sets the "character_id" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateCharacterID() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldCharacterID)
+	return u
+}
+
+// AddCharacterID adds v to the "character_id" field.
+func (u *CastEntryUpsert) AddCharacterID(v int64) *CastEntryUpsert {
+	u.Add(castentry.FieldCharacterID, v)
+	return u
+}
+
+// SetCharacterName sets the "character_name" field.
+func (u *CastEntryUpsert) SetCharacterName(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldCharacterName, v)
+	return u
+}
+
+// UpdateCharacterName sets the "character_name" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateCharacterName() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldCharacterName)
+	return u
+}
+
+// SetCharacterSlug sets the "character_slug" field.
+func (u *CastEntryUpsert) SetCharacterSlug(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldCharacterSlug, v)
+	return u
+}
+
+// UpdateCharacterSlug sets the "character_slug" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateCharacterSlug() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldCharacterSlug)
+	return u
+}
+
+// SetCharacterURL sets the "character_url" field.
+func (u *CastEntryUpsert) SetCharacterURL(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldCharacterURL, v)
+	return u
+}
+
+// UpdateCharacterURL sets the "character_url" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateCharacterURL() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldCharacterURL)
+	return u
+}
+
+// SetCharacterOrder sets the "character_order" field.
+func (u *CastEntryUpsert) SetCharacterOrder(v int) *CastEntryUpsert {
+	u.Set(castentry.FieldCharacterOrder, v)
+	return u
+}
+
+// UpdateCharacterOrder sets the "character_order" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateCharacterOrder() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldCharacterOrder)
+	return u
+}
+
+// AddCharacterOrder adds v to the "character_order" field.
+func (u *CastEntryUpsert) AddCharacterOrder(v int) *CastEntryUpsert {
+	u.Add(castentry.FieldCharacterOrder, v)
+	return u
+}
+
+// SetStatusLabel sets the "status_label" field.
+func (u *CastEntryUpsert) SetStatusLabel(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldStatusLabel, v)
+	return u
+}
+
+// UpdateStatusLabel sets the "status_label" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateStatusLabel() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldStatusLabel)
+	return u
+}
+
+// ClearStatusLabel clears the value of the "status_label" field.
+func (u *CastEntryUpsert) ClearStatusLabel() *CastEntryUpsert {
+	u.SetNull(castentry.FieldStatusLabel)
+	return u
+}
+
+// SetStatusAbbrev sets the "status_abbrev" field.
+func (u *CastEntryUpsert) SetStatusAbbrev(v string) *CastEntryUpsert {
+	u.Set(castentry.FieldStatusAbbrev, v)
+	return u
+}
+
+// UpdateStatusAbbrev sets the "status_abbrev" field to the value that was provided on create.
+func (u *CastEntryUpsert) UpdateStatusAbbrev() *CastEntryUpsert {
+	u.SetExcluded(castentry.FieldStatusAbbrev)
+	return u
+}
+
+// ClearStatusAbbrev clears the value of the "status_abbrev" field.
+func (u *CastEntryUpsert) ClearStatusAbbrev() *CastEntryUpsert {
+	u.SetNull(castentry.FieldStatusAbbrev)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.CastEntry.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *CastEntryUpsertOne) UpdateNewValues() *CastEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.CastEntry.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *CastEntryUpsertOne) Ignore() *CastEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *CastEntryUpsertOne) DoNothing() *CastEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the CastEntryCreate.OnConflict
+// documentation for more info.
+func (u *CastEntryUpsertOne) Update(set func(*CastEntryUpsert)) *CastEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&CastEntryUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetRecordingID sets the "recording_id" field.
+func (u *CastEntryUpsertOne) SetRecordingID(v int64) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetRecordingID(v)
+	})
+}
+
+// UpdateRecordingID sets the "recording_id" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateRecordingID() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateRecordingID()
+	})
+}
+
+// SetPerformerID sets the "performer_id" field.
+func (u *CastEntryUpsertOne) SetPerformerID(v int64) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerID(v)
+	})
+}
+
+// AddPerformerID adds v to the "performer_id" field.
+func (u *CastEntryUpsertOne) AddPerformerID(v int64) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.AddPerformerID(v)
+	})
+}
+
+// UpdatePerformerID sets the "performer_id" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdatePerformerID() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerID()
+	})
+}
+
+// SetPerformerName sets the "performer_name" field.
+func (u *CastEntryUpsertOne) SetPerformerName(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerName(v)
+	})
+}
+
+// UpdatePerformerName sets the "performer_name" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdatePerformerName() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerName()
+	})
+}
+
+// SetPerformerSlug sets the "performer_slug" field.
+func (u *CastEntryUpsertOne) SetPerformerSlug(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerSlug(v)
+	})
+}
+
+// UpdatePerformerSlug sets the "performer_slug" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdatePerformerSlug() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerSlug()
+	})
+}
+
+// SetPerformerURL sets the "performer_url" field.
+func (u *CastEntryUpsertOne) SetPerformerURL(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerURL(v)
+	})
+}
+
+// UpdatePerformerURL sets the "performer_url" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdatePerformerURL() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerURL()
+	})
+}
+
+// SetCharacterID sets the "character_id" field.
+func (u *CastEntryUpsertOne) SetCharacterID(v int64) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterID(v)
+	})
+}
+
+// AddCharacterID adds v to the "character_id" field.
+func (u *CastEntryUpsertOne) AddCharacterID(v int64) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.AddCharacterID(v)
+	})
+}
+
+// UpdateCharacterID sets the "character_id" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateCharacterID() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterID()
+	})
+}
+
+// SetCharacterName sets the "character_name" field.
+func (u *CastEntryUpsertOne) SetCharacterName(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterName(v)
+	})
+}
+
+// UpdateCharacterName sets the "character_name" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateCharacterName() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterName()
+	})
+}
+
+// SetCharacterSlug sets the "character_slug" field.
+func (u *CastEntryUpsertOne) SetCharacterSlug(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterSlug(v)
+	})
+}
+
+// UpdateCharacterSlug sets the "character_slug" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateCharacterSlug() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterSlug()
+	})
+}
+
+// SetCharacterURL sets the "character_url" field.
+func (u *CastEntryUpsertOne) SetCharacterURL(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterURL(v)
+	})
+}
+
+// UpdateCharacterURL sets the "character_url" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateCharacterURL() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterURL()
+	})
+}
+
+// SetCharacterOrder sets the "character_order" field.
+func (u *CastEntryUpsertOne) SetCharacterOrder(v int) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterOrder(v)
+	})
+}
+
+// AddCharacterOrder adds v to the "character_order" field.
+func (u *CastEntryUpsertOne) AddCharacterOrder(v int) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.AddCharacterOrder(v)
+	})
+}
+
+// UpdateCharacterOrder sets the "character_order" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateCharacterOrder() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterOrder()
+	})
+}
+
+// SetStatusLabel sets the "status_label" field.
+func (u *CastEntryUpsertOne) SetStatusLabel(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetStatusLabel(v)
+	})
+}
+
+// UpdateStatusLabel sets the "status_label" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateStatusLabel() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateStatusLabel()
+	})
+}
+
+// ClearStatusLabel clears the value of the "status_label" field.
+func (u *CastEntryUpsertOne) ClearStatusLabel() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.ClearStatusLabel()
+	})
+}
+
+// SetStatusAbbrev sets the "status_abbrev" field.
+func (u *CastEntryUpsertOne) SetStatusAbbrev(v string) *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetStatusAbbrev(v)
+	})
+}
+
+// UpdateStatusAbbrev sets the "status_abbrev" field to the value that was provided on create.
+func (u *CastEntryUpsertOne) UpdateStatusAbbrev() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateStatusAbbrev()
+	})
+}
+
+// ClearStatusAbbrev clears the value of the "status_abbrev" field.
+func (u *CastEntryUpsertOne) ClearStatusAbbrev() *CastEntryUpsertOne {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.ClearStatusAbbrev()
+	})
+}
+
+// Exec executes the query.
+func (u *CastEntryUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for CastEntryCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *CastEntryUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *CastEntryUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *CastEntryUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // CastEntryCreateBulk is the builder for creating many CastEntry entities in bulk.
 type CastEntryCreateBulk struct {
 	config
 	err      error
 	builders []*CastEntryCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the CastEntry entities in the database.
@@ -369,6 +872,7 @@ func (_c *CastEntryCreateBulk) Save(ctx context.Context) ([]*CastEntry, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -419,6 +923,313 @@ func (_c *CastEntryCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *CastEntryCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.CastEntry.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.CastEntryUpsert) {
+//			SetRecordingID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *CastEntryCreateBulk) OnConflict(opts ...sql.ConflictOption) *CastEntryUpsertBulk {
+	_c.conflict = opts
+	return &CastEntryUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.CastEntry.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *CastEntryCreateBulk) OnConflictColumns(columns ...string) *CastEntryUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &CastEntryUpsertBulk{
+		create: _c,
+	}
+}
+
+// CastEntryUpsertBulk is the builder for "upsert"-ing
+// a bulk of CastEntry nodes.
+type CastEntryUpsertBulk struct {
+	create *CastEntryCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.CastEntry.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *CastEntryUpsertBulk) UpdateNewValues() *CastEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.CastEntry.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *CastEntryUpsertBulk) Ignore() *CastEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *CastEntryUpsertBulk) DoNothing() *CastEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the CastEntryCreateBulk.OnConflict
+// documentation for more info.
+func (u *CastEntryUpsertBulk) Update(set func(*CastEntryUpsert)) *CastEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&CastEntryUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetRecordingID sets the "recording_id" field.
+func (u *CastEntryUpsertBulk) SetRecordingID(v int64) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetRecordingID(v)
+	})
+}
+
+// UpdateRecordingID sets the "recording_id" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateRecordingID() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateRecordingID()
+	})
+}
+
+// SetPerformerID sets the "performer_id" field.
+func (u *CastEntryUpsertBulk) SetPerformerID(v int64) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerID(v)
+	})
+}
+
+// AddPerformerID adds v to the "performer_id" field.
+func (u *CastEntryUpsertBulk) AddPerformerID(v int64) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.AddPerformerID(v)
+	})
+}
+
+// UpdatePerformerID sets the "performer_id" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdatePerformerID() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerID()
+	})
+}
+
+// SetPerformerName sets the "performer_name" field.
+func (u *CastEntryUpsertBulk) SetPerformerName(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerName(v)
+	})
+}
+
+// UpdatePerformerName sets the "performer_name" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdatePerformerName() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerName()
+	})
+}
+
+// SetPerformerSlug sets the "performer_slug" field.
+func (u *CastEntryUpsertBulk) SetPerformerSlug(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerSlug(v)
+	})
+}
+
+// UpdatePerformerSlug sets the "performer_slug" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdatePerformerSlug() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerSlug()
+	})
+}
+
+// SetPerformerURL sets the "performer_url" field.
+func (u *CastEntryUpsertBulk) SetPerformerURL(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetPerformerURL(v)
+	})
+}
+
+// UpdatePerformerURL sets the "performer_url" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdatePerformerURL() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdatePerformerURL()
+	})
+}
+
+// SetCharacterID sets the "character_id" field.
+func (u *CastEntryUpsertBulk) SetCharacterID(v int64) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterID(v)
+	})
+}
+
+// AddCharacterID adds v to the "character_id" field.
+func (u *CastEntryUpsertBulk) AddCharacterID(v int64) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.AddCharacterID(v)
+	})
+}
+
+// UpdateCharacterID sets the "character_id" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateCharacterID() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterID()
+	})
+}
+
+// SetCharacterName sets the "character_name" field.
+func (u *CastEntryUpsertBulk) SetCharacterName(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterName(v)
+	})
+}
+
+// UpdateCharacterName sets the "character_name" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateCharacterName() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterName()
+	})
+}
+
+// SetCharacterSlug sets the "character_slug" field.
+func (u *CastEntryUpsertBulk) SetCharacterSlug(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterSlug(v)
+	})
+}
+
+// UpdateCharacterSlug sets the "character_slug" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateCharacterSlug() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterSlug()
+	})
+}
+
+// SetCharacterURL sets the "character_url" field.
+func (u *CastEntryUpsertBulk) SetCharacterURL(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterURL(v)
+	})
+}
+
+// UpdateCharacterURL sets the "character_url" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateCharacterURL() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterURL()
+	})
+}
+
+// SetCharacterOrder sets the "character_order" field.
+func (u *CastEntryUpsertBulk) SetCharacterOrder(v int) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetCharacterOrder(v)
+	})
+}
+
+// AddCharacterOrder adds v to the "character_order" field.
+func (u *CastEntryUpsertBulk) AddCharacterOrder(v int) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.AddCharacterOrder(v)
+	})
+}
+
+// UpdateCharacterOrder sets the "character_order" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateCharacterOrder() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateCharacterOrder()
+	})
+}
+
+// SetStatusLabel sets the "status_label" field.
+func (u *CastEntryUpsertBulk) SetStatusLabel(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetStatusLabel(v)
+	})
+}
+
+// UpdateStatusLabel sets the "status_label" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateStatusLabel() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateStatusLabel()
+	})
+}
+
+// ClearStatusLabel clears the value of the "status_label" field.
+func (u *CastEntryUpsertBulk) ClearStatusLabel() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.ClearStatusLabel()
+	})
+}
+
+// SetStatusAbbrev sets the "status_abbrev" field.
+func (u *CastEntryUpsertBulk) SetStatusAbbrev(v string) *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.SetStatusAbbrev(v)
+	})
+}
+
+// UpdateStatusAbbrev sets the "status_abbrev" field to the value that was provided on create.
+func (u *CastEntryUpsertBulk) UpdateStatusAbbrev() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.UpdateStatusAbbrev()
+	})
+}
+
+// ClearStatusAbbrev clears the value of the "status_abbrev" field.
+func (u *CastEntryUpsertBulk) ClearStatusAbbrev() *CastEntryUpsertBulk {
+	return u.Update(func(s *CastEntryUpsert) {
+		s.ClearStatusAbbrev()
+	})
+}
+
+// Exec executes the query.
+func (u *CastEntryUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the CastEntryCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for CastEntryCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *CastEntryUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

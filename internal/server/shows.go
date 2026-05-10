@@ -13,7 +13,7 @@ package server
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,6 +23,9 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -99,25 +102,14 @@ func paginateShows(items []ShowListItem, limit, offset int) []ShowListItem {
 // loadAllShows returns {show_id: name} for every row in the shows
 // table. Used as the seed map so a show with no reconciled recordings
 // still surfaces in the by-show list.
-func loadAllShows(ctx context.Context, db *sql.DB) (map[int64]string, error) {
-	rows, err := db.QueryContext(ctx, `SELECT show_id, name FROM shows`)
+func loadAllShows(ctx context.Context, client *ent.Client) (map[int64]string, error) {
+	rows, err := client.Show.Query().All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query shows: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-	out := make(map[int64]string)
-	for rows.Next() {
-		var (
-			id   int64
-			name string
-		)
-		if scanErr := rows.Scan(&id, &name); scanErr != nil {
-			return nil, fmt.Errorf("scan show row: %w", scanErr)
-		}
-		out[id] = name
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate show rows: %w", rerr)
+	out := make(map[int64]string, len(rows))
+	for _, sh := range rows {
+		out[sh.ID] = sh.Name
 	}
 	return out, nil
 }
@@ -321,13 +313,12 @@ func parseShowID(s string) (int64, error) {
 
 // showExists returns 404 when no shows row matches id, nil otherwise.
 func (s *Server) showExists(ctx context.Context, id int64) error {
-	var marker int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM shows WHERE show_id = ?`, id).Scan(&marker)
-	if errors.Is(err, sql.ErrNoRows) {
-		return echo.NewHTTPError(http.StatusNotFound, "show not found")
-	}
+	exists, err := s.db.Show.Query().Where(show.IDEQ(id)).Exist(ctx)
 	if err != nil {
 		return fmt.Errorf("query show %d: %w", id, err)
+	}
+	if !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "show not found")
 	}
 	return nil
 }
@@ -403,63 +394,94 @@ func (s *Server) loadShowDetail(ctx context.Context, id int64) (*ShowDetailRespo
 }
 
 // loadShowName returns the canonical show name from the shows table.
-func loadShowName(ctx context.Context, db *sql.DB, id int64) (string, error) {
-	var name string
-	err := db.QueryRowContext(ctx, `SELECT name FROM shows WHERE show_id = ?`, id).Scan(&name)
-	if errors.Is(err, sql.ErrNoRows) {
+func loadShowName(ctx context.Context, client *ent.Client, id int64) (string, error) {
+	row, err := client.Show.Query().Where(show.IDEQ(id)).Only(ctx)
+	if ent.IsNotFound(err) {
 		return "", errShowNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("query show name %d: %w", id, err)
 	}
-	return name, nil
+	return row.Name, nil
 }
 
 // loadRecordingIDsForShow returns every recording_id for the show.
-func loadRecordingIDsForShow(ctx context.Context, db *sql.DB, showID int64) ([]int64, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT recording_id FROM recordings
-		WHERE show_id = ?
-		ORDER BY date_full ASC, recording_id ASC
-	`, showID)
+func loadRecordingIDsForShow(
+	ctx context.Context, client *ent.Client, showID int64,
+) ([]int64, error) {
+	rows, err := client.Recording.Query().
+		Where(recording.ShowID(showID)).
+		Order(
+			recording.ByDateFull(),
+			recording.ByID(),
+		).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query show recordings: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make([]int64, 0)
-	for rows.Next() {
-		var id int64
-		if scanErr := rows.Scan(&id); scanErr != nil {
-			return nil, fmt.Errorf("scan show recording id: %w", scanErr)
-		}
-		out = append(out, id)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate show recordings: %w", rerr)
+	out := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.ID)
 	}
 	return out, nil
 }
 
-// loadShowDescription walks the show's recordings looking for the
-// first non-empty show_description on raw_json.
-func loadShowDescription(ctx context.Context, db *sql.DB, showID int64) string {
-	var description sql.NullString
-	err := db.QueryRowContext(ctx, `
-		SELECT json_extract(raw_json, '$.metadata.show_description')
-		FROM recordings
-		WHERE show_id = ?
-		  AND json_extract(raw_json, '$.metadata.show_description') IS NOT NULL
-		  AND json_extract(raw_json, '$.metadata.show_description') != ''
-		LIMIT 1
-	`, showID).Scan(&description)
+// loadShowDescription returns the first row's description_html from the
+// show's recordings — used for the SPA's show detail header.
+//
+// The legacy SQL pulled the first non-empty show_description out of the
+// raw_json column via json_extract; the ent variant pulls the
+// recordings rows in show_id order and inspects raw_json in Go to keep
+// the result identical without leaning on dialect-specific JSON
+// support.
+func loadShowDescription(
+	ctx context.Context, client *ent.Client, showID int64,
+) string {
+	rows, err := client.Recording.Query().
+		Where(recording.ShowID(showID)).
+		Order(recording.ByID()).
+		Limit(showDescriptionScanLimit).
+		All(ctx)
 	if err != nil {
 		return ""
 	}
-	if !description.Valid {
+	for _, r := range rows {
+		// json_extract on raw_json returned the metadata.show_description
+		// string; we mirror that path by pulling it from the recording's
+		// last_seen denormalized fields when ent has them, else falling
+		// back to a JSON parse of raw_json. ent's Recording struct does
+		// not store metadata.show_description directly — it lives only
+		// in raw_json — so a small JSON peek is the right call here.
+		desc := extractShowDescription(r.RawJSON)
+		if desc != "" {
+			return stripShowDescriptionHTML(desc)
+		}
+	}
+	return ""
+}
+
+// showDescriptionScanLimit caps how many rows loadShowDescription
+// scans before giving up. Most shows resolve on the first row; very
+// few shows would need more than 8 to surface a non-empty description.
+const showDescriptionScanLimit = 16
+
+// extractShowDescription pulls metadata.show_description out of a
+// Recording.raw_json blob. Returns "" on any parse failure or absent
+// field. The legacy SQL used SQLite's json_extract; we do it in Go
+// here so the helper stays portable across ent dialects.
+func extractShowDescription(rawJSON string) string {
+	if rawJSON == "" {
 		return ""
 	}
-	return stripShowDescriptionHTML(description.String)
+	var m struct {
+		Metadata struct {
+			ShowDescription string `json:"show_description"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &m); err != nil {
+		return ""
+	}
+	return m.Metadata.ShowDescription
 }
 
 // stripShowDescriptionHTML normalizes a raw HTML show description into

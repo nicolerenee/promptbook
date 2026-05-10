@@ -12,7 +12,6 @@ package scanner
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +21,8 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -54,7 +55,7 @@ type Result struct {
 // drives one logical watch loop; callers wanting multiple cadences
 // should construct multiple Engines.
 type Engine struct {
-	DB        *sql.DB
+	DB        *ent.Client
 	WatchDirs []string
 	Interval  time.Duration
 	Logger    zerolog.Logger
@@ -263,18 +264,14 @@ func (e *Engine) confidenceFor(ctx context.Context, id int64, res *Result, path 
 // versionExistsForPath returns true if any recording_versions row
 // already references the exact file_path. The scanner uses this to
 // silently skip files that have already been ingested.
-func versionExistsForPath(ctx context.Context, db *sql.DB, path string) (bool, error) {
-	var exists int
-	err := db.QueryRowContext(ctx, `
-		SELECT 1 FROM recording_versions WHERE file_path = ? LIMIT 1
-	`, path).Scan(&exists)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
+func versionExistsForPath(ctx context.Context, client *ent.Client, path string) (bool, error) {
+	exists, err := client.RecordingVersion.Query().
+		Where(recordingversion.FilePath(path)).
+		Exist(ctx)
 	if err != nil {
 		return false, fmt.Errorf("query recording_versions: %w", err)
 	}
-	return true, nil
+	return exists, nil
 }
 
 // recordError appends err to res.Errors, capping at maxTrackedErrors

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/performer"
@@ -18,6 +19,7 @@ type PerformerCreate struct {
 	config
 	mutation *PerformerMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetName sets the "name" field.
@@ -165,6 +167,7 @@ func (_c *PerformerCreate) createSpec() (*Performer, *sqlgraph.CreateSpec) {
 		_node = &Performer{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(performer.Table, sqlgraph.NewFieldSpec(performer.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -188,11 +191,246 @@ func (_c *PerformerCreate) createSpec() (*Performer, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Performer.Create().
+//		SetName(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.PerformerUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *PerformerCreate) OnConflict(opts ...sql.ConflictOption) *PerformerUpsertOne {
+	_c.conflict = opts
+	return &PerformerUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Performer.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *PerformerCreate) OnConflictColumns(columns ...string) *PerformerUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &PerformerUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// PerformerUpsertOne is the builder for "upsert"-ing
+	//  one Performer node.
+	PerformerUpsertOne struct {
+		create *PerformerCreate
+	}
+
+	// PerformerUpsert is the "OnConflict" setter.
+	PerformerUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetName sets the "name" field.
+func (u *PerformerUpsert) SetName(v string) *PerformerUpsert {
+	u.Set(performer.FieldName, v)
+	return u
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *PerformerUpsert) UpdateName() *PerformerUpsert {
+	u.SetExcluded(performer.FieldName)
+	return u
+}
+
+// SetSlug sets the "slug" field.
+func (u *PerformerUpsert) SetSlug(v string) *PerformerUpsert {
+	u.Set(performer.FieldSlug, v)
+	return u
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *PerformerUpsert) UpdateSlug() *PerformerUpsert {
+	u.SetExcluded(performer.FieldSlug)
+	return u
+}
+
+// SetURL sets the "url" field.
+func (u *PerformerUpsert) SetURL(v string) *PerformerUpsert {
+	u.Set(performer.FieldURL, v)
+	return u
+}
+
+// UpdateURL sets the "url" field to the value that was provided on create.
+func (u *PerformerUpsert) UpdateURL() *PerformerUpsert {
+	u.SetExcluded(performer.FieldURL)
+	return u
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *PerformerUpsert) SetLastSeenAt(v time.Time) *PerformerUpsert {
+	u.Set(performer.FieldLastSeenAt, v)
+	return u
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *PerformerUpsert) UpdateLastSeenAt() *PerformerUpsert {
+	u.SetExcluded(performer.FieldLastSeenAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.Performer.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(performer.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *PerformerUpsertOne) UpdateNewValues() *PerformerUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(performer.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Performer.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *PerformerUpsertOne) Ignore() *PerformerUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *PerformerUpsertOne) DoNothing() *PerformerUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the PerformerCreate.OnConflict
+// documentation for more info.
+func (u *PerformerUpsertOne) Update(set func(*PerformerUpsert)) *PerformerUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&PerformerUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *PerformerUpsertOne) SetName(v string) *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *PerformerUpsertOne) UpdateName() *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetSlug sets the "slug" field.
+func (u *PerformerUpsertOne) SetSlug(v string) *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetSlug(v)
+	})
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *PerformerUpsertOne) UpdateSlug() *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateSlug()
+	})
+}
+
+// SetURL sets the "url" field.
+func (u *PerformerUpsertOne) SetURL(v string) *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetURL(v)
+	})
+}
+
+// UpdateURL sets the "url" field to the value that was provided on create.
+func (u *PerformerUpsertOne) UpdateURL() *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateURL()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *PerformerUpsertOne) SetLastSeenAt(v time.Time) *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *PerformerUpsertOne) UpdateLastSeenAt() *PerformerUpsertOne {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *PerformerUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for PerformerCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *PerformerUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *PerformerUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *PerformerUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // PerformerCreateBulk is the builder for creating many Performer entities in bulk.
 type PerformerCreateBulk struct {
 	config
 	err      error
 	builders []*PerformerCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the Performer entities in the database.
@@ -222,6 +460,7 @@ func (_c *PerformerCreateBulk) Save(ctx context.Context) ([]*Performer, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -272,6 +511,176 @@ func (_c *PerformerCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *PerformerCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Performer.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.PerformerUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *PerformerCreateBulk) OnConflict(opts ...sql.ConflictOption) *PerformerUpsertBulk {
+	_c.conflict = opts
+	return &PerformerUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Performer.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *PerformerCreateBulk) OnConflictColumns(columns ...string) *PerformerUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &PerformerUpsertBulk{
+		create: _c,
+	}
+}
+
+// PerformerUpsertBulk is the builder for "upsert"-ing
+// a bulk of Performer nodes.
+type PerformerUpsertBulk struct {
+	create *PerformerCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.Performer.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(performer.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *PerformerUpsertBulk) UpdateNewValues() *PerformerUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(performer.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Performer.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *PerformerUpsertBulk) Ignore() *PerformerUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *PerformerUpsertBulk) DoNothing() *PerformerUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the PerformerCreateBulk.OnConflict
+// documentation for more info.
+func (u *PerformerUpsertBulk) Update(set func(*PerformerUpsert)) *PerformerUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&PerformerUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *PerformerUpsertBulk) SetName(v string) *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *PerformerUpsertBulk) UpdateName() *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetSlug sets the "slug" field.
+func (u *PerformerUpsertBulk) SetSlug(v string) *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetSlug(v)
+	})
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *PerformerUpsertBulk) UpdateSlug() *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateSlug()
+	})
+}
+
+// SetURL sets the "url" field.
+func (u *PerformerUpsertBulk) SetURL(v string) *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetURL(v)
+	})
+}
+
+// UpdateURL sets the "url" field to the value that was provided on create.
+func (u *PerformerUpsertBulk) UpdateURL() *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateURL()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *PerformerUpsertBulk) SetLastSeenAt(v time.Time) *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *PerformerUpsertBulk) UpdateLastSeenAt() *PerformerUpsertBulk {
+	return u.Update(func(s *PerformerUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *PerformerUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the PerformerCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for PerformerCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *PerformerUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

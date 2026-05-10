@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
 )
 
 // queueCapacity caps how many pending Runs the in-memory channel
@@ -28,9 +29,9 @@ const defaultWorkers = 2
 const tickInterval = time.Second
 
 // Options configures a new Runner. DB and Logger are required; tests
-// can pass an in-memory sqlite handle and zerolog.Nop().
+// can pass an in-memory ent client and zerolog.Nop().
 type Options struct {
-	DB      *sql.DB
+	DB      *ent.Client
 	Logger  zerolog.Logger
 	Workers int
 	// Now is the clock the Runner consults. Defaults to time.Now;

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"sort"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -101,10 +101,10 @@ type MismatchItem struct {
 // query keyed on the surviving recording ids.
 func loadMismatches(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	types []MismatchType,
 ) ([]MismatchItem, error) {
-	states, err := storage.ListStates(ctx, db, storage.ListStatesOptions{Limit: mismatchScanLimit})
+	states, err := storage.ListStates(ctx, client, storage.ListStatesOptions{Limit: mismatchScanLimit})
 	if err != nil {
 		return nil, fmt.Errorf("list states: %w", err)
 	}
@@ -136,7 +136,7 @@ func loadMismatches(
 	for _, item := range prelim {
 		pageStates = append(pageStates, storage.RecordingState{RecordingID: item.RecordingID})
 	}
-	meta, err := loadRecordingMeta(ctx, db, pageStates)
+	meta, err := loadRecordingMeta(ctx, client, pageStates)
 	if err != nil {
 		return nil, err
 	}

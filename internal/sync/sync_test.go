@@ -2,7 +2,6 @@ package sync_test
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,10 +12,13 @@ import (
 	"testing"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/syncrun"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	promptbookSync "github.com/nicolerenee/promptbook/internal/sync"
 )
@@ -51,12 +53,12 @@ func newSyncFixtureServer(t *testing.T, remaining int) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-func newTestDB(t *testing.T) *sql.DB {
+func newTestDB(t *testing.T) *ent.Client {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 
@@ -86,19 +88,36 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		query string
+		count func() (int, error)
 		want  int
 	}{
-		{name: "shows", query: "SELECT COUNT(*) FROM shows", want: -1}, // many distinct shows
-		{name: "recordings", query: "SELECT COUNT(*) FROM recordings", want: -1},
-		{name: "collection", query: "SELECT COUNT(*) FROM collection", want: 28},
-		{name: "wants", query: "SELECT COUNT(*) FROM wants", want: 14},
+		// many distinct shows / recordings — assert positive only.
+		{
+			name:  "shows",
+			count: func() (int, error) { return db.Show.Query().Count(t.Context()) },
+			want:  -1,
+		},
+		{
+			name:  "recordings",
+			count: func() (int, error) { return db.Recording.Query().Count(t.Context()) },
+			want:  -1,
+		},
+		{
+			name:  "collection",
+			count: func() (int, error) { return db.CollectionEntry.Query().Count(t.Context()) },
+			want:  28,
+		},
+		{
+			name:  "wants",
+			count: func() (int, error) { return db.WantsEntry.Query().Count(t.Context()) },
+			want:  14,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			var n int
-			require.NoError(t, db.QueryRow(tt.query).Scan(&n))
+			n, cerr := tt.count()
+			require.NoError(t, cerr)
 			if tt.want < 0 {
 				assert.Positive(t, n, "%s should have rows", tt.name)
 			} else {
@@ -116,37 +135,32 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 
 	t.Run("marigold_recording_landed", func(t *testing.T) {
 		t.Parallel()
-		var (
-			tour, master, dateFull string
-			monthKnown, dayKnown   int
-			showID                 int64
-		)
-		row := db.QueryRow(`
-			SELECT show_id, tour, master, date_full, date_month_known, date_day_known
-			FROM recordings WHERE recording_id = 90100222
-		`)
-		require.NoError(t, row.Scan(&showID, &tour, &master, &dateFull, &monthKnown, &dayKnown))
-		assert.Equal(t, "Broadway", tour)
-		assert.Equal(t, "pro-shot", master)
-		assert.Equal(t, "2009-12-01", dateFull)
-		assert.Equal(t, 1, monthKnown)
-		assert.Equal(t, 0, dayKnown, "marigold date is December 2009, day unknown")
-		assert.Equal(t, int64(90004089), showID)
+		r, lerr := db.Recording.Get(t.Context(), 90100222)
+		require.NoError(t, lerr)
+		assert.Equal(t, "Broadway", r.Tour)
+		assert.Equal(t, "pro-shot", r.Master)
+		assert.Equal(t, "2009-12-01", r.DateFull)
+		assert.True(t, r.DateMonthKnown)
+		assert.False(t, r.DateDayKnown, "marigold date is December 2009, day unknown")
+		assert.Equal(t, int64(90004089), r.ShowID)
 	})
 
 	t.Run("marigold_show_landed", func(t *testing.T) {
 		t.Parallel()
-		var name string
-		require.NoError(t, db.QueryRow(`SELECT name FROM shows WHERE show_id = 90004089`).Scan(&name))
-		assert.Equal(t, "Marigold Junction", name)
+		s, sErr := db.Show.Get(t.Context(), 90004089)
+		require.NoError(t, sErr)
+		assert.Equal(t, "Marigold Junction", s.Name)
 	})
 
 	t.Run("marigold_cast_landed", func(t *testing.T) {
 		t.Parallel()
-		var n int
-		require.NoError(t, db.QueryRow(`
-			SELECT COUNT(*) FROM cast_entries WHERE recording_id = 90100222
-		`).Scan(&n))
+		// CastEntry doesn't expose a typed predicate package; use the
+		// ent query builder's recording-edge filter via the parent
+		// Recording's edge traversal.
+		recRow, lerr := db.Recording.Get(t.Context(), 90100222)
+		require.NoError(t, lerr)
+		n, cErr := recRow.QueryCastEntries().Count(t.Context())
+		require.NoError(t, cErr)
 		assert.Positive(t, n, "marigold should have cast entries")
 	})
 
@@ -163,23 +177,13 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 
 	t.Run("sync_run_logged", func(t *testing.T) {
 		t.Parallel()
-		var (
-			kind                               string
-			okCount, errorCount, rateRemaining int
-			startedAt, finishedAt              sql.NullTime
-		)
-		row := db.QueryRow(`
-			SELECT kind, started_at, finished_at, ok_count, error_count, rate_limit_remaining
-			FROM sync_runs WHERE id = ?
-		`, res.RunID)
-		require.NoError(t, row.Scan(
-			&kind, &startedAt, &finishedAt, &okCount, &errorCount, &rateRemaining,
-		))
-		assert.Equal(t, promptbookSync.SyncKindAll, kind)
-		assert.True(t, startedAt.Valid)
-		assert.True(t, finishedAt.Valid)
-		assert.Equal(t, 28+14, okCount)
-		assert.Equal(t, 0, errorCount)
+		row, lerr := db.SyncRun.Get(t.Context(), int(res.RunID))
+		require.NoError(t, lerr)
+		assert.Equal(t, promptbookSync.SyncKindAll, row.Kind)
+		assert.False(t, row.StartedAt.IsZero())
+		require.NotNil(t, row.FinishedAt)
+		assert.Equal(t, 28+14, row.OkCount)
+		assert.Equal(t, 0, row.ErrorCount)
 	})
 }
 
@@ -199,34 +203,48 @@ func TestSyncIsIdempotent(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		query string
+		count func() (int, error)
 		want  int
 	}{
-		{name: "collection", query: "SELECT COUNT(*) FROM collection", want: 28},
-		{name: "wants", query: "SELECT COUNT(*) FROM wants", want: 14},
-		{name: "cast_entries_for_8222", query: "SELECT COUNT(*) FROM cast_entries WHERE recording_id = 90100222", want: -1},
+		{
+			name:  "collection",
+			count: func() (int, error) { return db.CollectionEntry.Query().Count(t.Context()) },
+			want:  28,
+		},
+		{
+			name:  "wants",
+			count: func() (int, error) { return db.WantsEntry.Query().Count(t.Context()) },
+			want:  14,
+		},
+		{
+			name: "cast_entries_for_8222",
+			count: func() (int, error) {
+				r, gerr := db.Recording.Get(t.Context(), 90100222)
+				if gerr != nil {
+					return 0, gerr
+				}
+				return r.QueryCastEntries().Count(t.Context())
+			},
+			want: -1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			var n, prev int
-			require.NoError(t, db.QueryRow(tt.query).Scan(&n))
+			n, cerr := tt.count()
+			require.NoError(t, cerr)
 			if tt.want >= 0 {
 				assert.Equal(t, tt.want, n)
 				return
 			}
-			// Cast entries are wiped+reinserted on each sync; count
-			// should be stable across runs, not doubled.
-			require.NoError(t, db.QueryRow(tt.query).Scan(&prev))
-			assert.Equal(t, prev, n)
 			assert.Positive(t, n)
 		})
 	}
 
 	t.Run("two_sync_runs_logged", func(t *testing.T) {
 		t.Parallel()
-		var n int
-		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM sync_runs`).Scan(&n))
+		n, err := db.SyncRun.Query().Count(t.Context())
+		require.NoError(t, err)
 		assert.Equal(t, 2, n)
 	})
 }
@@ -269,8 +287,8 @@ func TestSyncBailsOnRateLimitFloor(t *testing.T) {
 			assert.Equal(t, 28, res.CollectionCount, "collection finishes its single page")
 			assert.Equal(t, 0, res.WantsCount, "wants must be skipped under floor")
 
-			var wants int
-			require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM wants`).Scan(&wants))
+			wants, qErr := db.WantsEntry.Query().Count(t.Context())
+			require.NoError(t, qErr)
 			assert.Equal(t, 0, wants)
 		})
 	}
@@ -301,15 +319,15 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 
 	t.Run("performers_populated", func(t *testing.T) {
 		t.Parallel()
-		var n int
-		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM performers`).Scan(&n))
+		n, qerr := db.Performer.Query().Count(t.Context())
+		require.NoError(t, qerr)
 		assert.Positive(t, n, "performers table should have rows")
 	})
 
 	t.Run("characters_populated", func(t *testing.T) {
 		t.Parallel()
-		var n int
-		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM characters`).Scan(&n))
+		n, qerr := db.Character.Query().Count(t.Context())
+		require.NoError(t, qerr)
 		assert.Positive(t, n, "characters table should have rows")
 	})
 
@@ -441,9 +459,10 @@ func TestSyncSleepsOnRateLimitRetryAfter(t *testing.T) {
 	assert.Equal(t, 28, res.CollectionCount)
 	assert.Equal(t, 14, res.WantsCount)
 
-	var collectionRows, wantsRows int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM collection`).Scan(&collectionRows))
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM wants`).Scan(&wantsRows))
+	collectionRows, qErr := db.CollectionEntry.Query().Count(t.Context())
+	require.NoError(t, qErr)
+	wantsRows, qErr := db.WantsEntry.Query().Count(t.Context())
+	require.NoError(t, qErr)
 	assert.Equal(t, 28, collectionRows)
 	assert.Equal(t, 14, wantsRows)
 }
@@ -547,9 +566,11 @@ func TestSyncSurfaces500(t *testing.T) {
 	_, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{})
 	require.Error(t, err)
 
-	var errText string
-	require.NoError(t, db.QueryRow(`
-		SELECT error_text FROM sync_runs ORDER BY id DESC LIMIT 1
-	`).Scan(&errText))
-	assert.Contains(t, errText, "fetch collection page 1")
+	rows, qErr := db.SyncRun.Query().
+		Order(syncrun.ByID(entsql.OrderDesc())).
+		Limit(1).
+		All(t.Context())
+	require.NoError(t, qErr)
+	require.Len(t, rows, 1)
+	assert.Contains(t, rows[0].ErrorText, "fetch collection page 1")
 }

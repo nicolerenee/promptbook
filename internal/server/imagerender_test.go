@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"context"
-	"database/sql"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/server"
@@ -31,12 +31,12 @@ const (
 // rendererHarness builds a real on-disk SQLite + a real imagecache + a
 // real renderer. Returns the tuple so each table-test row can drive
 // the server with whichever combination it cares about.
-func rendererHarness(t *testing.T) (context.Context, *sql.DB, *imagecache.Cache, *imagerender.Renderer) {
+func rendererHarness(t *testing.T) (context.Context, *ent.Client, *imagecache.Cache, *imagerender.Renderer) {
 	t.Helper()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	cache := imagecache.New(t.TempDir(), nil, zerolog.New(io.Discard))
 	r := imagerender.New(db, cache, zerolog.New(io.Discard))
 	require.NotNil(t, r)
@@ -50,15 +50,12 @@ const rawGreenwich BeaconJSON = `{"id":90004242,"show":"Greenwich Beacon","tour"
 	`"date":{"full_date":"2017-04-21","month_known":true,"day_known":true,"time":"evening"},` +
 	`"master":"X","metadata":{"show_id":7}}`
 
-func seedRecordingForRender(ctx context.Context, t *testing.T, db *sql.DB, rid int64) {
+func seedRecordingForRender(ctx context.Context, t *testing.T, db *ent.Client, rid int64) {
 	t.Helper()
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, 7, "Greenwich Beacon")
-	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		VALUES (?, ?, ?, ?, ?)`, rid, 7, "Broadway", "2017-04-21", rawGreenwich BeaconJSON)
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(7).SetName("Greenwich Beacon").Exec(ctx))
+	require.NoError(t, db.Recording.Create().
+		SetID(rid).SetShowID(7).SetTour("Broadway").
+		SetDateFull("2017-04-21").SetRawJSON(rawGreenwich BeaconJSON).Exec(ctx))
 }
 
 func writeRenderHarnessPosterSrc(t *testing.T, cache *imagecache.Cache, rid int64) {
@@ -82,9 +79,9 @@ func TestRegeneratePosterEndpoint(t *testing.T) {
 
 	t.Run("503_when_renderer_nil", func(t *testing.T) {
 		t.Parallel()
-		db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+		sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() { _ = sqlDB.Close() })
 
 		srv, err := server.New(server.Options{DB: db})
 		require.NoError(t, err)

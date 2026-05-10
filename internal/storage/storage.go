@@ -1,9 +1,10 @@
 // Package storage provides the local SQLite cache and migrations.
 //
 // Migrations are embedded in internal/dbm and applied via goose on Open.
-// The hand-rolled storage helpers in this package coexist with the ent
-// client (see OpenEnt) — Phase 1 just wires ent in alongside; Phase 2
-// will cut callers over.
+// The data-access helpers in this package wrap *ent.Client; raw SQL via
+// *sql.DB.QueryContext / ExecContext does not appear outside this file.
+// OpenEnt is the canonical constructor — Open is retained only for the
+// migrate CLI subcommand that needs goose's *sql.DB-typed surface.
 package storage
 
 import (
@@ -40,24 +41,21 @@ const (
 
 // Open opens the SQLite database at path and runs pending migrations.
 //
+// Open is the low-level constructor used by the `promptbook migrate`
+// subcommand, which depends on goose's *sql.DB-typed surface. Server
+// and CLI workflows should use OpenEnt instead — every other caller
+// in the codebase consumes data through the *ent.Client.
+//
 // PRAGMA setup per-connection (the sqlite driver invokes the
 // connection-init each time the pool spins up a new conn):
 //
 //   - journal_mode = WAL — concurrent readers + one writer without the
-//     blanket-serialization rollback journal forces. The schema-aware
-//     `_pragma=` query string runs the PRAGMA on every connection
-//     created from the pool, not just the first.
+//     blanket-serialization rollback journal forces.
 //   - busy_timeout = 5000ms — when a writer is mid-transaction and a
 //     second writer arrives, the second waits up to 5s for the first
-//     to commit before returning SQLITE_BUSY. Avoids spurious failures
-//     under brief contention.
+//     to commit before returning SQLITE_BUSY.
 //   - foreign_keys = ON — sqlite defaults to off; we depend on FK
 //     cascades for image_choices cleanup.
-//
-// Pool sizing: 8 open connections + 4 idle is comfortable for our
-// scale (single-user app, dozens of concurrent reads at peak). With
-// WAL the readers run in parallel; writes serialize at the SQLite
-// layer regardless of pool size.
 func Open(ctx context.Context, path string) (*sql.DB, error) {
 	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
 	db, err := sql.Open("sqlite", dsn)
@@ -88,11 +86,12 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 }
 
 // OpenEnt opens the database at path (running migrations) and returns
-// both the existing *sql.DB and a new *ent.Client backed by the same
-// connection pool. Phase 1 callers (sync, server, jobs) keep using
-// *sql.DB; Phase 2 cuts them over to ent. Sharing the pool avoids
-// double-pooling and double-lifecycle management — closing *sql.DB
-// also tears down the ent client.
+// both the underlying *sql.DB and a new *ent.Client backed by the same
+// connection pool. Callers hold onto both: the *sql.DB so Close
+// tears down the pool exactly once, the *ent.Client for every read
+// and write. Sharing the pool avoids double-pooling and double-
+// lifecycle management — closing *sql.DB also tears down the ent
+// client.
 func OpenEnt(ctx context.Context, path string) (*sql.DB, *ent.Client, error) {
 	db, err := Open(ctx, path)
 	if err != nil {

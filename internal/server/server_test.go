@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"context"
-	gosql "database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
@@ -52,9 +52,9 @@ func fixtureBackedServer(t *testing.T) *server.Server {
 	upstream := httptest.NewServer(mux)
 	t.Cleanup(upstream.Close)
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
 	require.NoError(t, err)
@@ -102,9 +102,9 @@ func TestAPIProfile(t *testing.T) {
 	t.Run("not_synced", func(t *testing.T) {
 		t.Parallel()
 		// Bare DB without sync running — no profile row.
-		db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+		sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() { _ = sqlDB.Close() })
 
 		srv, err := server.New(server.Options{DB: db})
 		require.NoError(t, err)
@@ -280,9 +280,9 @@ func TestServeStartCancels(t *testing.T) {
 func fourStatusServer(t *testing.T) *server.Server {
 	t.Helper()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	type seed struct {
 		showID, recordingID int64
@@ -317,25 +317,16 @@ func fourStatusServer(t *testing.T) *server.Server {
 	}
 
 	for _, s := range seeds {
-		_, seedErr := db.ExecContext(ctx,
-			`INSERT INTO shows (show_id, name) VALUES (?, ?)`, s.showID, s.showName)
-		require.NoError(t, seedErr)
-		_, seedErr = db.ExecContext(ctx, `
-			INSERT INTO recordings (
-				recording_id, show_id, tour, date_full, raw_json
-			) VALUES (?, ?, '', '', '{}')
-		`, s.recordingID, s.showID)
-		require.NoError(t, seedErr)
+		require.NoError(t, db.Show.Create().
+			SetID(s.showID).SetName(s.showName).Exec(ctx))
+		require.NoError(t, db.Recording.Create().
+			SetID(s.recordingID).SetShowID(s.showID).SetRawJSON("{}").Exec(ctx))
 		if s.inCollection {
-			_, seedErr = db.ExecContext(ctx,
-				`INSERT INTO collection (recording_id, format) VALUES (?, ?)`,
-				s.recordingID, s.encoraFormat)
-			require.NoError(t, seedErr)
+			require.NoError(t, db.CollectionEntry.Create().
+				SetID(s.recordingID).SetFormat(s.encoraFormat).Exec(ctx))
 		}
 		if s.inWants {
-			_, seedErr = db.ExecContext(ctx,
-				`INSERT INTO wants (recording_id) VALUES (?)`, s.recordingID)
-			require.NoError(t, seedErr)
+			require.NoError(t, db.WantsEntry.Create().SetID(s.recordingID).Exec(ctx))
 		}
 		if s.hasFile {
 			require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
@@ -422,9 +413,9 @@ func TestAPIRecordingsStatusFilter(t *testing.T) {
 func TestServerStagemediaAccessor(t *testing.T) {
 	t.Parallel()
 
-	db, openErr := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, openErr := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, openErr)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	t.Run("nil when not configured", func(t *testing.T) {
 		t.Parallel()
@@ -447,9 +438,9 @@ func TestServerStagemediaAccessor(t *testing.T) {
 func TestAPIQueueEmpty(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
@@ -470,9 +461,9 @@ func TestAPIQueueLists(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	suggested := int64(90100222)
 	_, err = storage.EnqueueFile(ctx, db, storage.QueueEntry{
@@ -722,9 +713,9 @@ func fixtureBackedServerWithStagemedia(
 	upstream := httptest.NewServer(mux)
 	t.Cleanup(upstream.Close)
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
 	require.NoError(t, err)
@@ -772,9 +763,9 @@ func TestAPIPersonNoUpstreamLeak(t *testing.T) {
 func TestAPIHistoryEmpty(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
@@ -795,9 +786,9 @@ func TestAPIHistoryLists(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	for _, e := range []storage.HistoryEvent{
@@ -835,9 +826,9 @@ func TestAPIHistoryFilterByKind(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	for _, e := range []storage.HistoryEvent{
@@ -873,9 +864,9 @@ func TestAPIHistoryFilterByRecordingID(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	rec42 := int64(42)
@@ -992,6 +983,11 @@ func TestAPIWantsIncludesAddedTimestamp(t *testing.T) {
 		// driver renders without the timezone. Accept either.
 		_, parseErr = time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", *first.WantsAdded)
 	}
+	if parseErr != nil {
+		// Post-ent cutover the wantsAdded surface is rendered via
+		// time.Format("2006-01-02 15:04:05"); honor that shape too.
+		_, parseErr = time.Parse("2006-01-02 15:04:05", *first.WantsAdded)
+	}
 	assert.NoError(t, parseErr, "wants_added (%q) should parse as a timestamp", *first.WantsAdded)
 }
 
@@ -1001,7 +997,7 @@ func TestAPIWantsIncludesAddedTimestamp(t *testing.T) {
 // but is reusable from the mismatch test suite.
 func seedMismatchRecording(
 	t *testing.T,
-	db *gosql.DB,
+	db *ent.Client,
 	showID, recordingID int64,
 	showName string,
 	inCollection, inWants, hasFile bool,
@@ -1009,25 +1005,20 @@ func seedMismatchRecording(
 ) {
 	t.Helper()
 	ctx := t.Context()
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, showName)
-	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		) VALUES (?, ?, '', '', '{}')
-	`, recordingID, showID)
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(showID).SetName(showName).Exec(ctx))
+	require.NoError(t, db.Recording.Create().
+		SetID(recordingID).
+		SetShowID(showID).
+		SetRawJSON("{}").
+		Exec(ctx))
 	if inCollection {
-		_, err = db.ExecContext(ctx,
-			`INSERT INTO collection (recording_id, format) VALUES (?, ?)`,
-			recordingID, encoraFormat)
-		require.NoError(t, err)
+		require.NoError(t, db.CollectionEntry.Create().
+			SetID(recordingID).
+			SetFormat(encoraFormat).
+			Exec(ctx))
 	}
 	if inWants {
-		_, err = db.ExecContext(ctx,
-			`INSERT INTO wants (recording_id) VALUES (?)`, recordingID)
-		require.NoError(t, err)
+		require.NoError(t, db.WantsEntry.Create().SetID(recordingID).Exec(ctx))
 	}
 	if hasFile {
 		require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
@@ -1041,9 +1032,9 @@ func seedMismatchRecording(
 func TestAPIMismatchesEmpty(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
@@ -1068,9 +1059,9 @@ func TestAPIMismatchesEnumerates(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	// synced: in collection + matching local format.
 	seedMismatchRecording(t, db, 9101, 91001, "SyncedShow",
@@ -1119,9 +1110,9 @@ func TestAPIMismatchesFilterByType(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	seedMismatchRecording(t, db, 9201, 92001, "SyncedShow",
 		true, false, true, "MKV 1080p", "MKV 1080p")
@@ -1237,11 +1228,11 @@ func (s *stubEncoraClient) UpdateCollectionFormat(
 // applyTestServer wires a fresh DB + stub encora client into a server
 // and returns both so tests can assert on history rows + recorded
 // upstream calls without the fixture-backed sync.
-func applyTestServer(t *testing.T) (*server.Server, *gosql.DB, *stubEncoraClient) {
+func applyTestServer(t *testing.T) (*server.Server, *ent.Client, *stubEncoraClient) {
 	t.Helper()
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	stub := &stubEncoraClient{}
 	srv, err := server.New(server.Options{DB: db, Encora: stub})
@@ -1396,9 +1387,9 @@ func TestAPIApplyMissingFileShortCircuits(t *testing.T) {
 func TestAPIApplyWithoutEncoraClient(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
@@ -1476,11 +1467,11 @@ func TestAPIApplySurfacesEncoraError(t *testing.T) {
 // the request returns.
 func applyTestServerWithSleeper(
 	t *testing.T,
-) (*server.Server, *gosql.DB, *stubEncoraClient, *sleepRecorder) {
+) (*server.Server, *ent.Client, *stubEncoraClient, *sleepRecorder) {
 	t.Helper()
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	stub := &stubEncoraClient{}
 	rec := &sleepRecorder{}
@@ -1826,7 +1817,7 @@ func TestAPIRecordingByIDNFOMissing(t *testing.T) {
 // fixtureBackedServerExposingDB returns the same fixture-seeded server
 // as fixtureBackedServer, plus the underlying *sql.DB so callers can
 // seed extra rows (e.g. recording_versions pointing at a temp dir).
-func fixtureBackedServerExposingDB(t *testing.T) (*server.Server, *gosql.DB) {
+func fixtureBackedServerExposingDB(t *testing.T) (*server.Server, *ent.Client) {
 	t.Helper()
 
 	mux := http.NewServeMux()
@@ -1848,9 +1839,9 @@ func fixtureBackedServerExposingDB(t *testing.T) (*server.Server, *gosql.DB) {
 	upstream := httptest.NewServer(mux)
 	t.Cleanup(upstream.Close)
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
 	require.NoError(t, err)
@@ -1907,11 +1898,11 @@ func (s *stubIngestRunner) Ingest(_ context.Context, src string, opts ingest.Opt
 // queueImportTestServer wires a fresh DB + stub ingest runner into a
 // server and returns both. Mirrors applyTestServer for the queue-import
 // path. Pass a nil runner to simulate the not-configured wiring.
-func queueImportTestServer(t *testing.T, runner server.IngestRunner) (*server.Server, *gosql.DB) {
+func queueImportTestServer(t *testing.T, runner server.IngestRunner) (*server.Server, *ent.Client) {
 	t.Helper()
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db, IngestEngine: runner})
 	require.NoError(t, err)

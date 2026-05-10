@@ -3,7 +3,6 @@ package imagerender_test
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -16,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -34,14 +34,14 @@ const (
 // LoadRecording succeeds. Callers that don't want the recording row
 // can pass seed=false.
 func setup(t *testing.T, seed bool) (
-	context.Context, *sql.DB, *imagecache.Cache, *imagerender.Renderer, int64,
+	context.Context, *ent.Client, *imagecache.Cache, *imagerender.Renderer, int64,
 ) {
 	t.Helper()
 	ctx := t.Context()
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(ctx, dbPath)
+	sqlDB, db, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerolog.New(io.Discard))
@@ -50,19 +50,19 @@ func setup(t *testing.T, seed bool) (
 
 	const recordingID int64 = 9001
 	if seed {
-		_, execErr := db.ExecContext(ctx,
-			`INSERT INTO shows (show_id, name) VALUES (?, ?)`, 7, "Greenwich Beacon")
-		require.NoError(t, execErr)
+		require.NoError(t, db.Show.Create().SetID(7).SetName("Greenwich Beacon").Exec(ctx))
 		const raw = `{
 			"id": 9001, "show": "Greenwich Beacon", "tour": "Broadway",
 			"date": {"full_date": "2017-04-21", "month_known": true, "day_known": true, "time": "evening"},
 			"master": "SampleMaster", "metadata": {"show_id": 7}
 		}`
-		_, execErr = db.ExecContext(ctx, `
-			INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-			VALUES (?, ?, ?, ?, ?)`,
-			recordingID, 7, "Broadway", "2017-04-21", raw)
-		require.NoError(t, execErr)
+		require.NoError(t, db.Recording.Create().
+			SetID(recordingID).
+			SetShowID(7).
+			SetTour("Broadway").
+			SetDateFull("2017-04-21").
+			SetRawJSON(raw).
+			Exec(ctx))
 	}
 	return ctx, db, cache, r, recordingID
 }

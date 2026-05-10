@@ -13,11 +13,9 @@ package server
 // honest when filters narrow the set.
 //
 // Sort vocabulary lives per-handler because the legal columns differ
-// (recordings sort on date_full, shows sort on first_year, etc.). Each
-// handler resolves its (sortKey, dir) pair against a whitelist map →
-// SQL fragment → ORDER BY tail, falling back to a stable default when
-// the requested key isn't recognized. NEVER interpolate the user-
-// supplied string directly — every code path consults a map first.
+// (recordings sort on date_full, shows sort on first_year, etc.).
+// Post-ent cutover sorts run in memory via per-key compare functions;
+// the legacy whitelist-driven SQL ORDER BY fragments are gone.
 
 import (
 	"strings"
@@ -48,31 +46,6 @@ func parseSortDir(c echo.Context) sortDir {
 	default:
 		return sortAsc
 	}
-}
-
-// sortDirSQL returns "ASC" or "DESC" for embedding in a SQL ORDER BY
-// fragment. Always lowercase-lossy via the normalized sortDir constant
-// so the caller can't accidentally splice raw user input.
-func (d sortDir) sortDirSQL() string {
-	if d == sortDesc {
-		return "DESC"
-	}
-	return "ASC"
-}
-
-// resolveSortKey looks up requested against the supplied whitelist map
-// of allowed keys → SQL fragment. Returns the matched fragment on a
-// hit, or fallbackFragment otherwise so handlers can lean on the
-// default ordering for unknown keys.
-func resolveSortKey(
-	requested string,
-	allowed map[string]string,
-	fallbackFragment string,
-) string {
-	if frag, ok := allowed[requested]; ok {
-		return frag
-	}
-	return fallbackFragment
 }
 
 // pageEnvelope wraps the JSON response body with a stable shape every

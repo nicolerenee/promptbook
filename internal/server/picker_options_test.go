@@ -87,9 +87,9 @@ func fixtureBackedServerWithClients(
 	upstream := httptest.NewServer(mux)
 	t.Cleanup(upstream.Close)
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	c, err := encora.New(encora.Options{BaseURL: upstream.URL, APIKey: "test"})
 	require.NoError(t, err)

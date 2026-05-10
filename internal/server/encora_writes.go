@@ -2,14 +2,15 @@ package server
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/wantsentry"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -115,34 +116,19 @@ type recordingMembership struct {
 // in either table — the destructive endpoints all require known state, so
 // the caller surfaces it as a 404.
 func loadRecordingMembership(
-	ctx context.Context, db *sql.DB, id int64,
+	ctx context.Context, client *ent.Client, id int64,
 ) (recordingMembership, error) {
-	var m recordingMembership
-
-	var dummy int
-	err := db.QueryRowContext(ctx,
-		`SELECT 1 FROM collection WHERE recording_id = ?`, id).Scan(&dummy)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		// Not in collection.
-	case err != nil:
+	inCol, err := client.CollectionEntry.Query().
+		Where(collectionentry.IDEQ(id)).Exist(ctx)
+	if err != nil {
 		return recordingMembership{}, fmt.Errorf("query collection: %w", err)
-	default:
-		m.inCollection = true
 	}
-
-	err = db.QueryRowContext(ctx,
-		`SELECT 1 FROM wants WHERE recording_id = ?`, id).Scan(&dummy)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		// Not in wants.
-	case err != nil:
+	inWants, err := client.WantsEntry.Query().
+		Where(wantsentry.IDEQ(id)).Exist(ctx)
+	if err != nil {
 		return recordingMembership{}, fmt.Errorf("query wants: %w", err)
-	default:
-		m.inWants = true
 	}
-
-	return m, nil
+	return recordingMembership{inCollection: inCol, inWants: inWants}, nil
 }
 
 // handleRemoveFromCollection handles POST /api/v1/encora/collection/:id/remove.

@@ -18,8 +18,9 @@ import (
 // PerformerUpdate is the builder for updating Performer entities.
 type PerformerUpdate struct {
 	config
-	hooks    []Hook
-	mutation *PerformerMutation
+	hooks     []Hook
+	mutation  *PerformerMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the PerformerUpdate builder.
@@ -116,6 +117,12 @@ func (_u *PerformerUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *PerformerUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *PerformerUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *PerformerUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(performer.Table, performer.Columns, sqlgraph.NewFieldSpec(performer.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -137,6 +144,7 @@ func (_u *PerformerUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.LastSeenAt(); ok {
 		_spec.SetField(performer.FieldLastSeenAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{performer.Label}
@@ -152,9 +160,10 @@ func (_u *PerformerUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // PerformerUpdateOne is the builder for updating a single Performer entity.
 type PerformerUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *PerformerMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *PerformerMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetName sets the "name" field.
@@ -258,6 +267,12 @@ func (_u *PerformerUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *PerformerUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *PerformerUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *PerformerUpdateOne) sqlSave(ctx context.Context) (_node *Performer, err error) {
 	_spec := sqlgraph.NewUpdateSpec(performer.Table, performer.Columns, sqlgraph.NewFieldSpec(performer.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
@@ -296,6 +311,7 @@ func (_u *PerformerUpdateOne) sqlSave(ctx context.Context) (_node *Performer, er
 	if value, ok := _u.mutation.LastSeenAt(); ok {
 		_spec.SetField(performer.FieldLastSeenAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &Performer{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

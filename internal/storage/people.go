@@ -2,10 +2,14 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/character"
+	"github.com/nicolerenee/promptbook/internal/ent/performer"
 )
 
 // ErrPerformerNotFound signals that no performer with the given id is in the
@@ -37,36 +41,36 @@ type Character struct {
 	LastSeenAt  time.Time
 }
 
-// sqlExecutor is the minimum surface that the people upserts need. Both
-// *sql.DB and *sql.Tx satisfy it, so the same SQL backs the public DB-taking
-// helpers and the transaction-scoped variants used by the sync writer.
-type sqlExecutor interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
 // UpsertPerformer inserts the performer or refreshes an existing row, keeping
 // the latest name/slug/url and bumping last_seen_at to the supplied value.
-func UpsertPerformer(ctx context.Context, db *sql.DB, p Performer) error {
-	return upsertPerformer(ctx, db, p)
+func UpsertPerformer(ctx context.Context, client *ent.Client, p Performer) error {
+	return upsertPerformer(ctx, client.Performer.Create(), p)
 }
 
 // UpsertPerformerTx is the transaction-scoped sibling of UpsertPerformer for
-// callers that already hold a *sql.Tx (e.g. the sync writer batching cast
+// callers that already hold an *ent.Tx (e.g. the sync writer batching cast
 // upserts inside the per-page transaction).
-func UpsertPerformerTx(ctx context.Context, tx *sql.Tx, p Performer) error {
-	return upsertPerformer(ctx, tx, p)
+func UpsertPerformerTx(ctx context.Context, tx *ent.Tx, p Performer) error {
+	return upsertPerformer(ctx, tx.Performer.Create(), p)
 }
 
-func upsertPerformer(ctx context.Context, x sqlExecutor, p Performer) error {
-	_, err := x.ExecContext(ctx, `
-		INSERT INTO performers (performer_id, name, slug, url, last_seen_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(performer_id) DO UPDATE SET
-			name         = excluded.name,
-			slug         = excluded.slug,
-			url          = excluded.url,
-			last_seen_at = excluded.last_seen_at
-	`, p.PerformerID, p.Name, p.Slug, p.URL, p.LastSeenAt)
+func upsertPerformer(
+	ctx context.Context, c *ent.PerformerCreate, p Performer,
+) error {
+	err := c.
+		SetID(p.PerformerID).
+		SetName(p.Name).
+		SetSlug(p.Slug).
+		SetURL(p.URL).
+		SetLastSeenAt(p.LastSeenAt).
+		OnConflictColumns(performer.FieldID).
+		Update(func(u *ent.PerformerUpsert) {
+			u.UpdateName()
+			u.UpdateSlug()
+			u.UpdateURL()
+			u.UpdateLastSeenAt()
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert performer %d: %w", p.PerformerID, err)
 	}
@@ -75,26 +79,33 @@ func upsertPerformer(ctx context.Context, x sqlExecutor, p Performer) error {
 
 // UpsertCharacter inserts the character or refreshes an existing row, keeping
 // the latest name/slug/url and bumping last_seen_at to the supplied value.
-func UpsertCharacter(ctx context.Context, db *sql.DB, c Character) error {
-	return upsertCharacter(ctx, db, c)
+func UpsertCharacter(ctx context.Context, client *ent.Client, c Character) error {
+	return upsertCharacter(ctx, client.Character.Create(), c)
 }
 
 // UpsertCharacterTx is the transaction-scoped sibling of UpsertCharacter for
-// callers that already hold a *sql.Tx.
-func UpsertCharacterTx(ctx context.Context, tx *sql.Tx, c Character) error {
-	return upsertCharacter(ctx, tx, c)
+// callers that already hold an *ent.Tx.
+func UpsertCharacterTx(ctx context.Context, tx *ent.Tx, c Character) error {
+	return upsertCharacter(ctx, tx.Character.Create(), c)
 }
 
-func upsertCharacter(ctx context.Context, x sqlExecutor, c Character) error {
-	_, err := x.ExecContext(ctx, `
-		INSERT INTO characters (character_id, name, slug, url, last_seen_at)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(character_id) DO UPDATE SET
-			name         = excluded.name,
-			slug         = excluded.slug,
-			url          = excluded.url,
-			last_seen_at = excluded.last_seen_at
-	`, c.CharacterID, c.Name, c.Slug, c.URL, c.LastSeenAt)
+func upsertCharacter(
+	ctx context.Context, b *ent.CharacterCreate, c Character,
+) error {
+	err := b.
+		SetID(c.CharacterID).
+		SetName(c.Name).
+		SetSlug(c.Slug).
+		SetURL(c.URL).
+		SetLastSeenAt(c.LastSeenAt).
+		OnConflictColumns(character.FieldID).
+		Update(func(u *ent.CharacterUpsert) {
+			u.UpdateName()
+			u.UpdateSlug()
+			u.UpdateURL()
+			u.UpdateLastSeenAt()
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert character %d: %w", c.CharacterID, err)
 	}
@@ -103,38 +114,40 @@ func upsertCharacter(ctx context.Context, x sqlExecutor, c Character) error {
 
 // LoadPerformer fetches a single performer by Encora id, returning
 // ErrPerformerNotFound when the row is missing.
-func LoadPerformer(ctx context.Context, db *sql.DB, id int64) (*Performer, error) {
-	p := Performer{PerformerID: id}
-	err := db.QueryRowContext(ctx, `
-		SELECT name, slug, url, last_seen_at
-		FROM performers
-		WHERE performer_id = ?
-	`, id).Scan(&p.Name, &p.Slug, &p.URL, &p.LastSeenAt)
-	if errors.Is(err, sql.ErrNoRows) {
+func LoadPerformer(ctx context.Context, client *ent.Client, id int64) (*Performer, error) {
+	row, err := client.Performer.Get(ctx, id)
+	if ent.IsNotFound(err) {
 		return nil, fmt.Errorf("performer %d: %w", id, ErrPerformerNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query performer %d: %w", id, err)
 	}
-	return &p, nil
+	return &Performer{
+		PerformerID: row.ID,
+		Name:        row.Name,
+		Slug:        row.Slug,
+		URL:         row.URL,
+		LastSeenAt:  row.LastSeenAt,
+	}, nil
 }
 
 // LoadCharacter fetches a single character by Encora id, returning
 // ErrCharacterNotFound when the row is missing.
-func LoadCharacter(ctx context.Context, db *sql.DB, id int64) (*Character, error) {
-	c := Character{CharacterID: id}
-	err := db.QueryRowContext(ctx, `
-		SELECT name, slug, url, last_seen_at
-		FROM characters
-		WHERE character_id = ?
-	`, id).Scan(&c.Name, &c.Slug, &c.URL, &c.LastSeenAt)
-	if errors.Is(err, sql.ErrNoRows) {
+func LoadCharacter(ctx context.Context, client *ent.Client, id int64) (*Character, error) {
+	row, err := client.Character.Get(ctx, id)
+	if ent.IsNotFound(err) {
 		return nil, fmt.Errorf("character %d: %w", id, ErrCharacterNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query character %d: %w", id, err)
 	}
-	return &c, nil
+	return &Character{
+		CharacterID: row.ID,
+		Name:        row.Name,
+		Slug:        row.Slug,
+		URL:         row.URL,
+		LastSeenAt:  row.LastSeenAt,
+	}, nil
 }
 
 // ListRecordingsForPerformer returns the distinct recording ids the given
@@ -142,30 +155,40 @@ func LoadCharacter(ctx context.Context, db *sql.DB, id int64) (*Character, error
 // when the performer has no cast entries.
 func ListRecordingsForPerformer(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	performerID int64,
 ) ([]int64, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT DISTINCT recording_id
-		FROM cast_entries
-		WHERE performer_id = ?
-		ORDER BY recording_id
-	`, performerID)
+	// SELECT DISTINCT recording_id FROM cast_entries WHERE performer_id = ?
+	// ORDER BY recording_id — ent's GroupBy on a single column returns a
+	// distinct, ordered slice when followed by Strings/Ints. For int64
+	// scalars we use a typed scan via the ent ScanX helper.
+	var ids []int64
+	err := client.CastEntry.Query().
+		Where(castentry.PerformerID(performerID)).
+		GroupBy(castentry.FieldRecordingID).
+		Scan(ctx, &ids)
 	if err != nil {
 		return nil, fmt.Errorf("query recordings for performer %d: %w", performerID, err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	ids := []int64{}
-	for rows.Next() {
-		var id int64
-		if scanErr := rows.Scan(&id); scanErr != nil {
-			return nil, fmt.Errorf("scan recording id: %w", scanErr)
-		}
-		ids = append(ids, id)
+	if ids == nil {
+		ids = []int64{}
 	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate recordings for performer %d: %w", performerID, err)
-	}
+	// Stable ascending sort: ent's GroupBy doesn't guarantee order across
+	// dialects, so sort here to match the legacy SQL ORDER BY recording_id.
+	sortAscInt64(ids)
 	return ids, nil
+}
+
+// sortAscInt64 sorts in place; small slices so insertion sort is fine
+// without pulling in sort.Slice. Used by ListRecordingsForPerformer.
+func sortAscInt64(s []int64) {
+	for i := 1; i < len(s); i++ {
+		v := s[i]
+		j := i - 1
+		for j >= 0 && s[j] > v {
+			s[j+1] = s[j]
+			j--
+		}
+		s[j+1] = v
+	}
 }

@@ -2,48 +2,45 @@ package storage_test
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// openTestDB creates a fresh on-disk SQLite database under t.TempDir and
-// runs every embedded migration. Returns the test context and the open
-// handle; cleanup is registered. Multiple agents authoring tests in parallel
-// converged on three different signatures for this — the canonical one
-// returns both ctx and db so callers can choose how much of each to use.
-func openTestDB(t *testing.T) (context.Context, *sql.DB) {
+// openTestDB creates a fresh on-disk SQLite database under t.TempDir
+// and runs every embedded migration. Returns the test context and the
+// ent client; cleanup tears down the underlying *sql.DB.
+func openTestDB(t *testing.T) (context.Context, *ent.Client) {
 	t.Helper()
 	ctx := t.Context()
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(ctx, dbPath)
+	sqlDB, client, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	return ctx, db
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	return ctx, client
 }
 
-// seedShow inserts a row into the shows table directly, bypassing the
-// sync package. Useful for narrow-scope tests of child-table helpers.
-func seedShow(ctx context.Context, t *testing.T, db *sql.DB, id int64, name string) {
+// seedShow inserts a row into the shows table via the ent client.
+// Useful for narrow-scope tests of child-table helpers.
+func seedShow(ctx context.Context, t *testing.T, client *ent.Client, id int64, name string) {
 	t.Helper()
-	_, err := db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, id, name)
+	err := client.Show.Create().SetID(id).SetName(name).Exec(ctx)
 	require.NoError(t, err)
 }
 
 // seedRecording inserts a minimal recording row referencing the given
 // show. The recording's tour, date, and raw_json are placeholders.
-func seedRecording(ctx context.Context, t *testing.T, db *sql.DB, id, showID int64) {
+func seedRecording(ctx context.Context, t *testing.T, client *ent.Client, id, showID int64) {
 	t.Helper()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		) VALUES (?, ?, '', '', '{}')
-	`, id, showID)
+	err := client.Recording.Create().
+		SetID(id).
+		SetShowID(showID).
+		SetRawJSON("{}").
+		Exec(ctx)
 	require.NoError(t, err)
 }
 

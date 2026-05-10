@@ -19,8 +19,9 @@ import (
 // RecordingVersionUpdate is the builder for updating RecordingVersion entities.
 type RecordingVersionUpdate struct {
 	config
-	hooks    []Hook
-	mutation *RecordingVersionMutation
+	hooks     []Hook
+	mutation  *RecordingVersionMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the RecordingVersionUpdate builder.
@@ -241,6 +242,12 @@ func (_u *RecordingVersionUpdate) check() error {
 	return nil
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *RecordingVersionUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *RecordingVersionUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *RecordingVersionUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if err := _u.check(); err != nil {
 		return _node, err
@@ -315,6 +322,7 @@ func (_u *RecordingVersionUpdate) sqlSave(ctx context.Context) (_node int, err e
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{recordingversion.Label}
@@ -330,9 +338,10 @@ func (_u *RecordingVersionUpdate) sqlSave(ctx context.Context) (_node int, err e
 // RecordingVersionUpdateOne is the builder for updating a single RecordingVersion entity.
 type RecordingVersionUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *RecordingVersionMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *RecordingVersionMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetRecordingID sets the "recording_id" field.
@@ -560,6 +569,12 @@ func (_u *RecordingVersionUpdateOne) check() error {
 	return nil
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *RecordingVersionUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *RecordingVersionUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *RecordingVersionUpdateOne) sqlSave(ctx context.Context) (_node *RecordingVersion, err error) {
 	if err := _u.check(); err != nil {
 		return _node, err
@@ -651,6 +666,7 @@ func (_u *RecordingVersionUpdateOne) sqlSave(ctx context.Context) (_node *Record
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &RecordingVersion{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

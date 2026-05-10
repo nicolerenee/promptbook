@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
 	"github.com/nicolerenee/promptbook/internal/rename"
@@ -64,7 +64,7 @@ func runLibraryShowNFO(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	root := args[0]
 
-	db, err := storage.Open(ctx, appConfig.Storage.DatabasePath)
+	_, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
@@ -93,7 +93,7 @@ func runLibraryShowNFO(cmd *cobra.Command, args []string) error {
 // collection.nfo lives at the show level so Plex/Jellyfin can pick it
 // up as a single collection scope.
 func collectShowFolders(
-	ctx context.Context, db *sql.DB, root string,
+	ctx context.Context, db *ent.Client, root string,
 ) (map[int64]*showFolderInfo, error) {
 	shows := make(map[int64]*showFolderInfo)
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -143,7 +143,7 @@ func collectShowFolders(
 // so a single bad show doesn't stop all the others from regenerating.
 func writeShowNFO(
 	ctx context.Context,
-	db *sql.DB,
+	db *ent.Client,
 	cache *imagecache.Cache,
 	info *showFolderInfo,
 ) {

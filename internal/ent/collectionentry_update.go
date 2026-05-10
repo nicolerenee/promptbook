@@ -18,8 +18,9 @@ import (
 // CollectionEntryUpdate is the builder for updating CollectionEntry entities.
 type CollectionEntryUpdate struct {
 	config
-	hooks    []Hook
-	mutation *CollectionEntryMutation
+	hooks     []Hook
+	mutation  *CollectionEntryMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the CollectionEntryUpdate builder.
@@ -162,6 +163,12 @@ func (_u *CollectionEntryUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *CollectionEntryUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *CollectionEntryUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *CollectionEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(collectionentry.Table, collectionentry.Columns, sqlgraph.NewFieldSpec(collectionentry.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -198,6 +205,7 @@ func (_u *CollectionEntryUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if value, ok := _u.mutation.LastSyncedAt(); ok {
 		_spec.SetField(collectionentry.FieldLastSyncedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{collectionentry.Label}
@@ -213,9 +221,10 @@ func (_u *CollectionEntryUpdate) sqlSave(ctx context.Context) (_node int, err er
 // CollectionEntryUpdateOne is the builder for updating a single CollectionEntry entity.
 type CollectionEntryUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *CollectionEntryMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *CollectionEntryMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetFormat sets the "format" field.
@@ -365,6 +374,12 @@ func (_u *CollectionEntryUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *CollectionEntryUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *CollectionEntryUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *CollectionEntryUpdateOne) sqlSave(ctx context.Context) (_node *CollectionEntry, err error) {
 	_spec := sqlgraph.NewUpdateSpec(collectionentry.Table, collectionentry.Columns, sqlgraph.NewFieldSpec(collectionentry.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
@@ -418,6 +433,7 @@ func (_u *CollectionEntryUpdateOne) sqlSave(ctx context.Context) (_node *Collect
 	if value, ok := _u.mutation.LastSyncedAt(); ok {
 		_spec.SetField(collectionentry.FieldLastSyncedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &CollectionEntry{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

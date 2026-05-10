@@ -171,15 +171,13 @@ func TestPaginationEnvelopeShows(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	for i, name := range []string{"Aida", "Tideline Manor", "Trillium Hall"} {
 		showID := int64(8000 + i)
-		_, seedErr := db.ExecContext(ctx,
-			`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, name)
-		require.NoError(t, seedErr)
+		require.NoError(t, db.Show.Create().SetID(showID).SetName(name).Exec(ctx))
 	}
 
 	srv, err := server.New(server.Options{DB: db})
@@ -234,9 +232,9 @@ func TestPaginationEnvelopeWants(t *testing.T) {
 //nolint:paralleltest // subtests mutate shared db state; sequential by design.
 func TestPaginationEnvelopeHistory(t *testing.T) {
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	// Seed five events: 3 ingests and 2 renames, so we can verify the

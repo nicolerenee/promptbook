@@ -16,13 +16,13 @@ package builtin
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/scanner"
@@ -39,7 +39,7 @@ import (
 // refresh-recording-images, and refresh-actor-headshot for entities
 // missing a slot file on disk.
 type RefreshEncoraJob struct {
-	DB           *sql.DB
+	DB           *ent.Client
 	Client       *encora.Client
 	Logger       zerolog.Logger
 	BurstReserve int
@@ -116,18 +116,21 @@ func (j *RefreshEncoraJob) fanOutImageJobs(ctx context.Context) error {
 func (j *RefreshEncoraJob) fanOutShows(
 	ctx context.Context, counts *fanOutCounts, firstErr *error,
 ) error {
-	return iterateRows(ctx, j.DB,
-		`SELECT show_id FROM shows WHERE show_id > 0`,
-		func(showID int64) {
-			if j.Cache.HasShowBanner(showID) {
-				return
-			}
-			if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshShowImages,
-				jobs.JobArgs{"show_id": showID}); e != nil && *firstErr == nil {
-				*firstErr = fmt.Errorf("enqueue refresh-show-images %d: %w", showID, e)
-			}
-			counts.shows++
-		})
+	ids, err := j.DB.Show.Query().IDs(ctx)
+	if err != nil {
+		return fmt.Errorf("query show ids: %w", err)
+	}
+	for _, showID := range ids {
+		if showID <= 0 || j.Cache.HasShowBanner(showID) {
+			continue
+		}
+		if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshShowImages,
+			jobs.JobArgs{"show_id": showID}); e != nil && *firstErr == nil {
+			*firstErr = fmt.Errorf("enqueue refresh-show-images %d: %w", showID, e)
+		}
+		counts.shows++
+	}
+	return nil
 }
 
 // fanOutRecordings enqueues refresh-recording-images for every
@@ -135,18 +138,21 @@ func (j *RefreshEncoraJob) fanOutShows(
 func (j *RefreshEncoraJob) fanOutRecordings(
 	ctx context.Context, counts *fanOutCounts, firstErr *error,
 ) error {
-	return iterateRows(ctx, j.DB,
-		`SELECT recording_id FROM recordings WHERE recording_id > 0`,
-		func(recID int64) {
-			if j.Cache.HasRecordingFanart(recID) && j.Cache.HasRecordingPoster(recID) {
-				return
-			}
-			if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshRecordingImages,
-				jobs.JobArgs{"recording_id": recID}); e != nil && *firstErr == nil {
-				*firstErr = fmt.Errorf("enqueue refresh-recording-images %d: %w", recID, e)
-			}
-			counts.recordings++
-		})
+	ids, err := j.DB.Recording.Query().IDs(ctx)
+	if err != nil {
+		return fmt.Errorf("query recording ids: %w", err)
+	}
+	for _, recID := range ids {
+		if recID <= 0 || (j.Cache.HasRecordingFanart(recID) && j.Cache.HasRecordingPoster(recID)) {
+			continue
+		}
+		if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshRecordingImages,
+			jobs.JobArgs{"recording_id": recID}); e != nil && *firstErr == nil {
+			*firstErr = fmt.Errorf("enqueue refresh-recording-images %d: %w", recID, e)
+		}
+		counts.recordings++
+	}
+	return nil
 }
 
 // fanOutActors enqueues refresh-actor-headshot for every credited
@@ -154,61 +160,21 @@ func (j *RefreshEncoraJob) fanOutRecordings(
 func (j *RefreshEncoraJob) fanOutActors(
 	ctx context.Context, counts *fanOutCounts, firstErr *error,
 ) error {
-	return iterateRows(ctx, j.DB,
-		`SELECT performer_id FROM performers WHERE performer_id > 0`,
-		func(actorID int64) {
-			if j.Cache.HasHeadshot(actorID) {
-				return
-			}
-			if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshActorHeadshot,
-				jobs.JobArgs{"actor_id": actorID}); e != nil && *firstErr == nil {
-				*firstErr = fmt.Errorf("enqueue refresh-actor-headshot %d: %w", actorID, e)
-			}
-			counts.actors++
-		})
-}
-
-// iterateRows runs query (which must select a single int64 column)
-// and invokes onID for each row. Errors propagate; an empty result
-// set is fine.
-//
-// The IDs are drained into a slice and the cursor is closed BEFORE
-// onID is called. The single-connection pool (storage.Open caps at 1)
-// means a live cursor pins the only connection; if onID issues any DB
-// write — like Enqueuer.EnqueueFromJob inserting a job_runs row — the
-// write would block waiting for the connection forever, deadlocking
-// the entire server. Draining first costs one slice allocation but
-// keeps the connection free.
-func iterateRows(ctx context.Context, db *sql.DB, query string, onID func(int64)) error {
-	ids, err := scanIDs(ctx, db, query)
+	ids, err := j.DB.Performer.Query().IDs(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("query performer ids: %w", err)
 	}
-	for _, id := range ids {
-		onID(id)
+	for _, actorID := range ids {
+		if actorID <= 0 || j.Cache.HasHeadshot(actorID) {
+			continue
+		}
+		if _, e := j.Enqueuer.EnqueueFromJob(ctx, jobNameRefreshActorHeadshot,
+			jobs.JobArgs{"actor_id": actorID}); e != nil && *firstErr == nil {
+			*firstErr = fmt.Errorf("enqueue refresh-actor-headshot %d: %w", actorID, e)
+		}
+		counts.actors++
 	}
 	return nil
-}
-
-// scanIDs runs query and returns every row's first column as int64.
-func scanIDs(ctx context.Context, db *sql.DB, query string) ([]int64, error) {
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("query: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if scanErr := rows.Scan(&id); scanErr != nil {
-			return nil, fmt.Errorf("scan: %w", scanErr)
-		}
-		ids = append(ids, id)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate: %w", rerr)
-	}
-	return ids, nil
 }
 
 // ScanIncomingJob wraps a single scanner.Engine.Scan pass. The
@@ -216,7 +182,7 @@ func scanIDs(ctx context.Context, db *sql.DB, query string) ([]int64, error) {
 // continuously — the scheduler runs Scan at WatchInterval and
 // surfaces the run row in the UI.
 type ScanIncomingJob struct {
-	DB           *sql.DB
+	DB           *ent.Client
 	IncomingDirs []string
 	Logger       zerolog.Logger
 }

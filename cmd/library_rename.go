@@ -59,7 +59,7 @@ func runLibraryRename(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve encora id: %w", err)
 	}
 
-	db, err := storage.Open(ctx, appConfig.Storage.DatabasePath)
+	_, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}

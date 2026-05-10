@@ -18,8 +18,9 @@ import (
 // SyncRunUpdate is the builder for updating SyncRun entities.
 type SyncRunUpdate struct {
 	config
-	hooks    []Hook
-	mutation *SyncRunMutation
+	hooks     []Hook
+	mutation  *SyncRunMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the SyncRunUpdate builder.
@@ -185,6 +186,12 @@ func (_u *SyncRunUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *SyncRunUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *SyncRunUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *SyncRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -227,6 +234,7 @@ func (_u *SyncRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.ErrorText(); ok {
 		_spec.SetField(syncrun.FieldErrorText, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{syncrun.Label}
@@ -242,9 +250,10 @@ func (_u *SyncRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // SyncRunUpdateOne is the builder for updating a single SyncRun entity.
 type SyncRunUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *SyncRunMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *SyncRunMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetKind sets the "kind" field.
@@ -417,6 +426,12 @@ func (_u *SyncRunUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *SyncRunUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *SyncRunUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *SyncRunUpdateOne) sqlSave(ctx context.Context) (_node *SyncRun, err error) {
 	_spec := sqlgraph.NewUpdateSpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
 	id, ok := _u.mutation.ID()
@@ -476,6 +491,7 @@ func (_u *SyncRunUpdateOne) sqlSave(ctx context.Context) (_node *SyncRun, err er
 	if value, ok := _u.mutation.ErrorText(); ok {
 		_spec.SetField(syncrun.FieldErrorText, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &SyncRun{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

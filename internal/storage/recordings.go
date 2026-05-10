@@ -2,13 +2,16 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/wantsentry"
 )
 
 // ErrRecordingNotFound signals that no recording with the given id is in
@@ -51,34 +54,33 @@ type ResolvedCastEntry struct {
 // LoadRecording fetches one recording from the local cache by Encora ID,
 // reconstituting it from the raw_json column rather than re-assembling
 // from denormalized fields.
-func LoadRecording(ctx context.Context, db *sql.DB, id int64) (*LoadedRecording, error) {
-	var rawJSON string
-	err := db.QueryRowContext(ctx, `
-		SELECT raw_json FROM recordings WHERE recording_id = ?
-	`, id).Scan(&rawJSON)
-	if errors.Is(err, sql.ErrNoRows) {
+func LoadRecording(
+	ctx context.Context, client *ent.Client, id int64,
+) (*LoadedRecording, error) {
+	row, err := client.Recording.Get(ctx, id)
+	if ent.IsNotFound(err) {
 		return nil, fmt.Errorf("recording %d: %w", id, ErrRecordingNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query recording: %w", err)
 	}
 
-	r, err := decodeRecording(rawJSON)
+	r, err := decodeRecording(row.RawJSON)
 	if err != nil {
 		return nil, fmt.Errorf("decode recording %d: %w", id, err)
 	}
 	loaded := &LoadedRecording{Recording: r, RawJSONPresent: true}
 
-	if cerr := fillCollectionState(ctx, db, id, loaded); cerr != nil {
+	if cerr := fillCollectionState(ctx, client, id, loaded); cerr != nil {
 		return nil, cerr
 	}
-	if werr := fillWantsState(ctx, db, id, loaded); werr != nil {
+	if werr := fillWantsState(ctx, client, id, loaded); werr != nil {
 		return nil, werr
 	}
-	if verr := fillVersions(ctx, db, id, loaded); verr != nil {
+	if verr := fillVersions(ctx, client, id, loaded); verr != nil {
 		return nil, verr
 	}
-	if cerr := fillResolvedCast(ctx, db, loaded); cerr != nil {
+	if cerr := fillResolvedCast(ctx, client, loaded); cerr != nil {
 		return nil, cerr
 	}
 	return loaded, nil
@@ -89,11 +91,11 @@ func LoadRecording(ctx context.Context, db *sql.DB, id int64) (*LoadedRecording,
 // always non-nil; callers can range over it without a length check.
 func fillVersions(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	id int64,
 	loaded *LoadedRecording,
 ) error {
-	versions, err := ListVersions(ctx, db, id)
+	versions, err := ListVersions(ctx, client, id)
 	if err != nil {
 		return fmt.Errorf("list versions for recording %d: %w", id, err)
 	}
@@ -112,7 +114,7 @@ func fillVersions(
 // Performer or Character and we move on.
 func fillResolvedCast(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	loaded *LoadedRecording,
 ) error {
 	cast := loaded.Recording.Cast
@@ -122,12 +124,12 @@ func fillResolvedCast(
 			Status: entry.Status,
 			Order:  entry.Character.Order,
 		}
-		if p, perr := LoadPerformer(ctx, db, entry.Performer.ID); perr == nil {
+		if p, perr := LoadPerformer(ctx, client, entry.Performer.ID); perr == nil {
 			re.Performer = *p
 		} else if !errors.Is(perr, ErrPerformerNotFound) {
 			return fmt.Errorf("load performer %d: %w", entry.Performer.ID, perr)
 		}
-		if c, cerr := LoadCharacter(ctx, db, entry.Character.ID); cerr == nil {
+		if c, cerr := LoadCharacter(ctx, client, entry.Character.ID); cerr == nil {
 			re.Character = *c
 		} else if !errors.Is(cerr, ErrCharacterNotFound) {
 			return fmt.Errorf("load character %d: %w", entry.Character.ID, cerr)
@@ -140,68 +142,80 @@ func fillResolvedCast(
 
 func fillCollectionState(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	id int64,
 	loaded *LoadedRecording,
 ) error {
-	var (
-		format       string
-		userNotes    sql.NullString
-		userWatched  int
-		collectedAt  sql.NullString
-		lastSyncedAt sql.NullString
-	)
-	row := db.QueryRowContext(ctx, `
-		SELECT format, user_notes, user_watched, collected_at, last_synced_at
-		FROM collection WHERE recording_id = ?
-	`, id)
-	err := row.Scan(&format, &userNotes, &userWatched, &collectedAt, &lastSyncedAt)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := client.CollectionEntry.Query().
+		Where(collectionentry.IDEQ(id)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("query collection: %w", err)
 	}
 	loaded.InCollection = true
-	loaded.Format = format
-	loaded.UserWatched = userWatched != 0
-	if userNotes.Valid {
-		s := userNotes.String
+	loaded.Format = row.Format
+	loaded.UserWatched = row.UserWatched
+	if row.UserNotes != nil {
+		s := *row.UserNotes
 		loaded.UserNotes = &s
 	}
-	if collectedAt.Valid {
-		s := collectedAt.String
+	if row.CollectedAt != nil {
+		s := row.CollectedAt.Format("2006-01-02 15:04:05")
 		loaded.CollectedAt = &s
 	}
-	if lastSyncedAt.Valid {
-		s := lastSyncedAt.String
-		loaded.LastSyncedAt = &s
-	}
+	s := row.LastSyncedAt.Format("2006-01-02 15:04:05")
+	loaded.LastSyncedAt = &s
 	return nil
 }
 
 func fillWantsState(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	id int64,
 	loaded *LoadedRecording,
 ) error {
-	var lastSynced sql.NullString
-	err := db.QueryRowContext(ctx, `
-		SELECT last_synced_at FROM wants WHERE recording_id = ?
-	`, id).Scan(&lastSynced)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := client.WantsEntry.Query().
+		Where(wantsentry.IDEQ(id)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("query wants: %w", err)
 	}
 	loaded.InWants = true
-	if loaded.LastSyncedAt == nil && lastSynced.Valid {
-		s := lastSynced.String
+	if loaded.LastSyncedAt == nil {
+		s := row.LastSyncedAt.Format("2006-01-02 15:04:05")
 		loaded.LastSyncedAt = &s
 	}
 	return nil
+}
+
+// LoadRecordingRaw fetches the raw_json blob for a recording and returns
+// it as a parsed encora.Recording without doing the collection / wants /
+// versions / cast joins. Callers that only need the upstream payload
+// avoid four extra round trips this way. ErrRecordingNotFound is
+// returned when no row is present.
+func LoadRecordingRaw(
+	ctx context.Context, client *ent.Client, id int64,
+) (encora.Recording, error) {
+	row, err := client.Recording.Query().
+		Where(recording.IDEQ(id)).
+		Only(ctx)
+	if ent.IsNotFound(err) {
+		return encora.Recording{}, fmt.Errorf("recording %d: %w", id, ErrRecordingNotFound)
+	}
+	if err != nil {
+		return encora.Recording{}, fmt.Errorf("query recording: %w", err)
+	}
+	r, err := decodeRecording(row.RawJSON)
+	if err != nil {
+		return encora.Recording{}, fmt.Errorf("decode recording %d: %w", id, err)
+	}
+	return r, nil
 }
 
 // ParseRecordingID validates a CLI-supplied id string.

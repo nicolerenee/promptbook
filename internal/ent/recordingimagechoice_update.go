@@ -18,8 +18,9 @@ import (
 // RecordingImageChoiceUpdate is the builder for updating RecordingImageChoice entities.
 type RecordingImageChoiceUpdate struct {
 	config
-	hooks    []Hook
-	mutation *RecordingImageChoiceMutation
+	hooks     []Hook
+	mutation  *RecordingImageChoiceMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the RecordingImageChoiceUpdate builder.
@@ -128,6 +129,12 @@ func (_u *RecordingImageChoiceUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *RecordingImageChoiceUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *RecordingImageChoiceUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *RecordingImageChoiceUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(recordingimagechoice.Table, recordingimagechoice.Columns, sqlgraph.NewFieldSpec(recordingimagechoice.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -155,6 +162,7 @@ func (_u *RecordingImageChoiceUpdate) sqlSave(ctx context.Context) (_node int, e
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(recordingimagechoice.FieldUpdatedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{recordingimagechoice.Label}
@@ -170,9 +178,10 @@ func (_u *RecordingImageChoiceUpdate) sqlSave(ctx context.Context) (_node int, e
 // RecordingImageChoiceUpdateOne is the builder for updating a single RecordingImageChoice entity.
 type RecordingImageChoiceUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *RecordingImageChoiceMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *RecordingImageChoiceMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetOverlayTextOverride sets the "overlay_text_override" field.
@@ -288,6 +297,12 @@ func (_u *RecordingImageChoiceUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *RecordingImageChoiceUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *RecordingImageChoiceUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *RecordingImageChoiceUpdateOne) sqlSave(ctx context.Context) (_node *RecordingImageChoice, err error) {
 	_spec := sqlgraph.NewUpdateSpec(recordingimagechoice.Table, recordingimagechoice.Columns, sqlgraph.NewFieldSpec(recordingimagechoice.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
@@ -332,6 +347,7 @@ func (_u *RecordingImageChoiceUpdateOne) sqlSave(ctx context.Context) (_node *Re
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(recordingimagechoice.FieldUpdatedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &RecordingImageChoice{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

@@ -4,9 +4,12 @@ package ent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/jobstate"
@@ -17,6 +20,7 @@ type JobStateCreate struct {
 	config
 	mutation *JobStateMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetLastStartedAt sets the "last_started_at" field.
@@ -146,6 +150,7 @@ func (_c *JobStateCreate) createSpec() (*JobState, *sqlgraph.CreateSpec) {
 		_node = &JobState{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(jobstate.Table, sqlgraph.NewFieldSpec(jobstate.FieldID, field.TypeString))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -169,11 +174,316 @@ func (_c *JobStateCreate) createSpec() (*JobState, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.JobState.Create().
+//		SetLastStartedAt(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.JobStateUpsert) {
+//			SetLastStartedAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *JobStateCreate) OnConflict(opts ...sql.ConflictOption) *JobStateUpsertOne {
+	_c.conflict = opts
+	return &JobStateUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.JobState.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *JobStateCreate) OnConflictColumns(columns ...string) *JobStateUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &JobStateUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// JobStateUpsertOne is the builder for "upsert"-ing
+	//  one JobState node.
+	JobStateUpsertOne struct {
+		create *JobStateCreate
+	}
+
+	// JobStateUpsert is the "OnConflict" setter.
+	JobStateUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetLastStartedAt sets the "last_started_at" field.
+func (u *JobStateUpsert) SetLastStartedAt(v time.Time) *JobStateUpsert {
+	u.Set(jobstate.FieldLastStartedAt, v)
+	return u
+}
+
+// UpdateLastStartedAt sets the "last_started_at" field to the value that was provided on create.
+func (u *JobStateUpsert) UpdateLastStartedAt() *JobStateUpsert {
+	u.SetExcluded(jobstate.FieldLastStartedAt)
+	return u
+}
+
+// ClearLastStartedAt clears the value of the "last_started_at" field.
+func (u *JobStateUpsert) ClearLastStartedAt() *JobStateUpsert {
+	u.SetNull(jobstate.FieldLastStartedAt)
+	return u
+}
+
+// SetLastEndedAt sets the "last_ended_at" field.
+func (u *JobStateUpsert) SetLastEndedAt(v time.Time) *JobStateUpsert {
+	u.Set(jobstate.FieldLastEndedAt, v)
+	return u
+}
+
+// UpdateLastEndedAt sets the "last_ended_at" field to the value that was provided on create.
+func (u *JobStateUpsert) UpdateLastEndedAt() *JobStateUpsert {
+	u.SetExcluded(jobstate.FieldLastEndedAt)
+	return u
+}
+
+// ClearLastEndedAt clears the value of the "last_ended_at" field.
+func (u *JobStateUpsert) ClearLastEndedAt() *JobStateUpsert {
+	u.SetNull(jobstate.FieldLastEndedAt)
+	return u
+}
+
+// SetLastDurationMs sets the "last_duration_ms" field.
+func (u *JobStateUpsert) SetLastDurationMs(v int) *JobStateUpsert {
+	u.Set(jobstate.FieldLastDurationMs, v)
+	return u
+}
+
+// UpdateLastDurationMs sets the "last_duration_ms" field to the value that was provided on create.
+func (u *JobStateUpsert) UpdateLastDurationMs() *JobStateUpsert {
+	u.SetExcluded(jobstate.FieldLastDurationMs)
+	return u
+}
+
+// AddLastDurationMs adds v to the "last_duration_ms" field.
+func (u *JobStateUpsert) AddLastDurationMs(v int) *JobStateUpsert {
+	u.Add(jobstate.FieldLastDurationMs, v)
+	return u
+}
+
+// ClearLastDurationMs clears the value of the "last_duration_ms" field.
+func (u *JobStateUpsert) ClearLastDurationMs() *JobStateUpsert {
+	u.SetNull(jobstate.FieldLastDurationMs)
+	return u
+}
+
+// SetLastStatus sets the "last_status" field.
+func (u *JobStateUpsert) SetLastStatus(v string) *JobStateUpsert {
+	u.Set(jobstate.FieldLastStatus, v)
+	return u
+}
+
+// UpdateLastStatus sets the "last_status" field to the value that was provided on create.
+func (u *JobStateUpsert) UpdateLastStatus() *JobStateUpsert {
+	u.SetExcluded(jobstate.FieldLastStatus)
+	return u
+}
+
+// ClearLastStatus clears the value of the "last_status" field.
+func (u *JobStateUpsert) ClearLastStatus() *JobStateUpsert {
+	u.SetNull(jobstate.FieldLastStatus)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.JobState.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(jobstate.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *JobStateUpsertOne) UpdateNewValues() *JobStateUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(jobstate.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.JobState.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *JobStateUpsertOne) Ignore() *JobStateUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *JobStateUpsertOne) DoNothing() *JobStateUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the JobStateCreate.OnConflict
+// documentation for more info.
+func (u *JobStateUpsertOne) Update(set func(*JobStateUpsert)) *JobStateUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&JobStateUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetLastStartedAt sets the "last_started_at" field.
+func (u *JobStateUpsertOne) SetLastStartedAt(v time.Time) *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastStartedAt(v)
+	})
+}
+
+// UpdateLastStartedAt sets the "last_started_at" field to the value that was provided on create.
+func (u *JobStateUpsertOne) UpdateLastStartedAt() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastStartedAt()
+	})
+}
+
+// ClearLastStartedAt clears the value of the "last_started_at" field.
+func (u *JobStateUpsertOne) ClearLastStartedAt() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastStartedAt()
+	})
+}
+
+// SetLastEndedAt sets the "last_ended_at" field.
+func (u *JobStateUpsertOne) SetLastEndedAt(v time.Time) *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastEndedAt(v)
+	})
+}
+
+// UpdateLastEndedAt sets the "last_ended_at" field to the value that was provided on create.
+func (u *JobStateUpsertOne) UpdateLastEndedAt() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastEndedAt()
+	})
+}
+
+// ClearLastEndedAt clears the value of the "last_ended_at" field.
+func (u *JobStateUpsertOne) ClearLastEndedAt() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastEndedAt()
+	})
+}
+
+// SetLastDurationMs sets the "last_duration_ms" field.
+func (u *JobStateUpsertOne) SetLastDurationMs(v int) *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastDurationMs(v)
+	})
+}
+
+// AddLastDurationMs adds v to the "last_duration_ms" field.
+func (u *JobStateUpsertOne) AddLastDurationMs(v int) *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.AddLastDurationMs(v)
+	})
+}
+
+// UpdateLastDurationMs sets the "last_duration_ms" field to the value that was provided on create.
+func (u *JobStateUpsertOne) UpdateLastDurationMs() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastDurationMs()
+	})
+}
+
+// ClearLastDurationMs clears the value of the "last_duration_ms" field.
+func (u *JobStateUpsertOne) ClearLastDurationMs() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastDurationMs()
+	})
+}
+
+// SetLastStatus sets the "last_status" field.
+func (u *JobStateUpsertOne) SetLastStatus(v string) *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastStatus(v)
+	})
+}
+
+// UpdateLastStatus sets the "last_status" field to the value that was provided on create.
+func (u *JobStateUpsertOne) UpdateLastStatus() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastStatus()
+	})
+}
+
+// ClearLastStatus clears the value of the "last_status" field.
+func (u *JobStateUpsertOne) ClearLastStatus() *JobStateUpsertOne {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastStatus()
+	})
+}
+
+// Exec executes the query.
+func (u *JobStateUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for JobStateCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *JobStateUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *JobStateUpsertOne) ID(ctx context.Context) (id string, err error) {
+	if u.create.driver.Dialect() == dialect.MySQL {
+		// In case of "ON CONFLICT", there is no way to get back non-numeric ID
+		// fields from the database since MySQL does not support the RETURNING clause.
+		return id, errors.New("ent: JobStateUpsertOne.ID is not supported by MySQL driver. Use JobStateUpsertOne.Exec instead")
+	}
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *JobStateUpsertOne) IDX(ctx context.Context) string {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // JobStateCreateBulk is the builder for creating many JobState entities in bulk.
 type JobStateCreateBulk struct {
 	config
 	err      error
 	builders []*JobStateCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the JobState entities in the database.
@@ -202,6 +512,7 @@ func (_c *JobStateCreateBulk) Save(ctx context.Context) ([]*JobState, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -248,6 +559,211 @@ func (_c *JobStateCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *JobStateCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.JobState.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.JobStateUpsert) {
+//			SetLastStartedAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *JobStateCreateBulk) OnConflict(opts ...sql.ConflictOption) *JobStateUpsertBulk {
+	_c.conflict = opts
+	return &JobStateUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.JobState.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *JobStateCreateBulk) OnConflictColumns(columns ...string) *JobStateUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &JobStateUpsertBulk{
+		create: _c,
+	}
+}
+
+// JobStateUpsertBulk is the builder for "upsert"-ing
+// a bulk of JobState nodes.
+type JobStateUpsertBulk struct {
+	create *JobStateCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.JobState.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(jobstate.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *JobStateUpsertBulk) UpdateNewValues() *JobStateUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(jobstate.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.JobState.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *JobStateUpsertBulk) Ignore() *JobStateUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *JobStateUpsertBulk) DoNothing() *JobStateUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the JobStateCreateBulk.OnConflict
+// documentation for more info.
+func (u *JobStateUpsertBulk) Update(set func(*JobStateUpsert)) *JobStateUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&JobStateUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetLastStartedAt sets the "last_started_at" field.
+func (u *JobStateUpsertBulk) SetLastStartedAt(v time.Time) *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastStartedAt(v)
+	})
+}
+
+// UpdateLastStartedAt sets the "last_started_at" field to the value that was provided on create.
+func (u *JobStateUpsertBulk) UpdateLastStartedAt() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastStartedAt()
+	})
+}
+
+// ClearLastStartedAt clears the value of the "last_started_at" field.
+func (u *JobStateUpsertBulk) ClearLastStartedAt() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastStartedAt()
+	})
+}
+
+// SetLastEndedAt sets the "last_ended_at" field.
+func (u *JobStateUpsertBulk) SetLastEndedAt(v time.Time) *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastEndedAt(v)
+	})
+}
+
+// UpdateLastEndedAt sets the "last_ended_at" field to the value that was provided on create.
+func (u *JobStateUpsertBulk) UpdateLastEndedAt() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastEndedAt()
+	})
+}
+
+// ClearLastEndedAt clears the value of the "last_ended_at" field.
+func (u *JobStateUpsertBulk) ClearLastEndedAt() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastEndedAt()
+	})
+}
+
+// SetLastDurationMs sets the "last_duration_ms" field.
+func (u *JobStateUpsertBulk) SetLastDurationMs(v int) *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastDurationMs(v)
+	})
+}
+
+// AddLastDurationMs adds v to the "last_duration_ms" field.
+func (u *JobStateUpsertBulk) AddLastDurationMs(v int) *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.AddLastDurationMs(v)
+	})
+}
+
+// UpdateLastDurationMs sets the "last_duration_ms" field to the value that was provided on create.
+func (u *JobStateUpsertBulk) UpdateLastDurationMs() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastDurationMs()
+	})
+}
+
+// ClearLastDurationMs clears the value of the "last_duration_ms" field.
+func (u *JobStateUpsertBulk) ClearLastDurationMs() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastDurationMs()
+	})
+}
+
+// SetLastStatus sets the "last_status" field.
+func (u *JobStateUpsertBulk) SetLastStatus(v string) *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.SetLastStatus(v)
+	})
+}
+
+// UpdateLastStatus sets the "last_status" field to the value that was provided on create.
+func (u *JobStateUpsertBulk) UpdateLastStatus() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.UpdateLastStatus()
+	})
+}
+
+// ClearLastStatus clears the value of the "last_status" field.
+func (u *JobStateUpsertBulk) ClearLastStatus() *JobStateUpsertBulk {
+	return u.Update(func(s *JobStateUpsert) {
+		s.ClearLastStatus()
+	})
+}
+
+// Exec executes the query.
+func (u *JobStateUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the JobStateCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for JobStateCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *JobStateUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

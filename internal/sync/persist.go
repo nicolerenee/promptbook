@@ -2,11 +2,11 @@ package sync
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 )
 
 // PersistRecording writes a single recording into shows/recordings/cast_entries
@@ -22,14 +22,14 @@ import (
 // now defaults to time.Now when nil.
 func PersistRecording(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	r encora.Recording,
 	now func() time.Time,
 ) error {
 	if now == nil {
 		now = time.Now
 	}
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := client.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}

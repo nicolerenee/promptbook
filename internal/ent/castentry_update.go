@@ -18,8 +18,9 @@ import (
 // CastEntryUpdate is the builder for updating CastEntry entities.
 type CastEntryUpdate struct {
 	config
-	hooks    []Hook
-	mutation *CastEntryMutation
+	hooks     []Hook
+	mutation  *CastEntryMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the CastEntryUpdate builder.
@@ -280,6 +281,12 @@ func (_u *CastEntryUpdate) check() error {
 	return nil
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *CastEntryUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *CastEntryUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *CastEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if err := _u.check(); err != nil {
 		return _node, err
@@ -369,6 +376,7 @@ func (_u *CastEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{castentry.Label}
@@ -384,9 +392,10 @@ func (_u *CastEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // CastEntryUpdateOne is the builder for updating a single CastEntry entity.
 type CastEntryUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *CastEntryMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *CastEntryMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetRecordingID sets the "recording_id" field.
@@ -654,6 +663,12 @@ func (_u *CastEntryUpdateOne) check() error {
 	return nil
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *CastEntryUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *CastEntryUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *CastEntryUpdateOne) sqlSave(ctx context.Context) (_node *CastEntry, err error) {
 	if err := _u.check(); err != nil {
 		return _node, err
@@ -760,6 +775,7 @@ func (_u *CastEntryUpdateOne) sqlSave(ctx context.Context) (_node *CastEntry, er
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &CastEntry{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

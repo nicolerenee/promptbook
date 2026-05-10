@@ -7,7 +7,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/config"
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
@@ -74,7 +74,7 @@ type EncoraScreenshotClient interface {
 // Server is the HTTP entry point.
 type Server struct {
 	echo              *echo.Echo
-	db                *sql.DB
+	db                *ent.Client
 	logger            zerolog.Logger
 	stagemedia        StagemediaImageClient
 	encora            EncoraWriteClient
@@ -127,7 +127,7 @@ type Server struct {
 
 // Options configures a new server.
 type Options struct {
-	DB     *sql.DB
+	DB     *ent.Client
 	Logger zerolog.Logger
 	// Stagemedia is optional. When nil, poster + headshot fetching is
 	// disabled; handlers that depend on it must nil-check. Typed as the

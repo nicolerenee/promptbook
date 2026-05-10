@@ -31,24 +31,19 @@ func showDetailFixture(
 	t.Helper()
 	ctx := t.Context()
 
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, showFixtureName)
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(showID).SetName(showFixtureName).Exec(ctx))
 
 	for i, rid := range recordingIDs {
 		raw := `{"id":` + strconv.FormatInt(rid, 10) +
 			`,"metadata":{"show_id":` + strconv.FormatInt(showID, 10) +
 			`,"show_description":"<p>Best show.</p>"}}`
 		date := []string{"2017-04-10", "2024-06-12"}[i%2]
-		_, err = db.ExecContext(ctx, `
-			INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-			VALUES (?, ?, '', ?, ?)
-		`, rid, showID, date, raw)
-		require.NoError(t, err)
+		require.NoError(t, db.Recording.Create().
+			SetID(rid).SetShowID(showID).SetDateFull(date).SetRawJSON(raw).Exec(ctx))
 	}
 
 	cacheRoot := t.TempDir()
@@ -93,9 +88,9 @@ func TestAPIGetShow(t *testing.T) {
 func TestAPIGetShowNotFound(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)

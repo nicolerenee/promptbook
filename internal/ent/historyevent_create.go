@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
@@ -18,6 +19,7 @@ type HistoryEventCreate struct {
 	config
 	mutation *HistoryEventMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetOccurredAt sets the "occurred_at" field.
@@ -171,6 +173,7 @@ func (_c *HistoryEventCreate) createSpec() (*HistoryEvent, *sqlgraph.CreateSpec)
 		_node = &HistoryEvent{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(historyevent.Table, sqlgraph.NewFieldSpec(historyevent.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.OccurredAt(); ok {
 		_spec.SetField(historyevent.FieldOccurredAt, field.TypeTime, value)
 		_node.OccurredAt = value
@@ -194,11 +197,290 @@ func (_c *HistoryEventCreate) createSpec() (*HistoryEvent, *sqlgraph.CreateSpec)
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.HistoryEvent.Create().
+//		SetOccurredAt(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.HistoryEventUpsert) {
+//			SetOccurredAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *HistoryEventCreate) OnConflict(opts ...sql.ConflictOption) *HistoryEventUpsertOne {
+	_c.conflict = opts
+	return &HistoryEventUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.HistoryEvent.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *HistoryEventCreate) OnConflictColumns(columns ...string) *HistoryEventUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &HistoryEventUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// HistoryEventUpsertOne is the builder for "upsert"-ing
+	//  one HistoryEvent node.
+	HistoryEventUpsertOne struct {
+		create *HistoryEventCreate
+	}
+
+	// HistoryEventUpsert is the "OnConflict" setter.
+	HistoryEventUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetOccurredAt sets the "occurred_at" field.
+func (u *HistoryEventUpsert) SetOccurredAt(v time.Time) *HistoryEventUpsert {
+	u.Set(historyevent.FieldOccurredAt, v)
+	return u
+}
+
+// UpdateOccurredAt sets the "occurred_at" field to the value that was provided on create.
+func (u *HistoryEventUpsert) UpdateOccurredAt() *HistoryEventUpsert {
+	u.SetExcluded(historyevent.FieldOccurredAt)
+	return u
+}
+
+// SetKind sets the "kind" field.
+func (u *HistoryEventUpsert) SetKind(v string) *HistoryEventUpsert {
+	u.Set(historyevent.FieldKind, v)
+	return u
+}
+
+// UpdateKind sets the "kind" field to the value that was provided on create.
+func (u *HistoryEventUpsert) UpdateKind() *HistoryEventUpsert {
+	u.SetExcluded(historyevent.FieldKind)
+	return u
+}
+
+// SetRecordingID sets the "recording_id" field.
+func (u *HistoryEventUpsert) SetRecordingID(v int64) *HistoryEventUpsert {
+	u.Set(historyevent.FieldRecordingID, v)
+	return u
+}
+
+// UpdateRecordingID sets the "recording_id" field to the value that was provided on create.
+func (u *HistoryEventUpsert) UpdateRecordingID() *HistoryEventUpsert {
+	u.SetExcluded(historyevent.FieldRecordingID)
+	return u
+}
+
+// AddRecordingID adds v to the "recording_id" field.
+func (u *HistoryEventUpsert) AddRecordingID(v int64) *HistoryEventUpsert {
+	u.Add(historyevent.FieldRecordingID, v)
+	return u
+}
+
+// ClearRecordingID clears the value of the "recording_id" field.
+func (u *HistoryEventUpsert) ClearRecordingID() *HistoryEventUpsert {
+	u.SetNull(historyevent.FieldRecordingID)
+	return u
+}
+
+// SetSummary sets the "summary" field.
+func (u *HistoryEventUpsert) SetSummary(v string) *HistoryEventUpsert {
+	u.Set(historyevent.FieldSummary, v)
+	return u
+}
+
+// UpdateSummary sets the "summary" field to the value that was provided on create.
+func (u *HistoryEventUpsert) UpdateSummary() *HistoryEventUpsert {
+	u.SetExcluded(historyevent.FieldSummary)
+	return u
+}
+
+// SetDetailsJSON sets the "details_json" field.
+func (u *HistoryEventUpsert) SetDetailsJSON(v string) *HistoryEventUpsert {
+	u.Set(historyevent.FieldDetailsJSON, v)
+	return u
+}
+
+// UpdateDetailsJSON sets the "details_json" field to the value that was provided on create.
+func (u *HistoryEventUpsert) UpdateDetailsJSON() *HistoryEventUpsert {
+	u.SetExcluded(historyevent.FieldDetailsJSON)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.HistoryEvent.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *HistoryEventUpsertOne) UpdateNewValues() *HistoryEventUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.HistoryEvent.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *HistoryEventUpsertOne) Ignore() *HistoryEventUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *HistoryEventUpsertOne) DoNothing() *HistoryEventUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the HistoryEventCreate.OnConflict
+// documentation for more info.
+func (u *HistoryEventUpsertOne) Update(set func(*HistoryEventUpsert)) *HistoryEventUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&HistoryEventUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetOccurredAt sets the "occurred_at" field.
+func (u *HistoryEventUpsertOne) SetOccurredAt(v time.Time) *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetOccurredAt(v)
+	})
+}
+
+// UpdateOccurredAt sets the "occurred_at" field to the value that was provided on create.
+func (u *HistoryEventUpsertOne) UpdateOccurredAt() *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateOccurredAt()
+	})
+}
+
+// SetKind sets the "kind" field.
+func (u *HistoryEventUpsertOne) SetKind(v string) *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetKind(v)
+	})
+}
+
+// UpdateKind sets the "kind" field to the value that was provided on create.
+func (u *HistoryEventUpsertOne) UpdateKind() *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateKind()
+	})
+}
+
+// SetRecordingID sets the "recording_id" field.
+func (u *HistoryEventUpsertOne) SetRecordingID(v int64) *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetRecordingID(v)
+	})
+}
+
+// AddRecordingID adds v to the "recording_id" field.
+func (u *HistoryEventUpsertOne) AddRecordingID(v int64) *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.AddRecordingID(v)
+	})
+}
+
+// UpdateRecordingID sets the "recording_id" field to the value that was provided on create.
+func (u *HistoryEventUpsertOne) UpdateRecordingID() *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateRecordingID()
+	})
+}
+
+// ClearRecordingID clears the value of the "recording_id" field.
+func (u *HistoryEventUpsertOne) ClearRecordingID() *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.ClearRecordingID()
+	})
+}
+
+// SetSummary sets the "summary" field.
+func (u *HistoryEventUpsertOne) SetSummary(v string) *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetSummary(v)
+	})
+}
+
+// UpdateSummary sets the "summary" field to the value that was provided on create.
+func (u *HistoryEventUpsertOne) UpdateSummary() *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateSummary()
+	})
+}
+
+// SetDetailsJSON sets the "details_json" field.
+func (u *HistoryEventUpsertOne) SetDetailsJSON(v string) *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetDetailsJSON(v)
+	})
+}
+
+// UpdateDetailsJSON sets the "details_json" field to the value that was provided on create.
+func (u *HistoryEventUpsertOne) UpdateDetailsJSON() *HistoryEventUpsertOne {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateDetailsJSON()
+	})
+}
+
+// Exec executes the query.
+func (u *HistoryEventUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for HistoryEventCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *HistoryEventUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *HistoryEventUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *HistoryEventUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // HistoryEventCreateBulk is the builder for creating many HistoryEvent entities in bulk.
 type HistoryEventCreateBulk struct {
 	config
 	err      error
 	builders []*HistoryEventCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the HistoryEvent entities in the database.
@@ -228,6 +510,7 @@ func (_c *HistoryEventCreateBulk) Save(ctx context.Context) ([]*HistoryEvent, er
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -278,6 +561,194 @@ func (_c *HistoryEventCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *HistoryEventCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.HistoryEvent.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.HistoryEventUpsert) {
+//			SetOccurredAt(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *HistoryEventCreateBulk) OnConflict(opts ...sql.ConflictOption) *HistoryEventUpsertBulk {
+	_c.conflict = opts
+	return &HistoryEventUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.HistoryEvent.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *HistoryEventCreateBulk) OnConflictColumns(columns ...string) *HistoryEventUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &HistoryEventUpsertBulk{
+		create: _c,
+	}
+}
+
+// HistoryEventUpsertBulk is the builder for "upsert"-ing
+// a bulk of HistoryEvent nodes.
+type HistoryEventUpsertBulk struct {
+	create *HistoryEventCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.HistoryEvent.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *HistoryEventUpsertBulk) UpdateNewValues() *HistoryEventUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.HistoryEvent.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *HistoryEventUpsertBulk) Ignore() *HistoryEventUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *HistoryEventUpsertBulk) DoNothing() *HistoryEventUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the HistoryEventCreateBulk.OnConflict
+// documentation for more info.
+func (u *HistoryEventUpsertBulk) Update(set func(*HistoryEventUpsert)) *HistoryEventUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&HistoryEventUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetOccurredAt sets the "occurred_at" field.
+func (u *HistoryEventUpsertBulk) SetOccurredAt(v time.Time) *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetOccurredAt(v)
+	})
+}
+
+// UpdateOccurredAt sets the "occurred_at" field to the value that was provided on create.
+func (u *HistoryEventUpsertBulk) UpdateOccurredAt() *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateOccurredAt()
+	})
+}
+
+// SetKind sets the "kind" field.
+func (u *HistoryEventUpsertBulk) SetKind(v string) *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetKind(v)
+	})
+}
+
+// UpdateKind sets the "kind" field to the value that was provided on create.
+func (u *HistoryEventUpsertBulk) UpdateKind() *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateKind()
+	})
+}
+
+// SetRecordingID sets the "recording_id" field.
+func (u *HistoryEventUpsertBulk) SetRecordingID(v int64) *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetRecordingID(v)
+	})
+}
+
+// AddRecordingID adds v to the "recording_id" field.
+func (u *HistoryEventUpsertBulk) AddRecordingID(v int64) *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.AddRecordingID(v)
+	})
+}
+
+// UpdateRecordingID sets the "recording_id" field to the value that was provided on create.
+func (u *HistoryEventUpsertBulk) UpdateRecordingID() *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateRecordingID()
+	})
+}
+
+// ClearRecordingID clears the value of the "recording_id" field.
+func (u *HistoryEventUpsertBulk) ClearRecordingID() *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.ClearRecordingID()
+	})
+}
+
+// SetSummary sets the "summary" field.
+func (u *HistoryEventUpsertBulk) SetSummary(v string) *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetSummary(v)
+	})
+}
+
+// UpdateSummary sets the "summary" field to the value that was provided on create.
+func (u *HistoryEventUpsertBulk) UpdateSummary() *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateSummary()
+	})
+}
+
+// SetDetailsJSON sets the "details_json" field.
+func (u *HistoryEventUpsertBulk) SetDetailsJSON(v string) *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.SetDetailsJSON(v)
+	})
+}
+
+// UpdateDetailsJSON sets the "details_json" field to the value that was provided on create.
+func (u *HistoryEventUpsertBulk) UpdateDetailsJSON() *HistoryEventUpsertBulk {
+	return u.Update(func(s *HistoryEventUpsert) {
+		s.UpdateDetailsJSON()
+	})
+}
+
+// Exec executes the query.
+func (u *HistoryEventUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the HistoryEventCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for HistoryEventCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *HistoryEventUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

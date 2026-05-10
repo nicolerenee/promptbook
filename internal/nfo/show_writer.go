@@ -18,7 +18,6 @@ package nfo
 
 import (
 	"context"
-	"database/sql"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -29,6 +28,7 @@ import (
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 )
 
@@ -67,8 +67,10 @@ type CollectionUnique struct {
 // elements but still produces a valid <collection> document. DB is
 // reserved for future use (audit trail) and is currently ignored.
 type ShowWriteOptions struct {
-	// DB is reserved for future use. Currently ignored.
-	DB *sql.DB
+	// DB is reserved for future use. Currently ignored. Typed as
+	// *ent.Client for consistency with the rest of the codebase post-
+	// cutover; nil is fine since the field is not consulted.
+	DB *ent.Client
 	// Cache is the on-disk image cache. nil or Cache.Disabled() == true
 	// disables poster references.
 	Cache *imagecache.Cache

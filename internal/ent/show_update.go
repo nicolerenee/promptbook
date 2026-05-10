@@ -19,8 +19,9 @@ import (
 // ShowUpdate is the builder for updating Show entities.
 type ShowUpdate struct {
 	config
-	hooks    []Hook
-	mutation *ShowMutation
+	hooks     []Hook
+	mutation  *ShowMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the ShowUpdate builder.
@@ -139,6 +140,12 @@ func (_u *ShowUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *ShowUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *ShowUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *ShowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(show.Table, show.Columns, sqlgraph.NewFieldSpec(show.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -202,6 +209,7 @@ func (_u *ShowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{show.Label}
@@ -217,9 +225,10 @@ func (_u *ShowUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // ShowUpdateOne is the builder for updating a single Show entity.
 type ShowUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *ShowMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *ShowMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetName sets the "name" field.
@@ -345,6 +354,12 @@ func (_u *ShowUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *ShowUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *ShowUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *ShowUpdateOne) sqlSave(ctx context.Context) (_node *Show, err error) {
 	_spec := sqlgraph.NewUpdateSpec(show.Table, show.Columns, sqlgraph.NewFieldSpec(show.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
@@ -425,6 +440,7 @@ func (_u *ShowUpdateOne) sqlSave(ctx context.Context) (_node *Show, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &Show{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

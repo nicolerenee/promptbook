@@ -20,13 +20,13 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -277,14 +277,14 @@ func (s *Server) handleListActorHeadshotOptions(c echo.Context) error {
 // performer's credited recordings, or 0 when the performer has none.
 // Used to scope the StageMedia /api/images call for actor headshots.
 func firstShowIDForPerformer(
-	ctx context.Context, db *sql.DB, performerID int64,
+	ctx context.Context, client *ent.Client, performerID int64,
 ) (int64, error) {
-	recIDs, err := storage.ListRecordingsForPerformer(ctx, db, performerID)
+	recIDs, err := storage.ListRecordingsForPerformer(ctx, client, performerID)
 	if err != nil {
 		return 0, err
 	}
 	for _, recID := range recIDs {
-		loaded, loadErr := storage.LoadRecording(ctx, db, recID)
+		loaded, loadErr := storage.LoadRecording(ctx, client, recID)
 		if errors.Is(loadErr, storage.ErrRecordingNotFound) {
 			continue
 		}

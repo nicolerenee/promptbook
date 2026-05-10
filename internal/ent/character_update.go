@@ -18,8 +18,9 @@ import (
 // CharacterUpdate is the builder for updating Character entities.
 type CharacterUpdate struct {
 	config
-	hooks    []Hook
-	mutation *CharacterMutation
+	hooks     []Hook
+	mutation  *CharacterMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the CharacterUpdate builder.
@@ -116,6 +117,12 @@ func (_u *CharacterUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *CharacterUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *CharacterUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *CharacterUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(character.Table, character.Columns, sqlgraph.NewFieldSpec(character.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -137,6 +144,7 @@ func (_u *CharacterUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.LastSeenAt(); ok {
 		_spec.SetField(character.FieldLastSeenAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{character.Label}
@@ -152,9 +160,10 @@ func (_u *CharacterUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // CharacterUpdateOne is the builder for updating a single Character entity.
 type CharacterUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *CharacterMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *CharacterMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetName sets the "name" field.
@@ -258,6 +267,12 @@ func (_u *CharacterUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *CharacterUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *CharacterUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *CharacterUpdateOne) sqlSave(ctx context.Context) (_node *Character, err error) {
 	_spec := sqlgraph.NewUpdateSpec(character.Table, character.Columns, sqlgraph.NewFieldSpec(character.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
@@ -296,6 +311,7 @@ func (_u *CharacterUpdateOne) sqlSave(ctx context.Context) (_node *Character, er
 	if value, ok := _u.mutation.LastSeenAt(); ok {
 		_spec.SetField(character.FieldLastSeenAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &Character{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

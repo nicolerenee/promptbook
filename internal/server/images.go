@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,6 +14,8 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/placeholder"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -191,16 +191,15 @@ func (s *Server) lookupLabel(ctx context.Context, slot imageSlot) string {
 // loadShowNameForPlaceholder fetches a show's display name without
 // dragging in shows.go's errShowNotFound vocabulary. We only care
 // about the empty/non-empty distinction here.
-func loadShowNameForPlaceholder(ctx context.Context, db *sql.DB, id int64) (string, error) {
-	var name string
-	err := db.QueryRowContext(ctx, `SELECT name FROM shows WHERE show_id = ?`, id).Scan(&name)
-	if errors.Is(err, sql.ErrNoRows) {
+func loadShowNameForPlaceholder(ctx context.Context, client *ent.Client, id int64) (string, error) {
+	row, err := client.Show.Query().Where(show.IDEQ(id)).Only(ctx)
+	if ent.IsNotFound(err) {
 		return "", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("query show name %d: %w", id, err)
 	}
-	return name, nil
+	return row.Name, nil
 }
 
 // recordingLabelMaxParts caps the make() pre-allocation for the

@@ -18,8 +18,9 @@ import (
 // JobRunUpdate is the builder for updating JobRun entities.
 type JobRunUpdate struct {
 	config
-	hooks    []Hook
-	mutation *JobRunMutation
+	hooks     []Hook
+	mutation  *JobRunMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the JobRunUpdate builder.
@@ -184,6 +185,12 @@ func (_u *JobRunUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *JobRunUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *JobRunUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *JobRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(jobrun.Table, jobrun.Columns, sqlgraph.NewFieldSpec(jobrun.FieldID, field.TypeInt))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -223,6 +230,7 @@ func (_u *JobRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Args(); ok {
 		_spec.SetField(jobrun.FieldArgs, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{jobrun.Label}
@@ -238,9 +246,10 @@ func (_u *JobRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // JobRunUpdateOne is the builder for updating a single JobRun entity.
 type JobRunUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *JobRunMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *JobRunMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetJobName sets the "job_name" field.
@@ -412,6 +421,12 @@ func (_u *JobRunUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *JobRunUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *JobRunUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *JobRunUpdateOne) sqlSave(ctx context.Context) (_node *JobRun, err error) {
 	_spec := sqlgraph.NewUpdateSpec(jobrun.Table, jobrun.Columns, sqlgraph.NewFieldSpec(jobrun.FieldID, field.TypeInt))
 	id, ok := _u.mutation.ID()
@@ -468,6 +483,7 @@ func (_u *JobRunUpdateOne) sqlSave(ctx context.Context) (_node *JobRun, err erro
 	if value, ok := _u.mutation.Args(); ok {
 		_spec.SetField(jobrun.FieldArgs, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &JobRun{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

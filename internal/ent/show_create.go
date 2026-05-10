@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
@@ -19,6 +20,7 @@ type ShowCreate struct {
 	config
 	mutation *ShowMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetName sets the "name" field.
@@ -160,6 +162,7 @@ func (_c *ShowCreate) createSpec() (*Show, *sqlgraph.CreateSpec) {
 		_node = &Show{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(show.Table, sqlgraph.NewFieldSpec(show.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -195,11 +198,220 @@ func (_c *ShowCreate) createSpec() (*Show, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Show.Create().
+//		SetName(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.ShowUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *ShowCreate) OnConflict(opts ...sql.ConflictOption) *ShowUpsertOne {
+	_c.conflict = opts
+	return &ShowUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Show.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *ShowCreate) OnConflictColumns(columns ...string) *ShowUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &ShowUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// ShowUpsertOne is the builder for "upsert"-ing
+	//  one Show node.
+	ShowUpsertOne struct {
+		create *ShowCreate
+	}
+
+	// ShowUpsert is the "OnConflict" setter.
+	ShowUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetName sets the "name" field.
+func (u *ShowUpsert) SetName(v string) *ShowUpsert {
+	u.Set(show.FieldName, v)
+	return u
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *ShowUpsert) UpdateName() *ShowUpsert {
+	u.SetExcluded(show.FieldName)
+	return u
+}
+
+// SetDescriptionHTML sets the "description_html" field.
+func (u *ShowUpsert) SetDescriptionHTML(v string) *ShowUpsert {
+	u.Set(show.FieldDescriptionHTML, v)
+	return u
+}
+
+// UpdateDescriptionHTML sets the "description_html" field to the value that was provided on create.
+func (u *ShowUpsert) UpdateDescriptionHTML() *ShowUpsert {
+	u.SetExcluded(show.FieldDescriptionHTML)
+	return u
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *ShowUpsert) SetLastSeenAt(v time.Time) *ShowUpsert {
+	u.Set(show.FieldLastSeenAt, v)
+	return u
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *ShowUpsert) UpdateLastSeenAt() *ShowUpsert {
+	u.SetExcluded(show.FieldLastSeenAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.Show.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(show.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *ShowUpsertOne) UpdateNewValues() *ShowUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(show.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Show.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *ShowUpsertOne) Ignore() *ShowUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *ShowUpsertOne) DoNothing() *ShowUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the ShowCreate.OnConflict
+// documentation for more info.
+func (u *ShowUpsertOne) Update(set func(*ShowUpsert)) *ShowUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&ShowUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *ShowUpsertOne) SetName(v string) *ShowUpsertOne {
+	return u.Update(func(s *ShowUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *ShowUpsertOne) UpdateName() *ShowUpsertOne {
+	return u.Update(func(s *ShowUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetDescriptionHTML sets the "description_html" field.
+func (u *ShowUpsertOne) SetDescriptionHTML(v string) *ShowUpsertOne {
+	return u.Update(func(s *ShowUpsert) {
+		s.SetDescriptionHTML(v)
+	})
+}
+
+// UpdateDescriptionHTML sets the "description_html" field to the value that was provided on create.
+func (u *ShowUpsertOne) UpdateDescriptionHTML() *ShowUpsertOne {
+	return u.Update(func(s *ShowUpsert) {
+		s.UpdateDescriptionHTML()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *ShowUpsertOne) SetLastSeenAt(v time.Time) *ShowUpsertOne {
+	return u.Update(func(s *ShowUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *ShowUpsertOne) UpdateLastSeenAt() *ShowUpsertOne {
+	return u.Update(func(s *ShowUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *ShowUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for ShowCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *ShowUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *ShowUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *ShowUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // ShowCreateBulk is the builder for creating many Show entities in bulk.
 type ShowCreateBulk struct {
 	config
 	err      error
 	builders []*ShowCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the Show entities in the database.
@@ -229,6 +441,7 @@ func (_c *ShowCreateBulk) Save(ctx context.Context) ([]*Show, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -279,6 +492,162 @@ func (_c *ShowCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *ShowCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Show.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.ShowUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *ShowCreateBulk) OnConflict(opts ...sql.ConflictOption) *ShowUpsertBulk {
+	_c.conflict = opts
+	return &ShowUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Show.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *ShowCreateBulk) OnConflictColumns(columns ...string) *ShowUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &ShowUpsertBulk{
+		create: _c,
+	}
+}
+
+// ShowUpsertBulk is the builder for "upsert"-ing
+// a bulk of Show nodes.
+type ShowUpsertBulk struct {
+	create *ShowCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.Show.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(show.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *ShowUpsertBulk) UpdateNewValues() *ShowUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(show.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Show.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *ShowUpsertBulk) Ignore() *ShowUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *ShowUpsertBulk) DoNothing() *ShowUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the ShowCreateBulk.OnConflict
+// documentation for more info.
+func (u *ShowUpsertBulk) Update(set func(*ShowUpsert)) *ShowUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&ShowUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *ShowUpsertBulk) SetName(v string) *ShowUpsertBulk {
+	return u.Update(func(s *ShowUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *ShowUpsertBulk) UpdateName() *ShowUpsertBulk {
+	return u.Update(func(s *ShowUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetDescriptionHTML sets the "description_html" field.
+func (u *ShowUpsertBulk) SetDescriptionHTML(v string) *ShowUpsertBulk {
+	return u.Update(func(s *ShowUpsert) {
+		s.SetDescriptionHTML(v)
+	})
+}
+
+// UpdateDescriptionHTML sets the "description_html" field to the value that was provided on create.
+func (u *ShowUpsertBulk) UpdateDescriptionHTML() *ShowUpsertBulk {
+	return u.Update(func(s *ShowUpsert) {
+		s.UpdateDescriptionHTML()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *ShowUpsertBulk) SetLastSeenAt(v time.Time) *ShowUpsertBulk {
+	return u.Update(func(s *ShowUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *ShowUpsertBulk) UpdateLastSeenAt() *ShowUpsertBulk {
+	return u.Update(func(s *ShowUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *ShowUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the ShowCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for ShowCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *ShowUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

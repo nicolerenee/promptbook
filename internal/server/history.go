@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,6 +10,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -105,37 +106,22 @@ func (s *Server) handleListHistory(c echo.Context) error {
 
 // countHistoryEvents tallies history rows matching the same kind /
 // recording_id filter the items list reflects. Mirrors
-// storage.ListHistory's WHERE construction so the SPA's "Page N of M"
-// math agrees with the rendered slice.
+// storage.ListHistory's predicates so the SPA's "Page N of M" math
+// agrees with the rendered slice.
 func countHistoryEvents(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	opts storage.ListHistoryOptions,
 ) (int, error) {
-	var (
-		where []string
-		args  []any
-	)
+	q := client.HistoryEvent.Query()
 	if len(opts.Kinds) > 0 {
-		placeholders := make([]string, len(opts.Kinds))
-		for i, k := range opts.Kinds {
-			placeholders[i] = "?"
-			args = append(args, k)
-		}
-		where = append(where, "kind IN ("+strings.Join(placeholders, ",")+")")
+		q = q.Where(historyevent.KindIn(opts.Kinds...))
 	}
 	if opts.RecordingID != nil {
-		where = append(where, "recording_id = ?")
-		args = append(args, *opts.RecordingID)
+		q = q.Where(historyevent.RecordingID(*opts.RecordingID))
 	}
-	q := "SELECT COUNT(*) FROM history"
-	if len(where) > 0 {
-		// Concatenated fragments are static column-name + "?" placeholder
-		// strings; user values bind via args.
-		q += " WHERE " + strings.Join(where, " AND ")
-	}
-	var n int
-	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+	n, err := q.Count(ctx)
+	if err != nil {
 		return 0, fmt.Errorf("count history: %w", err)
 	}
 	return n, nil

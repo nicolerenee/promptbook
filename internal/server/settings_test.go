@@ -23,9 +23,9 @@ import (
 func TestAPISettingsRedactsKeys(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	cfg := config.Config{
 		Encora: config.EncoraConfig{
@@ -119,9 +119,9 @@ func TestAPISettingsRedactsKeys(t *testing.T) {
 func TestAPISettingsEmptyConfig(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)

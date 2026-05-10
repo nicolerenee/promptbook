@@ -16,9 +16,9 @@ import (
 // Not Parallel — exercises global cobra/viper state.
 func TestLibraryQueueCommandEmpty(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, _, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	require.NoError(t, db.Close())
+	require.NoError(t, sqlDB.Close())
 
 	t.Setenv("PROMPTBOOK_STORAGE_DATABASEPATH", dbPath)
 
@@ -33,7 +33,7 @@ func TestLibraryQueueCommandEmpty(t *testing.T) {
 // exercises global cobra/viper state.
 func TestLibraryQueueCommandLists(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	suggested := int64(90100222)
@@ -53,7 +53,7 @@ func TestLibraryQueueCommandLists(t *testing.T) {
 		_, eqErr := storage.EnqueueFile(t.Context(), db, e)
 		require.NoError(t, eqErr)
 	}
-	require.NoError(t, db.Close())
+	require.NoError(t, sqlDB.Close())
 
 	t.Setenv("PROMPTBOOK_STORAGE_DATABASEPATH", dbPath)
 

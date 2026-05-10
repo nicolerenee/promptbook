@@ -2,17 +2,19 @@ package builtin
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"os"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 )
 
-// DBConn is the *sql.DB alias the refresh-* jobs use. Surfaced as a
-// type alias so the job structs can stay tiny without each file
-// re-importing database/sql.
-type DBConn = sql.DB
+// DBConn is the *ent.Client alias the refresh-* jobs use. Surfaced as
+// a type alias so the job structs can stay tiny without each file re-
+// importing the ent package.
+type DBConn = ent.Client
 
 // stagemediaPerformer aliases stagemedia.Performer so refresh-show-images
 // can iterate the response without importing the stagemedia package
@@ -42,46 +44,45 @@ func removeIfExists(path string) error {
 	return err
 }
 
-// performerIDInitialCap is the default capacity for the performer-id
-// slice. Most shows have well under this many distinct performers
-// across their recordings; an under-allocation just costs one slice
-// growth, not correctness.
-const performerIDInitialCap = 16
+// performerIDLimit caps how many performer ids we surface for a show.
+// Protects /api/images URL length on shows with extreme cast turnover.
+const performerIDLimit = 100
 
-// loadPerformerIDsForShow returns up to a hundred distinct performer
-// ids credited on any of the show's recordings, ordered for stability.
-// The cap protects /api/images URL length on shows with extreme cast
-// turnover. Errors are swallowed — the caller falls back to the
-// sentinel actor id when this returns nil.
+// loadPerformerIDsForShow returns up to performerIDLimit distinct
+// performer ids credited on any of the show's recordings, ordered
+// ascending for stability. Errors are swallowed — the caller falls
+// back to the sentinel actor id when this returns nil.
 func loadPerformerIDsForShow(ctx context.Context, db *DBConn, showID int64) []int64 {
 	if db == nil {
 		return nil
 	}
-	rows, err := db.QueryContext(ctx, `
-		SELECT DISTINCT ce.performer_id
-		FROM cast_entries ce
-		JOIN recordings r ON r.recording_id = ce.recording_id
-		WHERE r.show_id = ?
-		  AND ce.performer_id IS NOT NULL
-		  AND ce.performer_id > 0
-		ORDER BY ce.performer_id
-		LIMIT 100
-	`, showID)
+	recIDs, err := db.Recording.Query().
+		Where(recording.ShowID(showID)).
+		IDs(ctx)
+	if err != nil || len(recIDs) == 0 {
+		return nil
+	}
+	rows, err := db.CastEntry.Query().
+		Where(
+			castentry.RecordingIDIn(recIDs...),
+			castentry.PerformerIDGT(0),
+		).
+		Order(castentry.ByPerformerID()).
+		All(ctx)
 	if err != nil {
 		return nil
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make([]int64, 0, performerIDInitialCap)
-	for rows.Next() {
-		var id int64
-		if scanErr := rows.Scan(&id); scanErr != nil {
-			return out
+	seen := make(map[int64]struct{}, len(rows))
+	out := make([]int64, 0, len(rows))
+	for _, ce := range rows {
+		if _, ok := seen[ce.PerformerID]; ok {
+			continue
 		}
-		out = append(out, id)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return out
+		seen[ce.PerformerID] = struct{}{}
+		out = append(out, ce.PerformerID)
+		if len(out) >= performerIDLimit {
+			break
+		}
 	}
 	return out
 }

@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"context"
-	gosql "database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -72,11 +72,11 @@ func (s *stubDestructiveClient) AddToWants(
 // recorded upstream calls without spinning up a real Encora HTTP server.
 func destructiveTestServer(
 	t *testing.T,
-) (*server.Server, *gosql.DB, *stubDestructiveClient) {
+) (*server.Server, *ent.Client, *stubDestructiveClient) {
 	t.Helper()
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	stub := &stubDestructiveClient{}
 	srv, err := server.New(server.Options{DB: db, EncoraDestructive: stub})
@@ -109,7 +109,7 @@ func postDestructive(
 // loadEncoraPushEvents pulls the HistoryKindEncoraPush rows from the
 // supplied DB, used by the destructive-endpoint tests to assert the
 // audit trail captured (or didn't capture) the call.
-func loadEncoraPushEvents(t *testing.T, db *gosql.DB) []storage.HistoryEvent {
+func loadEncoraPushEvents(t *testing.T, db *ent.Client) []storage.HistoryEvent {
 	t.Helper()
 	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
 		Kinds: []string{storage.HistoryKindEncoraPush},
@@ -170,9 +170,9 @@ func TestAPIRemoveFromCollectionNotInCollection(t *testing.T) {
 func TestAPIRemoveFromCollectionWithoutEncoraClient(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	// No EncoraDestructive on Options — the destructive endpoints must
 	// degrade to 503 rather than panic.
@@ -281,16 +281,10 @@ func TestAPIAddToWantsSuccess(t *testing.T) {
 	// Seed a recording row that's neither in collection nor wants. The
 	// recording table needs an entry so the rest of the catalog can
 	// surface it; we just don't link it from collection / wants.
-	_, err := db.ExecContext(t.Context(),
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`,
-		int64(50201), "AddWantShow")
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		) VALUES (?, ?, '', '', '{}')
-	`, int64(9991), int64(50201))
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().
+		SetID(50201).SetName("AddWantShow").Exec(t.Context()))
+	require.NoError(t, db.Recording.Create().
+		SetID(9991).SetShowID(50201).SetRawJSON("{}").Exec(t.Context()))
 
 	status, ok, errMsg := postDestructive(t, srv, "/api/v1/encora/wants/9991/add")
 

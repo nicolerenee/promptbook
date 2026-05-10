@@ -2,9 +2,10 @@ package storage_test
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
 
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/stretchr/testify/assert"
@@ -154,17 +155,18 @@ func TestListRecordingsForPerformer(t *testing.T) {
 func seedCastEntry(
 	ctx context.Context,
 	t *testing.T,
-	db *sql.DB,
+	db *ent.Client,
 	recordingID, performerID, characterID int64,
 	order int,
 ) {
 	t.Helper()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO cast_entries (
-			recording_id,
-			performer_id, performer_name,
-			character_id, character_name, character_order
-		) VALUES (?, ?, '', ?, '', ?)
-	`, recordingID, performerID, characterID, order)
+	_, err := db.CastEntry.Create().
+		SetRecordingID(recordingID).
+		SetPerformerID(performerID).
+		SetPerformerName("").
+		SetCharacterID(characterID).
+		SetCharacterName("").
+		SetCharacterOrder(order).
+		Save(ctx)
 	require.NoError(t, err)
 }

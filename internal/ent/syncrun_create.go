@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/syncrun"
@@ -18,6 +19,7 @@ type SyncRunCreate struct {
 	config
 	mutation *SyncRunMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetKind sets the "kind" field.
@@ -201,6 +203,7 @@ func (_c *SyncRunCreate) createSpec() (*SyncRun, *sqlgraph.CreateSpec) {
 		_node = &SyncRun{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(syncrun.Table, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.Kind(); ok {
 		_spec.SetField(syncrun.FieldKind, field.TypeString, value)
 		_node.Kind = value
@@ -232,11 +235,368 @@ func (_c *SyncRunCreate) createSpec() (*SyncRun, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.SyncRun.Create().
+//		SetKind(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.SyncRunUpsert) {
+//			SetKind(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *SyncRunCreate) OnConflict(opts ...sql.ConflictOption) *SyncRunUpsertOne {
+	_c.conflict = opts
+	return &SyncRunUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.SyncRun.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *SyncRunCreate) OnConflictColumns(columns ...string) *SyncRunUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &SyncRunUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// SyncRunUpsertOne is the builder for "upsert"-ing
+	//  one SyncRun node.
+	SyncRunUpsertOne struct {
+		create *SyncRunCreate
+	}
+
+	// SyncRunUpsert is the "OnConflict" setter.
+	SyncRunUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetKind sets the "kind" field.
+func (u *SyncRunUpsert) SetKind(v string) *SyncRunUpsert {
+	u.Set(syncrun.FieldKind, v)
+	return u
+}
+
+// UpdateKind sets the "kind" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateKind() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldKind)
+	return u
+}
+
+// SetStartedAt sets the "started_at" field.
+func (u *SyncRunUpsert) SetStartedAt(v time.Time) *SyncRunUpsert {
+	u.Set(syncrun.FieldStartedAt, v)
+	return u
+}
+
+// UpdateStartedAt sets the "started_at" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateStartedAt() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldStartedAt)
+	return u
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (u *SyncRunUpsert) SetFinishedAt(v time.Time) *SyncRunUpsert {
+	u.Set(syncrun.FieldFinishedAt, v)
+	return u
+}
+
+// UpdateFinishedAt sets the "finished_at" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateFinishedAt() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldFinishedAt)
+	return u
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (u *SyncRunUpsert) ClearFinishedAt() *SyncRunUpsert {
+	u.SetNull(syncrun.FieldFinishedAt)
+	return u
+}
+
+// SetOkCount sets the "ok_count" field.
+func (u *SyncRunUpsert) SetOkCount(v int) *SyncRunUpsert {
+	u.Set(syncrun.FieldOkCount, v)
+	return u
+}
+
+// UpdateOkCount sets the "ok_count" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateOkCount() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldOkCount)
+	return u
+}
+
+// AddOkCount adds v to the "ok_count" field.
+func (u *SyncRunUpsert) AddOkCount(v int) *SyncRunUpsert {
+	u.Add(syncrun.FieldOkCount, v)
+	return u
+}
+
+// SetErrorCount sets the "error_count" field.
+func (u *SyncRunUpsert) SetErrorCount(v int) *SyncRunUpsert {
+	u.Set(syncrun.FieldErrorCount, v)
+	return u
+}
+
+// UpdateErrorCount sets the "error_count" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateErrorCount() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldErrorCount)
+	return u
+}
+
+// AddErrorCount adds v to the "error_count" field.
+func (u *SyncRunUpsert) AddErrorCount(v int) *SyncRunUpsert {
+	u.Add(syncrun.FieldErrorCount, v)
+	return u
+}
+
+// SetRateLimitRemaining sets the "rate_limit_remaining" field.
+func (u *SyncRunUpsert) SetRateLimitRemaining(v int) *SyncRunUpsert {
+	u.Set(syncrun.FieldRateLimitRemaining, v)
+	return u
+}
+
+// UpdateRateLimitRemaining sets the "rate_limit_remaining" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateRateLimitRemaining() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldRateLimitRemaining)
+	return u
+}
+
+// AddRateLimitRemaining adds v to the "rate_limit_remaining" field.
+func (u *SyncRunUpsert) AddRateLimitRemaining(v int) *SyncRunUpsert {
+	u.Add(syncrun.FieldRateLimitRemaining, v)
+	return u
+}
+
+// SetErrorText sets the "error_text" field.
+func (u *SyncRunUpsert) SetErrorText(v string) *SyncRunUpsert {
+	u.Set(syncrun.FieldErrorText, v)
+	return u
+}
+
+// UpdateErrorText sets the "error_text" field to the value that was provided on create.
+func (u *SyncRunUpsert) UpdateErrorText() *SyncRunUpsert {
+	u.SetExcluded(syncrun.FieldErrorText)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.SyncRun.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *SyncRunUpsertOne) UpdateNewValues() *SyncRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.SyncRun.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *SyncRunUpsertOne) Ignore() *SyncRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *SyncRunUpsertOne) DoNothing() *SyncRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the SyncRunCreate.OnConflict
+// documentation for more info.
+func (u *SyncRunUpsertOne) Update(set func(*SyncRunUpsert)) *SyncRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&SyncRunUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetKind sets the "kind" field.
+func (u *SyncRunUpsertOne) SetKind(v string) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetKind(v)
+	})
+}
+
+// UpdateKind sets the "kind" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateKind() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateKind()
+	})
+}
+
+// SetStartedAt sets the "started_at" field.
+func (u *SyncRunUpsertOne) SetStartedAt(v time.Time) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetStartedAt(v)
+	})
+}
+
+// UpdateStartedAt sets the "started_at" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateStartedAt() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateStartedAt()
+	})
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (u *SyncRunUpsertOne) SetFinishedAt(v time.Time) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetFinishedAt(v)
+	})
+}
+
+// UpdateFinishedAt sets the "finished_at" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateFinishedAt() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateFinishedAt()
+	})
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (u *SyncRunUpsertOne) ClearFinishedAt() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.ClearFinishedAt()
+	})
+}
+
+// SetOkCount sets the "ok_count" field.
+func (u *SyncRunUpsertOne) SetOkCount(v int) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetOkCount(v)
+	})
+}
+
+// AddOkCount adds v to the "ok_count" field.
+func (u *SyncRunUpsertOne) AddOkCount(v int) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.AddOkCount(v)
+	})
+}
+
+// UpdateOkCount sets the "ok_count" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateOkCount() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateOkCount()
+	})
+}
+
+// SetErrorCount sets the "error_count" field.
+func (u *SyncRunUpsertOne) SetErrorCount(v int) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetErrorCount(v)
+	})
+}
+
+// AddErrorCount adds v to the "error_count" field.
+func (u *SyncRunUpsertOne) AddErrorCount(v int) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.AddErrorCount(v)
+	})
+}
+
+// UpdateErrorCount sets the "error_count" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateErrorCount() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateErrorCount()
+	})
+}
+
+// SetRateLimitRemaining sets the "rate_limit_remaining" field.
+func (u *SyncRunUpsertOne) SetRateLimitRemaining(v int) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetRateLimitRemaining(v)
+	})
+}
+
+// AddRateLimitRemaining adds v to the "rate_limit_remaining" field.
+func (u *SyncRunUpsertOne) AddRateLimitRemaining(v int) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.AddRateLimitRemaining(v)
+	})
+}
+
+// UpdateRateLimitRemaining sets the "rate_limit_remaining" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateRateLimitRemaining() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateRateLimitRemaining()
+	})
+}
+
+// SetErrorText sets the "error_text" field.
+func (u *SyncRunUpsertOne) SetErrorText(v string) *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetErrorText(v)
+	})
+}
+
+// UpdateErrorText sets the "error_text" field to the value that was provided on create.
+func (u *SyncRunUpsertOne) UpdateErrorText() *SyncRunUpsertOne {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateErrorText()
+	})
+}
+
+// Exec executes the query.
+func (u *SyncRunUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for SyncRunCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *SyncRunUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *SyncRunUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *SyncRunUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // SyncRunCreateBulk is the builder for creating many SyncRun entities in bulk.
 type SyncRunCreateBulk struct {
 	config
 	err      error
 	builders []*SyncRunCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the SyncRun entities in the database.
@@ -266,6 +626,7 @@ func (_c *SyncRunCreateBulk) Save(ctx context.Context) ([]*SyncRun, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -316,6 +677,236 @@ func (_c *SyncRunCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *SyncRunCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.SyncRun.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.SyncRunUpsert) {
+//			SetKind(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *SyncRunCreateBulk) OnConflict(opts ...sql.ConflictOption) *SyncRunUpsertBulk {
+	_c.conflict = opts
+	return &SyncRunUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.SyncRun.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *SyncRunCreateBulk) OnConflictColumns(columns ...string) *SyncRunUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &SyncRunUpsertBulk{
+		create: _c,
+	}
+}
+
+// SyncRunUpsertBulk is the builder for "upsert"-ing
+// a bulk of SyncRun nodes.
+type SyncRunUpsertBulk struct {
+	create *SyncRunCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.SyncRun.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *SyncRunUpsertBulk) UpdateNewValues() *SyncRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.SyncRun.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *SyncRunUpsertBulk) Ignore() *SyncRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *SyncRunUpsertBulk) DoNothing() *SyncRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the SyncRunCreateBulk.OnConflict
+// documentation for more info.
+func (u *SyncRunUpsertBulk) Update(set func(*SyncRunUpsert)) *SyncRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&SyncRunUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetKind sets the "kind" field.
+func (u *SyncRunUpsertBulk) SetKind(v string) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetKind(v)
+	})
+}
+
+// UpdateKind sets the "kind" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateKind() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateKind()
+	})
+}
+
+// SetStartedAt sets the "started_at" field.
+func (u *SyncRunUpsertBulk) SetStartedAt(v time.Time) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetStartedAt(v)
+	})
+}
+
+// UpdateStartedAt sets the "started_at" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateStartedAt() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateStartedAt()
+	})
+}
+
+// SetFinishedAt sets the "finished_at" field.
+func (u *SyncRunUpsertBulk) SetFinishedAt(v time.Time) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetFinishedAt(v)
+	})
+}
+
+// UpdateFinishedAt sets the "finished_at" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateFinishedAt() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateFinishedAt()
+	})
+}
+
+// ClearFinishedAt clears the value of the "finished_at" field.
+func (u *SyncRunUpsertBulk) ClearFinishedAt() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.ClearFinishedAt()
+	})
+}
+
+// SetOkCount sets the "ok_count" field.
+func (u *SyncRunUpsertBulk) SetOkCount(v int) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetOkCount(v)
+	})
+}
+
+// AddOkCount adds v to the "ok_count" field.
+func (u *SyncRunUpsertBulk) AddOkCount(v int) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.AddOkCount(v)
+	})
+}
+
+// UpdateOkCount sets the "ok_count" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateOkCount() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateOkCount()
+	})
+}
+
+// SetErrorCount sets the "error_count" field.
+func (u *SyncRunUpsertBulk) SetErrorCount(v int) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetErrorCount(v)
+	})
+}
+
+// AddErrorCount adds v to the "error_count" field.
+func (u *SyncRunUpsertBulk) AddErrorCount(v int) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.AddErrorCount(v)
+	})
+}
+
+// UpdateErrorCount sets the "error_count" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateErrorCount() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateErrorCount()
+	})
+}
+
+// SetRateLimitRemaining sets the "rate_limit_remaining" field.
+func (u *SyncRunUpsertBulk) SetRateLimitRemaining(v int) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetRateLimitRemaining(v)
+	})
+}
+
+// AddRateLimitRemaining adds v to the "rate_limit_remaining" field.
+func (u *SyncRunUpsertBulk) AddRateLimitRemaining(v int) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.AddRateLimitRemaining(v)
+	})
+}
+
+// UpdateRateLimitRemaining sets the "rate_limit_remaining" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateRateLimitRemaining() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateRateLimitRemaining()
+	})
+}
+
+// SetErrorText sets the "error_text" field.
+func (u *SyncRunUpsertBulk) SetErrorText(v string) *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.SetErrorText(v)
+	})
+}
+
+// UpdateErrorText sets the "error_text" field to the value that was provided on create.
+func (u *SyncRunUpsertBulk) UpdateErrorText() *SyncRunUpsertBulk {
+	return u.Update(func(s *SyncRunUpsert) {
+		s.UpdateErrorText()
+	})
+}
+
+// Exec executes the query.
+func (u *SyncRunUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the SyncRunCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for SyncRunCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *SyncRunUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

@@ -2,25 +2,26 @@ package storage_test
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // openQueueDB spins up a fresh sqlite database and runs migrations. Each
 // test gets its own file to keep cases parallel-safe.
-func openQueueDB(t *testing.T) *sql.DB {
+func openQueueDB(t *testing.T) *ent.Client {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 
@@ -120,12 +121,11 @@ func TestEnqueuePreservesDiscoveredAt(t *testing.T) {
 
 	// Backdate discovered_at and last_seen_at so we can assert that the
 	// next upsert touches one but not the other.
-	const backdated = "2020-01-01 00:00:00"
-	_, err = db.ExecContext(ctx, `
-		UPDATE manual_import_queue
-		SET discovered_at = ?, last_seen_at = ?
-		WHERE id = ?
-	`, backdated, backdated, id)
+	backdated := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	_, err = db.ManualImportQueue.UpdateOneID(int(id)).
+		SetDiscoveredAt(backdated).
+		SetLastSeenAt(backdated).
+		Save(ctx)
 	require.NoError(t, err)
 
 	loaded, err := storage.LoadQueueEntry(ctx, db, id)

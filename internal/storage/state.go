@@ -2,9 +2,13 @@ package storage
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
+	"slices"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
+	"github.com/nicolerenee/promptbook/internal/ent/wantsentry"
 )
 
 // Status is the derived, mutually-exclusive label for a recording's
@@ -95,31 +99,31 @@ func ComputeStatus(s RecordingState) Status {
 // collection and wants membership directly, lists the recording's
 // versions to derive both FileCount and LocalFormat, and finally calls
 // ComputeStatus.
-func LoadState(ctx context.Context, db *sql.DB, recordingID int64) (*RecordingState, error) {
+func LoadState(
+	ctx context.Context, client *ent.Client, recordingID int64,
+) (*RecordingState, error) {
 	state := &RecordingState{RecordingID: recordingID}
 
-	if err := db.QueryRowContext(ctx, `
-		SELECT format FROM collection WHERE recording_id = ?
-	`, recordingID).Scan(&state.EncoraFormat); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("query collection for state: %w", err)
-		}
-	} else {
+	col, cerr := client.CollectionEntry.Query().
+		Where(collectionentry.IDEQ(recordingID)).
+		Only(ctx)
+	if cerr != nil && !ent.IsNotFound(cerr) {
+		return nil, fmt.Errorf("query collection for state: %w", cerr)
+	}
+	if col != nil {
 		state.InCollection = true
+		state.EncoraFormat = col.Format
 	}
 
-	var wantsMarker int
-	if err := db.QueryRowContext(ctx, `
-		SELECT 1 FROM wants WHERE recording_id = ?
-	`, recordingID).Scan(&wantsMarker); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("query wants for state: %w", err)
-		}
-	} else {
-		state.InWants = true
+	exists, werr := client.WantsEntry.Query().
+		Where(wantsentry.IDEQ(recordingID)).
+		Exist(ctx)
+	if werr != nil {
+		return nil, fmt.Errorf("query wants for state: %w", werr)
 	}
+	state.InWants = exists
 
-	versions, err := ListVersions(ctx, db, recordingID)
+	versions, err := ListVersions(ctx, client, recordingID)
 	if err != nil {
 		return nil, fmt.Errorf("list versions for state: %w", err)
 	}
@@ -145,19 +149,16 @@ const defaultListStatesLimit = 200
 // appears in any of recordings, collection, wants, or recording_versions,
 // optionally filtered to a subset of statuses.
 //
-// Implementation note: the LEFT-JOIN-and-aggregate approach gathers
-// collection / wants / version-count in a single SQL pass. Computing
-// LocalFormat correctly requires the per-version FormatLabel ordered by
-// (file_size_bytes DESC, id ASC) — SQLite group_concat doesn't honor
-// per-row ordering reliably across versions, so we do that step
-// separately by calling ListVersions per recording. This is N+1 on the
-// number of recordings, but each row read is small and the alternative
-// (a window function + post-aggregation reassembly) wouldn't materially
-// reduce IO. If this ever shows up in a profile, switch to a single
-// query using SQLite's row_number() ordering.
+// Implementation note: the union-of-three-tables approach uses three
+// queries (collection ids, wants ids, version ids) merged in memory.
+// Per-recording LocalFormat then requires another ListVersions call —
+// N+1 on the result set, but each row is small. ent doesn't model SQL
+// UNIONs directly without dropping into the raw modifier API, and the
+// post-fetch ComputeStatus filtering already requires materializing
+// every row; the three-query shape keeps the helper readable.
 func ListStates(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	opts ListStatesOptions,
 ) ([]RecordingState, error) {
 	limit := opts.Limit
@@ -165,75 +166,102 @@ func ListStates(
 		limit = defaultListStatesLimit
 	}
 
-	// Union the recording_id sets from every table that can contribute a
-	// state row, then LEFT JOIN back to collection / wants / a
-	// version-count subquery. Pagination is applied post-aggregation.
-	const q = `
-		WITH ids AS (
-			SELECT recording_id FROM collection
-			UNION
-			SELECT recording_id FROM wants
-			UNION
-			SELECT recording_id FROM recording_versions
-		),
-		version_counts AS (
-			SELECT recording_id, COUNT(*) AS file_count
-			FROM recording_versions
-			GROUP BY recording_id
-		)
-		SELECT
-			i.recording_id,
-			COALESCE(c.format, '')                AS encora_format,
-			CASE WHEN c.recording_id IS NULL THEN 0 ELSE 1 END AS in_collection,
-			CASE WHEN w.recording_id IS NULL THEN 0 ELSE 1 END AS in_wants,
-			COALESCE(v.file_count, 0)             AS file_count
-		FROM ids AS i
-		LEFT JOIN collection      AS c ON c.recording_id = i.recording_id
-		LEFT JOIN wants           AS w ON w.recording_id = i.recording_id
-		LEFT JOIN version_counts  AS v ON v.recording_id = i.recording_id
-		ORDER BY i.recording_id ASC
-	`
-
-	rows, err := db.QueryContext(ctx, q)
+	prelim, err := loadStatePrelim(ctx, client)
 	if err != nil {
-		return nil, fmt.Errorf("query list states: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 
 	wantStatuses := statusSet(opts.Status)
+	out, err := finalizeStates(ctx, client, prelim, wantStatuses)
+	if err != nil {
+		return nil, err
+	}
 
-	// Materialize first so we can apply status filtering and pagination
-	// after the per-recording LocalFormat fill. We can't push the filter
-	// down to SQL because Status is derived from data (the format
-	// equality check) we don't fully have until LocalFormat is known.
-	var prelim []RecordingState
-	for rows.Next() {
-		var (
-			st           RecordingState
-			inCollection int
-			inWants      int
-		)
-		if scanErr := rows.Scan(
-			&st.RecordingID,
-			&st.EncoraFormat,
-			&inCollection,
-			&inWants,
-			&st.FileCount,
-		); scanErr != nil {
-			return nil, fmt.Errorf("scan state row: %w", scanErr)
+	if opts.Offset >= len(out) {
+		return []RecordingState{}, nil
+	}
+	out = out[opts.Offset:]
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// loadStatePrelim materializes the per-recording (in_collection,
+// in_wants, file_count, encora_format) slice that ListStates derives
+// the final Status from. Pulled out of ListStates to keep the parent
+// function under the gocognit threshold.
+func loadStatePrelim(
+	ctx context.Context, client *ent.Client,
+) ([]RecordingState, error) {
+	idSet, err := unionRecordingIDs(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+
+	collectionRows, err := client.CollectionEntry.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query collection: %w", err)
+	}
+	collectionByID := make(map[int64]*ent.CollectionEntry, len(collectionRows))
+	for _, c := range collectionRows {
+		collectionByID[c.ID] = c
+	}
+
+	wantsRows, err := client.WantsEntry.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query wants: %w", err)
+	}
+	wantsByID := make(map[int64]struct{}, len(wantsRows))
+	for _, w := range wantsRows {
+		wantsByID[w.ID] = struct{}{}
+	}
+
+	var versionIDs []int64
+	if err = client.RecordingVersion.Query().
+		Select(recordingversion.FieldRecordingID).
+		Scan(ctx, &versionIDs); err != nil {
+		return nil, fmt.Errorf("query recording_versions: %w", err)
+	}
+	versionCount := make(map[int64]int, len(versionIDs))
+	for _, id := range versionIDs {
+		versionCount[id]++
+	}
+
+	ids := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+
+	prelim := make([]RecordingState, 0, len(ids))
+	for _, id := range ids {
+		st := RecordingState{RecordingID: id, FileCount: versionCount[id]}
+		if c, ok := collectionByID[id]; ok {
+			st.InCollection = true
+			st.EncoraFormat = c.Format
 		}
-		st.InCollection = inCollection != 0
-		st.InWants = inWants != 0
+		if _, ok := wantsByID[id]; ok {
+			st.InWants = true
+		}
 		prelim = append(prelim, st)
 	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate state rows: %w", rerr)
-	}
+	return prelim, nil
+}
 
+// finalizeStates fills in LocalFormat (from ListVersions) and Status
+// (via ComputeStatus) for each prelim row, then drops rows whose
+// status isn't in wantStatuses (nil meaning "no filter").
+func finalizeStates(
+	ctx context.Context,
+	client *ent.Client,
+	prelim []RecordingState,
+	wantStatuses map[Status]struct{},
+) ([]RecordingState, error) {
 	out := make([]RecordingState, 0, len(prelim))
 	for _, st := range prelim {
 		if st.FileCount > 0 {
-			versions, verr := ListVersions(ctx, db, st.RecordingID)
+			versions, verr := ListVersions(ctx, client, st.RecordingID)
 			if verr != nil {
 				return nil, fmt.Errorf(
 					"list versions for recording %d: %w",
@@ -250,15 +278,40 @@ func ListStates(
 		}
 		out = append(out, st)
 	}
+	return out, nil
+}
 
-	// Apply pagination after status filtering so callers asking for
-	// "page 2 of FormatMismatch" see the right slice.
-	if opts.Offset >= len(out) {
-		return []RecordingState{}, nil
+// unionRecordingIDs returns the union of recording ids that appear in
+// collection, wants, or recording_versions. Implemented as three plain
+// id-only queries merged in a Go map — ent's predicate API can't
+// express a SQL UNION without dropping into raw modifiers, and the
+// alternative (hold every row in memory across three tables) is what
+// the rest of ListStates does anyway.
+func unionRecordingIDs(ctx context.Context, client *ent.Client) (map[int64]struct{}, error) {
+	out := map[int64]struct{}{}
+
+	colIDs, err := client.CollectionEntry.Query().IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query collection ids: %w", err)
 	}
-	out = out[opts.Offset:]
-	if len(out) > limit {
-		out = out[:limit]
+	for _, id := range colIDs {
+		out[id] = struct{}{}
+	}
+	wantsIDs, err := client.WantsEntry.Query().IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query wants ids: %w", err)
+	}
+	for _, id := range wantsIDs {
+		out[id] = struct{}{}
+	}
+	var versionRecIDs []int64
+	if err = client.RecordingVersion.Query().
+		Select(recordingversion.FieldRecordingID).
+		Scan(ctx, &versionRecIDs); err != nil {
+		return nil, fmt.Errorf("query recording_version recording ids: %w", err)
+	}
+	for _, id := range versionRecIDs {
+		out[id] = struct{}{}
 	}
 	return out, nil
 }

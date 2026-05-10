@@ -46,20 +46,20 @@ func TestImageChoiceFallbacks(t *testing.T) {
 func TestSetAndGetImageChoice(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	const rid int64 = 90100222
 	// FK constraint requires the parent recording row.
-	_, err = db.ExecContext(t.Context(),
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, 1, "Test Show")
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(),
-		`INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		 VALUES (?, ?, ?, ?, ?)`,
-		rid, 1, "Broadway", "2009-12-01", "{}")
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(1).SetName("Test Show").Exec(t.Context()))
+	require.NoError(t, db.Recording.Create().
+		SetID(rid).
+		SetShowID(1).
+		SetTour("Broadway").
+		SetDateFull("2009-12-01").
+		SetRawJSON("{}").
+		Exec(t.Context()))
 
 	choice, err := storage.GetImageChoice(t.Context(), db, rid)
 	require.NoError(t, err)

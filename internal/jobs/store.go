@@ -2,61 +2,66 @@ package jobs
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/rs/zerolog/log"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/jobrun"
+	"github.com/nicolerenee/promptbook/internal/ent/jobstate"
 )
 
-// Store wraps the job_runs and job_state tables. Every Runner
-// state transition writes through Store so an unexpected crash leaves
-// the on-disk record honest: a row marked StatusRunning at the time
-// of the crash stays StatusRunning after restart and the operator can
-// spot stuck jobs in the UI.
+// Store wraps the job_runs and job_state tables. Every Runner state
+// transition writes through Store so an unexpected crash leaves the
+// on-disk record honest: a row marked StatusRunning at the time of the
+// crash stays StatusRunning after restart and the operator can spot
+// stuck jobs in the UI.
 //
-// Store is safe for concurrent use because the underlying *sql.DB
-// pool is single-connection (see internal/storage.Open) — SQLite
-// serializes writes for us.
+// Store is safe for concurrent use because the underlying *ent.Client
+// is — SQLite serializes writes for us under WAL.
 type Store struct {
-	db *sql.DB
+	db *ent.Client
 }
 
-// NewStore wraps db. db must already have the migrations from
-// 00008_jobs.sql applied.
-func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+// NewStore wraps client. The underlying connection must already have
+// the migrations from 00008_jobs.sql applied (storage.OpenEnt does
+// that).
+func NewStore(client *ent.Client) *Store {
+	return &Store{db: client}
 }
 
-// InsertRun persists a freshly-queued Run and returns its assigned
-// ID. The caller is expected to update *r.ID with the returned value
-// before passing the pointer down to the worker pool. Args is
-// encoded as canonical JSON; nil/empty Args writes the empty string
-// so the no-args path is visually distinct in the database.
+// InsertRun persists a freshly-queued Run and returns its assigned ID.
+// The caller is expected to update *r.ID with the returned value
+// before passing the pointer down to the worker pool. Args is encoded
+// as canonical JSON; nil/empty Args writes the empty string so the
+// no-args path is visually distinct in the database.
 func (s *Store) InsertRun(ctx context.Context, r *Run) (int64, error) {
 	argsJSON := canonicalArgs(r.Args)
-	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO job_runs (job_name, queued_at, status, trigger, error, args)
-		VALUES (?, ?, ?, ?, '', ?)
-	`, r.JobName, r.QueuedAt, string(r.Status), string(r.Trigger), argsJSON)
+	row, err := s.db.JobRun.Create().
+		SetJobName(r.JobName).
+		SetQueuedAt(r.QueuedAt).
+		SetStatus(string(r.Status)).
+		SetTrigger(string(r.Trigger)).
+		SetError("").
+		SetArgs(argsJSON).
+		Save(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("insert job_run: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("last insert id: %w", err)
-	}
-	return id, nil
+	return int64(row.ID), nil
 }
 
 // MarkStarted bumps a Run from queued → running and records when the
 // worker picked it up.
 func (s *Store) MarkStarted(ctx context.Context, runID int64, startedAt time.Time) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE job_runs SET started_at = ?, status = ? WHERE id = ?
-	`, startedAt, string(StatusRunning), runID)
+	_, err := s.db.JobRun.UpdateOneID(int(runID)).
+		SetStartedAt(startedAt).
+		SetStatus(string(StatusRunning)).
+		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("mark started: %w", err)
 	}
@@ -72,15 +77,17 @@ func (s *Store) MarkEnded(
 	jobName string, startedAt, endedAt time.Time,
 	status Status, errText string,
 ) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err = tx.ExecContext(ctx, `
-		UPDATE job_runs SET ended_at = ?, status = ?, error = ? WHERE id = ?
-	`, endedAt, string(status), errText, runID); err != nil {
+	if _, err = tx.JobRun.UpdateOneID(int(runID)).
+		SetEndedAt(endedAt).
+		SetStatus(string(status)).
+		SetError(errText).
+		Save(ctx); err != nil {
 		return fmt.Errorf("mark ended: %w", err)
 	}
 
@@ -88,17 +95,20 @@ func (s *Store) MarkEnded(
 	if !startedAt.IsZero() {
 		durMs = endedAt.Sub(startedAt).Milliseconds()
 	}
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO job_state (
-			job_name, last_started_at, last_ended_at,
-			last_duration_ms, last_status
-		) VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(job_name) DO UPDATE SET
-			last_started_at  = excluded.last_started_at,
-			last_ended_at    = excluded.last_ended_at,
-			last_duration_ms = excluded.last_duration_ms,
-			last_status      = excluded.last_status
-	`, jobName, startedAt, endedAt, durMs, string(status)); err != nil {
+	if err = tx.JobState.Create().
+		SetID(jobName).
+		SetLastStartedAt(startedAt).
+		SetLastEndedAt(endedAt).
+		SetLastDurationMs(int(durMs)).
+		SetLastStatus(string(status)).
+		OnConflictColumns(jobstate.FieldID).
+		Update(func(u *ent.JobStateUpsert) {
+			u.UpdateLastStartedAt()
+			u.UpdateLastEndedAt()
+			u.UpdateLastDurationMs()
+			u.UpdateLastStatus()
+		}).
+		Exec(ctx); err != nil {
 		return fmt.Errorf("upsert job_state: %w", err)
 	}
 
@@ -108,42 +118,31 @@ func (s *Store) MarkEnded(
 	return nil
 }
 
-// loadState pulls the persisted row for jobName. ErrNoState is
-// returned when the row does not exist, so callers can distinguish
-// "first ever run" from "row corrupt". The return value carries
-// unexported fields because callers inside this package read them
-// directly; outside the package the Runner's ScheduledView covers
-// the read needs.
+// loadState pulls the persisted row for jobName. ErrNoState is returned
+// when the row does not exist, so callers can distinguish "first ever
+// run" from "row corrupt".
 func (s *Store) loadState(ctx context.Context, jobName string) (jobState, error) {
-	var (
-		st                 jobState
-		startedAt, endedAt sql.NullTime
-		durationMs         sql.NullInt64
-		lastStatus         sql.NullString
-	)
-	err := s.db.QueryRowContext(ctx, `
-		SELECT last_started_at, last_ended_at, last_duration_ms, last_status
-		FROM job_state WHERE job_name = ?
-	`, jobName).Scan(&startedAt, &endedAt, &durationMs, &lastStatus)
-	if errors.Is(err, sql.ErrNoRows) {
+	row, err := s.db.JobState.Get(ctx, jobName)
+	if ent.IsNotFound(err) {
 		return jobState{}, ErrNoState
 	}
 	if err != nil {
 		return jobState{}, fmt.Errorf("load job_state: %w", err)
 	}
-	if startedAt.Valid {
-		t := startedAt.Time
+	st := jobState{}
+	if row.LastStartedAt != nil {
+		t := *row.LastStartedAt
 		st.lastStartedAt = &t
 	}
-	if endedAt.Valid {
-		t := endedAt.Time
+	if row.LastEndedAt != nil {
+		t := *row.LastEndedAt
 		st.lastEndedAt = &t
 	}
-	if durationMs.Valid {
-		st.lastDuration = time.Duration(durationMs.Int64) * time.Millisecond
+	if row.LastDurationMs != nil {
+		st.lastDuration = time.Duration(*row.LastDurationMs) * time.Millisecond
 	}
-	if lastStatus.Valid {
-		st.lastStatus = Status(lastStatus.String)
+	if row.LastStatus != nil {
+		st.lastStatus = Status(*row.LastStatus)
 	}
 	return st, nil
 }
@@ -151,48 +150,37 @@ func (s *Store) loadState(ctx context.Context, jobName string) (jobState, error)
 // ListRecent returns the newest limit Runs across every job, ordered
 // queued_at desc. The Runner's REST handler uses it to populate the
 // /jobs Queue section; limits are bounded by the caller. Args is
-// decoded from the JSON column; an invalid blob is logged and
-// surfaced as nil so a corrupt row doesn't poison the whole list.
+// decoded from the JSON column; an invalid blob is logged and surfaced
+// as nil so a corrupt row doesn't poison the whole list.
 func (s *Store) ListRecent(ctx context.Context, limit int) ([]Run, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, job_name, queued_at, started_at, ended_at,
-		       status, COALESCE(error, ''), trigger, COALESCE(args, '')
-		FROM job_runs
-		ORDER BY queued_at DESC, id DESC
-		LIMIT ?
-	`, limit)
+	rows, err := s.db.JobRun.Query().
+		Order(
+			jobrun.ByQueuedAt(entsql.OrderDesc()),
+			jobrun.ByID(entsql.OrderDesc()),
+		).
+		Limit(limit).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list recent runs: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make([]Run, 0)
-	for rows.Next() {
-		var (
-			r                  Run
-			startedAt, endedAt sql.NullTime
-			status, trigger    string
-			argsJSON           string
-		)
-		if scanErr := rows.Scan(
-			&r.ID, &r.JobName, &r.QueuedAt,
-			&startedAt, &endedAt, &status, &r.Error, &trigger, &argsJSON,
-		); scanErr != nil {
-			return nil, fmt.Errorf("scan run row: %w", scanErr)
+	out := make([]Run, 0, len(rows))
+	for _, r := range rows {
+		run := Run{
+			ID:       int64(r.ID),
+			JobName:  r.JobName,
+			QueuedAt: r.QueuedAt,
+			Status:   Status(r.Status),
+			Trigger:  Trigger(r.Trigger),
+			Error:    r.Error,
 		}
-		if startedAt.Valid {
-			r.StartedAt = startedAt.Time
+		if r.StartedAt != nil {
+			run.StartedAt = *r.StartedAt
 		}
-		if endedAt.Valid {
-			r.EndedAt = endedAt.Time
+		if r.EndedAt != nil {
+			run.EndedAt = *r.EndedAt
 		}
-		r.Status = Status(status)
-		r.Trigger = Trigger(trigger)
-		r.Args = decodeArgs(argsJSON, r.ID)
-		out = append(out, r)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate run rows: %w", rerr)
+		run.Args = decodeArgs(r.Args, run.ID)
+		out = append(out, run)
 	}
 	return out, nil
 }

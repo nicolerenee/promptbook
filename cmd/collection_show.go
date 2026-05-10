@@ -34,7 +34,7 @@ func runCollectionShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	db, err := storage.Open(ctx, appConfig.Storage.DatabasePath)
+	_, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}

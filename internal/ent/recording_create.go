@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
@@ -21,6 +22,7 @@ type RecordingCreate struct {
 	config
 	mutation *RecordingMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetShowID sets the "show_id" field.
@@ -796,6 +798,7 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 		_node = &Recording{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(recording.Table, sqlgraph.NewFieldSpec(recording.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -984,11 +987,1104 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Recording.Create().
+//		SetShowID(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.RecordingUpsert) {
+//			SetShowID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *RecordingCreate) OnConflict(opts ...sql.ConflictOption) *RecordingUpsertOne {
+	_c.conflict = opts
+	return &RecordingUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Recording.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *RecordingCreate) OnConflictColumns(columns ...string) *RecordingUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &RecordingUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// RecordingUpsertOne is the builder for "upsert"-ing
+	//  one Recording node.
+	RecordingUpsertOne struct {
+		create *RecordingCreate
+	}
+
+	// RecordingUpsert is the "OnConflict" setter.
+	RecordingUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetShowID sets the "show_id" field.
+func (u *RecordingUpsert) SetShowID(v int64) *RecordingUpsert {
+	u.Set(recording.FieldShowID, v)
+	return u
+}
+
+// UpdateShowID sets the "show_id" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateShowID() *RecordingUpsert {
+	u.SetExcluded(recording.FieldShowID)
+	return u
+}
+
+// SetTour sets the "tour" field.
+func (u *RecordingUpsert) SetTour(v string) *RecordingUpsert {
+	u.Set(recording.FieldTour, v)
+	return u
+}
+
+// UpdateTour sets the "tour" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateTour() *RecordingUpsert {
+	u.SetExcluded(recording.FieldTour)
+	return u
+}
+
+// SetDateFull sets the "date_full" field.
+func (u *RecordingUpsert) SetDateFull(v string) *RecordingUpsert {
+	u.Set(recording.FieldDateFull, v)
+	return u
+}
+
+// UpdateDateFull sets the "date_full" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateDateFull() *RecordingUpsert {
+	u.SetExcluded(recording.FieldDateFull)
+	return u
+}
+
+// SetDateMonthKnown sets the "date_month_known" field.
+func (u *RecordingUpsert) SetDateMonthKnown(v bool) *RecordingUpsert {
+	u.Set(recording.FieldDateMonthKnown, v)
+	return u
+}
+
+// UpdateDateMonthKnown sets the "date_month_known" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateDateMonthKnown() *RecordingUpsert {
+	u.SetExcluded(recording.FieldDateMonthKnown)
+	return u
+}
+
+// SetDateDayKnown sets the "date_day_known" field.
+func (u *RecordingUpsert) SetDateDayKnown(v bool) *RecordingUpsert {
+	u.Set(recording.FieldDateDayKnown, v)
+	return u
+}
+
+// UpdateDateDayKnown sets the "date_day_known" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateDateDayKnown() *RecordingUpsert {
+	u.SetExcluded(recording.FieldDateDayKnown)
+	return u
+}
+
+// SetDateVariant sets the "date_variant" field.
+func (u *RecordingUpsert) SetDateVariant(v string) *RecordingUpsert {
+	u.Set(recording.FieldDateVariant, v)
+	return u
+}
+
+// UpdateDateVariant sets the "date_variant" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateDateVariant() *RecordingUpsert {
+	u.SetExcluded(recording.FieldDateVariant)
+	return u
+}
+
+// ClearDateVariant clears the value of the "date_variant" field.
+func (u *RecordingUpsert) ClearDateVariant() *RecordingUpsert {
+	u.SetNull(recording.FieldDateVariant)
+	return u
+}
+
+// SetDateTime sets the "date_time" field.
+func (u *RecordingUpsert) SetDateTime(v string) *RecordingUpsert {
+	u.Set(recording.FieldDateTime, v)
+	return u
+}
+
+// UpdateDateTime sets the "date_time" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateDateTime() *RecordingUpsert {
+	u.SetExcluded(recording.FieldDateTime)
+	return u
+}
+
+// SetMaster sets the "master" field.
+func (u *RecordingUpsert) SetMaster(v string) *RecordingUpsert {
+	u.Set(recording.FieldMaster, v)
+	return u
+}
+
+// UpdateMaster sets the "master" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateMaster() *RecordingUpsert {
+	u.SetExcluded(recording.FieldMaster)
+	return u
+}
+
+// SetNftDate sets the "nft_date" field.
+func (u *RecordingUpsert) SetNftDate(v string) *RecordingUpsert {
+	u.Set(recording.FieldNftDate, v)
+	return u
+}
+
+// UpdateNftDate sets the "nft_date" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateNftDate() *RecordingUpsert {
+	u.SetExcluded(recording.FieldNftDate)
+	return u
+}
+
+// ClearNftDate clears the value of the "nft_date" field.
+func (u *RecordingUpsert) ClearNftDate() *RecordingUpsert {
+	u.SetNull(recording.FieldNftDate)
+	return u
+}
+
+// SetNftForever sets the "nft_forever" field.
+func (u *RecordingUpsert) SetNftForever(v bool) *RecordingUpsert {
+	u.Set(recording.FieldNftForever, v)
+	return u
+}
+
+// UpdateNftForever sets the "nft_forever" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateNftForever() *RecordingUpsert {
+	u.SetExcluded(recording.FieldNftForever)
+	return u
+}
+
+// SetNotes sets the "notes" field.
+func (u *RecordingUpsert) SetNotes(v string) *RecordingUpsert {
+	u.Set(recording.FieldNotes, v)
+	return u
+}
+
+// UpdateNotes sets the "notes" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateNotes() *RecordingUpsert {
+	u.SetExcluded(recording.FieldNotes)
+	return u
+}
+
+// SetMasterNotes sets the "master_notes" field.
+func (u *RecordingUpsert) SetMasterNotes(v string) *RecordingUpsert {
+	u.Set(recording.FieldMasterNotes, v)
+	return u
+}
+
+// UpdateMasterNotes sets the "master_notes" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateMasterNotes() *RecordingUpsert {
+	u.SetExcluded(recording.FieldMasterNotes)
+	return u
+}
+
+// ClearMasterNotes clears the value of the "master_notes" field.
+func (u *RecordingUpsert) ClearMasterNotes() *RecordingUpsert {
+	u.SetNull(recording.FieldMasterNotes)
+	return u
+}
+
+// SetReleaseFormat sets the "release_format" field.
+func (u *RecordingUpsert) SetReleaseFormat(v string) *RecordingUpsert {
+	u.Set(recording.FieldReleaseFormat, v)
+	return u
+}
+
+// UpdateReleaseFormat sets the "release_format" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateReleaseFormat() *RecordingUpsert {
+	u.SetExcluded(recording.FieldReleaseFormat)
+	return u
+}
+
+// ClearReleaseFormat clears the value of the "release_format" field.
+func (u *RecordingUpsert) ClearReleaseFormat() *RecordingUpsert {
+	u.SetNull(recording.FieldReleaseFormat)
+	return u
+}
+
+// SetVenue sets the "venue" field.
+func (u *RecordingUpsert) SetVenue(v string) *RecordingUpsert {
+	u.Set(recording.FieldVenue, v)
+	return u
+}
+
+// UpdateVenue sets the "venue" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateVenue() *RecordingUpsert {
+	u.SetExcluded(recording.FieldVenue)
+	return u
+}
+
+// SetCity sets the "city" field.
+func (u *RecordingUpsert) SetCity(v string) *RecordingUpsert {
+	u.Set(recording.FieldCity, v)
+	return u
+}
+
+// UpdateCity sets the "city" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateCity() *RecordingUpsert {
+	u.SetExcluded(recording.FieldCity)
+	return u
+}
+
+// SetMediaType sets the "media_type" field.
+func (u *RecordingUpsert) SetMediaType(v string) *RecordingUpsert {
+	u.Set(recording.FieldMediaType, v)
+	return u
+}
+
+// UpdateMediaType sets the "media_type" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateMediaType() *RecordingUpsert {
+	u.SetExcluded(recording.FieldMediaType)
+	return u
+}
+
+// SetRecordingType sets the "recording_type" field.
+func (u *RecordingUpsert) SetRecordingType(v string) *RecordingUpsert {
+	u.Set(recording.FieldRecordingType, v)
+	return u
+}
+
+// UpdateRecordingType sets the "recording_type" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateRecordingType() *RecordingUpsert {
+	u.SetExcluded(recording.FieldRecordingType)
+	return u
+}
+
+// SetAmountRecorded sets the "amount_recorded" field.
+func (u *RecordingUpsert) SetAmountRecorded(v string) *RecordingUpsert {
+	u.Set(recording.FieldAmountRecorded, v)
+	return u
+}
+
+// UpdateAmountRecorded sets the "amount_recorded" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateAmountRecorded() *RecordingUpsert {
+	u.SetExcluded(recording.FieldAmountRecorded)
+	return u
+}
+
+// SetGiftingStatus sets the "gifting_status" field.
+func (u *RecordingUpsert) SetGiftingStatus(v string) *RecordingUpsert {
+	u.Set(recording.FieldGiftingStatus, v)
+	return u
+}
+
+// UpdateGiftingStatus sets the "gifting_status" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateGiftingStatus() *RecordingUpsert {
+	u.SetExcluded(recording.FieldGiftingStatus)
+	return u
+}
+
+// SetLimitedStatus sets the "limited_status" field.
+func (u *RecordingUpsert) SetLimitedStatus(v string) *RecordingUpsert {
+	u.Set(recording.FieldLimitedStatus, v)
+	return u
+}
+
+// UpdateLimitedStatus sets the "limited_status" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateLimitedStatus() *RecordingUpsert {
+	u.SetExcluded(recording.FieldLimitedStatus)
+	return u
+}
+
+// SetIsOpening sets the "is_opening" field.
+func (u *RecordingUpsert) SetIsOpening(v bool) *RecordingUpsert {
+	u.Set(recording.FieldIsOpening, v)
+	return u
+}
+
+// UpdateIsOpening sets the "is_opening" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateIsOpening() *RecordingUpsert {
+	u.SetExcluded(recording.FieldIsOpening)
+	return u
+}
+
+// SetIsClosing sets the "is_closing" field.
+func (u *RecordingUpsert) SetIsClosing(v bool) *RecordingUpsert {
+	u.Set(recording.FieldIsClosing, v)
+	return u
+}
+
+// UpdateIsClosing sets the "is_closing" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateIsClosing() *RecordingUpsert {
+	u.SetExcluded(recording.FieldIsClosing)
+	return u
+}
+
+// SetIsPreview sets the "is_preview" field.
+func (u *RecordingUpsert) SetIsPreview(v bool) *RecordingUpsert {
+	u.Set(recording.FieldIsPreview, v)
+	return u
+}
+
+// UpdateIsPreview sets the "is_preview" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateIsPreview() *RecordingUpsert {
+	u.SetExcluded(recording.FieldIsPreview)
+	return u
+}
+
+// SetIsConcert sets the "is_concert" field.
+func (u *RecordingUpsert) SetIsConcert(v bool) *RecordingUpsert {
+	u.Set(recording.FieldIsConcert, v)
+	return u
+}
+
+// UpdateIsConcert sets the "is_concert" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateIsConcert() *RecordingUpsert {
+	u.SetExcluded(recording.FieldIsConcert)
+	return u
+}
+
+// SetIsNfs sets the "is_nfs" field.
+func (u *RecordingUpsert) SetIsNfs(v bool) *RecordingUpsert {
+	u.Set(recording.FieldIsNfs, v)
+	return u
+}
+
+// UpdateIsNfs sets the "is_nfs" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateIsNfs() *RecordingUpsert {
+	u.SetExcluded(recording.FieldIsNfs)
+	return u
+}
+
+// SetIsFavourite sets the "is_favourite" field.
+func (u *RecordingUpsert) SetIsFavourite(v bool) *RecordingUpsert {
+	u.Set(recording.FieldIsFavourite, v)
+	return u
+}
+
+// UpdateIsFavourite sets the "is_favourite" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateIsFavourite() *RecordingUpsert {
+	u.SetExcluded(recording.FieldIsFavourite)
+	return u
+}
+
+// SetHasScreenshots sets the "has_screenshots" field.
+func (u *RecordingUpsert) SetHasScreenshots(v bool) *RecordingUpsert {
+	u.Set(recording.FieldHasScreenshots, v)
+	return u
+}
+
+// UpdateHasScreenshots sets the "has_screenshots" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateHasScreenshots() *RecordingUpsert {
+	u.SetExcluded(recording.FieldHasScreenshots)
+	return u
+}
+
+// SetHasSubtitles sets the "has_subtitles" field.
+func (u *RecordingUpsert) SetHasSubtitles(v bool) *RecordingUpsert {
+	u.Set(recording.FieldHasSubtitles, v)
+	return u
+}
+
+// UpdateHasSubtitles sets the "has_subtitles" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateHasSubtitles() *RecordingUpsert {
+	u.SetExcluded(recording.FieldHasSubtitles)
+	return u
+}
+
+// SetBootCampRecommended sets the "boot_camp_recommended" field.
+func (u *RecordingUpsert) SetBootCampRecommended(v bool) *RecordingUpsert {
+	u.Set(recording.FieldBootCampRecommended, v)
+	return u
+}
+
+// UpdateBootCampRecommended sets the "boot_camp_recommended" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateBootCampRecommended() *RecordingUpsert {
+	u.SetExcluded(recording.FieldBootCampRecommended)
+	return u
+}
+
+// SetOwnersCount sets the "owners_count" field.
+func (u *RecordingUpsert) SetOwnersCount(v int) *RecordingUpsert {
+	u.Set(recording.FieldOwnersCount, v)
+	return u
+}
+
+// UpdateOwnersCount sets the "owners_count" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateOwnersCount() *RecordingUpsert {
+	u.SetExcluded(recording.FieldOwnersCount)
+	return u
+}
+
+// AddOwnersCount adds v to the "owners_count" field.
+func (u *RecordingUpsert) AddOwnersCount(v int) *RecordingUpsert {
+	u.Add(recording.FieldOwnersCount, v)
+	return u
+}
+
+// SetWantersCount sets the "wanters_count" field.
+func (u *RecordingUpsert) SetWantersCount(v int) *RecordingUpsert {
+	u.Set(recording.FieldWantersCount, v)
+	return u
+}
+
+// UpdateWantersCount sets the "wanters_count" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateWantersCount() *RecordingUpsert {
+	u.SetExcluded(recording.FieldWantersCount)
+	return u
+}
+
+// AddWantersCount adds v to the "wanters_count" field.
+func (u *RecordingUpsert) AddWantersCount(v int) *RecordingUpsert {
+	u.Add(recording.FieldWantersCount, v)
+	return u
+}
+
+// SetLastUpdated sets the "last_updated" field.
+func (u *RecordingUpsert) SetLastUpdated(v string) *RecordingUpsert {
+	u.Set(recording.FieldLastUpdated, v)
+	return u
+}
+
+// UpdateLastUpdated sets the "last_updated" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateLastUpdated() *RecordingUpsert {
+	u.SetExcluded(recording.FieldLastUpdated)
+	return u
+}
+
+// SetRawJSON sets the "raw_json" field.
+func (u *RecordingUpsert) SetRawJSON(v string) *RecordingUpsert {
+	u.Set(recording.FieldRawJSON, v)
+	return u
+}
+
+// UpdateRawJSON sets the "raw_json" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateRawJSON() *RecordingUpsert {
+	u.SetExcluded(recording.FieldRawJSON)
+	return u
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *RecordingUpsert) SetLastSeenAt(v time.Time) *RecordingUpsert {
+	u.Set(recording.FieldLastSeenAt, v)
+	return u
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateLastSeenAt() *RecordingUpsert {
+	u.SetExcluded(recording.FieldLastSeenAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.Recording.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(recording.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *RecordingUpsertOne) UpdateNewValues() *RecordingUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(recording.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Recording.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *RecordingUpsertOne) Ignore() *RecordingUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *RecordingUpsertOne) DoNothing() *RecordingUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the RecordingCreate.OnConflict
+// documentation for more info.
+func (u *RecordingUpsertOne) Update(set func(*RecordingUpsert)) *RecordingUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&RecordingUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetShowID sets the "show_id" field.
+func (u *RecordingUpsertOne) SetShowID(v int64) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetShowID(v)
+	})
+}
+
+// UpdateShowID sets the "show_id" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateShowID() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateShowID()
+	})
+}
+
+// SetTour sets the "tour" field.
+func (u *RecordingUpsertOne) SetTour(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetTour(v)
+	})
+}
+
+// UpdateTour sets the "tour" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateTour() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateTour()
+	})
+}
+
+// SetDateFull sets the "date_full" field.
+func (u *RecordingUpsertOne) SetDateFull(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateFull(v)
+	})
+}
+
+// UpdateDateFull sets the "date_full" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateDateFull() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateFull()
+	})
+}
+
+// SetDateMonthKnown sets the "date_month_known" field.
+func (u *RecordingUpsertOne) SetDateMonthKnown(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateMonthKnown(v)
+	})
+}
+
+// UpdateDateMonthKnown sets the "date_month_known" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateDateMonthKnown() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateMonthKnown()
+	})
+}
+
+// SetDateDayKnown sets the "date_day_known" field.
+func (u *RecordingUpsertOne) SetDateDayKnown(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateDayKnown(v)
+	})
+}
+
+// UpdateDateDayKnown sets the "date_day_known" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateDateDayKnown() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateDayKnown()
+	})
+}
+
+// SetDateVariant sets the "date_variant" field.
+func (u *RecordingUpsertOne) SetDateVariant(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateVariant(v)
+	})
+}
+
+// UpdateDateVariant sets the "date_variant" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateDateVariant() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateVariant()
+	})
+}
+
+// ClearDateVariant clears the value of the "date_variant" field.
+func (u *RecordingUpsertOne) ClearDateVariant() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearDateVariant()
+	})
+}
+
+// SetDateTime sets the "date_time" field.
+func (u *RecordingUpsertOne) SetDateTime(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateTime(v)
+	})
+}
+
+// UpdateDateTime sets the "date_time" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateDateTime() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateTime()
+	})
+}
+
+// SetMaster sets the "master" field.
+func (u *RecordingUpsertOne) SetMaster(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetMaster(v)
+	})
+}
+
+// UpdateMaster sets the "master" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateMaster() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateMaster()
+	})
+}
+
+// SetNftDate sets the "nft_date" field.
+func (u *RecordingUpsertOne) SetNftDate(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetNftDate(v)
+	})
+}
+
+// UpdateNftDate sets the "nft_date" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateNftDate() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateNftDate()
+	})
+}
+
+// ClearNftDate clears the value of the "nft_date" field.
+func (u *RecordingUpsertOne) ClearNftDate() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearNftDate()
+	})
+}
+
+// SetNftForever sets the "nft_forever" field.
+func (u *RecordingUpsertOne) SetNftForever(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetNftForever(v)
+	})
+}
+
+// UpdateNftForever sets the "nft_forever" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateNftForever() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateNftForever()
+	})
+}
+
+// SetNotes sets the "notes" field.
+func (u *RecordingUpsertOne) SetNotes(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetNotes(v)
+	})
+}
+
+// UpdateNotes sets the "notes" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateNotes() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateNotes()
+	})
+}
+
+// SetMasterNotes sets the "master_notes" field.
+func (u *RecordingUpsertOne) SetMasterNotes(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetMasterNotes(v)
+	})
+}
+
+// UpdateMasterNotes sets the "master_notes" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateMasterNotes() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateMasterNotes()
+	})
+}
+
+// ClearMasterNotes clears the value of the "master_notes" field.
+func (u *RecordingUpsertOne) ClearMasterNotes() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearMasterNotes()
+	})
+}
+
+// SetReleaseFormat sets the "release_format" field.
+func (u *RecordingUpsertOne) SetReleaseFormat(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetReleaseFormat(v)
+	})
+}
+
+// UpdateReleaseFormat sets the "release_format" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateReleaseFormat() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateReleaseFormat()
+	})
+}
+
+// ClearReleaseFormat clears the value of the "release_format" field.
+func (u *RecordingUpsertOne) ClearReleaseFormat() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearReleaseFormat()
+	})
+}
+
+// SetVenue sets the "venue" field.
+func (u *RecordingUpsertOne) SetVenue(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetVenue(v)
+	})
+}
+
+// UpdateVenue sets the "venue" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateVenue() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateVenue()
+	})
+}
+
+// SetCity sets the "city" field.
+func (u *RecordingUpsertOne) SetCity(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetCity(v)
+	})
+}
+
+// UpdateCity sets the "city" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateCity() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateCity()
+	})
+}
+
+// SetMediaType sets the "media_type" field.
+func (u *RecordingUpsertOne) SetMediaType(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetMediaType(v)
+	})
+}
+
+// UpdateMediaType sets the "media_type" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateMediaType() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateMediaType()
+	})
+}
+
+// SetRecordingType sets the "recording_type" field.
+func (u *RecordingUpsertOne) SetRecordingType(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetRecordingType(v)
+	})
+}
+
+// UpdateRecordingType sets the "recording_type" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateRecordingType() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateRecordingType()
+	})
+}
+
+// SetAmountRecorded sets the "amount_recorded" field.
+func (u *RecordingUpsertOne) SetAmountRecorded(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetAmountRecorded(v)
+	})
+}
+
+// UpdateAmountRecorded sets the "amount_recorded" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateAmountRecorded() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateAmountRecorded()
+	})
+}
+
+// SetGiftingStatus sets the "gifting_status" field.
+func (u *RecordingUpsertOne) SetGiftingStatus(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetGiftingStatus(v)
+	})
+}
+
+// UpdateGiftingStatus sets the "gifting_status" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateGiftingStatus() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateGiftingStatus()
+	})
+}
+
+// SetLimitedStatus sets the "limited_status" field.
+func (u *RecordingUpsertOne) SetLimitedStatus(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetLimitedStatus(v)
+	})
+}
+
+// UpdateLimitedStatus sets the "limited_status" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateLimitedStatus() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateLimitedStatus()
+	})
+}
+
+// SetIsOpening sets the "is_opening" field.
+func (u *RecordingUpsertOne) SetIsOpening(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsOpening(v)
+	})
+}
+
+// UpdateIsOpening sets the "is_opening" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateIsOpening() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsOpening()
+	})
+}
+
+// SetIsClosing sets the "is_closing" field.
+func (u *RecordingUpsertOne) SetIsClosing(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsClosing(v)
+	})
+}
+
+// UpdateIsClosing sets the "is_closing" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateIsClosing() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsClosing()
+	})
+}
+
+// SetIsPreview sets the "is_preview" field.
+func (u *RecordingUpsertOne) SetIsPreview(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsPreview(v)
+	})
+}
+
+// UpdateIsPreview sets the "is_preview" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateIsPreview() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsPreview()
+	})
+}
+
+// SetIsConcert sets the "is_concert" field.
+func (u *RecordingUpsertOne) SetIsConcert(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsConcert(v)
+	})
+}
+
+// UpdateIsConcert sets the "is_concert" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateIsConcert() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsConcert()
+	})
+}
+
+// SetIsNfs sets the "is_nfs" field.
+func (u *RecordingUpsertOne) SetIsNfs(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsNfs(v)
+	})
+}
+
+// UpdateIsNfs sets the "is_nfs" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateIsNfs() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsNfs()
+	})
+}
+
+// SetIsFavourite sets the "is_favourite" field.
+func (u *RecordingUpsertOne) SetIsFavourite(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsFavourite(v)
+	})
+}
+
+// UpdateIsFavourite sets the "is_favourite" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateIsFavourite() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsFavourite()
+	})
+}
+
+// SetHasScreenshots sets the "has_screenshots" field.
+func (u *RecordingUpsertOne) SetHasScreenshots(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetHasScreenshots(v)
+	})
+}
+
+// UpdateHasScreenshots sets the "has_screenshots" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateHasScreenshots() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateHasScreenshots()
+	})
+}
+
+// SetHasSubtitles sets the "has_subtitles" field.
+func (u *RecordingUpsertOne) SetHasSubtitles(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetHasSubtitles(v)
+	})
+}
+
+// UpdateHasSubtitles sets the "has_subtitles" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateHasSubtitles() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateHasSubtitles()
+	})
+}
+
+// SetBootCampRecommended sets the "boot_camp_recommended" field.
+func (u *RecordingUpsertOne) SetBootCampRecommended(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetBootCampRecommended(v)
+	})
+}
+
+// UpdateBootCampRecommended sets the "boot_camp_recommended" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateBootCampRecommended() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateBootCampRecommended()
+	})
+}
+
+// SetOwnersCount sets the "owners_count" field.
+func (u *RecordingUpsertOne) SetOwnersCount(v int) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetOwnersCount(v)
+	})
+}
+
+// AddOwnersCount adds v to the "owners_count" field.
+func (u *RecordingUpsertOne) AddOwnersCount(v int) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.AddOwnersCount(v)
+	})
+}
+
+// UpdateOwnersCount sets the "owners_count" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateOwnersCount() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateOwnersCount()
+	})
+}
+
+// SetWantersCount sets the "wanters_count" field.
+func (u *RecordingUpsertOne) SetWantersCount(v int) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetWantersCount(v)
+	})
+}
+
+// AddWantersCount adds v to the "wanters_count" field.
+func (u *RecordingUpsertOne) AddWantersCount(v int) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.AddWantersCount(v)
+	})
+}
+
+// UpdateWantersCount sets the "wanters_count" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateWantersCount() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateWantersCount()
+	})
+}
+
+// SetLastUpdated sets the "last_updated" field.
+func (u *RecordingUpsertOne) SetLastUpdated(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetLastUpdated(v)
+	})
+}
+
+// UpdateLastUpdated sets the "last_updated" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateLastUpdated() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateLastUpdated()
+	})
+}
+
+// SetRawJSON sets the "raw_json" field.
+func (u *RecordingUpsertOne) SetRawJSON(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetRawJSON(v)
+	})
+}
+
+// UpdateRawJSON sets the "raw_json" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateRawJSON() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateRawJSON()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *RecordingUpsertOne) SetLastSeenAt(v time.Time) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateLastSeenAt() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *RecordingUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for RecordingCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *RecordingUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *RecordingUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *RecordingUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // RecordingCreateBulk is the builder for creating many Recording entities in bulk.
 type RecordingCreateBulk struct {
 	config
 	err      error
 	builders []*RecordingCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the Recording entities in the database.
@@ -1018,6 +2114,7 @@ func (_c *RecordingCreateBulk) Save(ctx context.Context) ([]*Recording, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -1068,6 +2165,638 @@ func (_c *RecordingCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *RecordingCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Recording.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.RecordingUpsert) {
+//			SetShowID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *RecordingCreateBulk) OnConflict(opts ...sql.ConflictOption) *RecordingUpsertBulk {
+	_c.conflict = opts
+	return &RecordingUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Recording.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *RecordingCreateBulk) OnConflictColumns(columns ...string) *RecordingUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &RecordingUpsertBulk{
+		create: _c,
+	}
+}
+
+// RecordingUpsertBulk is the builder for "upsert"-ing
+// a bulk of Recording nodes.
+type RecordingUpsertBulk struct {
+	create *RecordingCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.Recording.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(recording.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *RecordingUpsertBulk) UpdateNewValues() *RecordingUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(recording.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Recording.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *RecordingUpsertBulk) Ignore() *RecordingUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *RecordingUpsertBulk) DoNothing() *RecordingUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the RecordingCreateBulk.OnConflict
+// documentation for more info.
+func (u *RecordingUpsertBulk) Update(set func(*RecordingUpsert)) *RecordingUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&RecordingUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetShowID sets the "show_id" field.
+func (u *RecordingUpsertBulk) SetShowID(v int64) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetShowID(v)
+	})
+}
+
+// UpdateShowID sets the "show_id" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateShowID() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateShowID()
+	})
+}
+
+// SetTour sets the "tour" field.
+func (u *RecordingUpsertBulk) SetTour(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetTour(v)
+	})
+}
+
+// UpdateTour sets the "tour" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateTour() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateTour()
+	})
+}
+
+// SetDateFull sets the "date_full" field.
+func (u *RecordingUpsertBulk) SetDateFull(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateFull(v)
+	})
+}
+
+// UpdateDateFull sets the "date_full" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateDateFull() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateFull()
+	})
+}
+
+// SetDateMonthKnown sets the "date_month_known" field.
+func (u *RecordingUpsertBulk) SetDateMonthKnown(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateMonthKnown(v)
+	})
+}
+
+// UpdateDateMonthKnown sets the "date_month_known" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateDateMonthKnown() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateMonthKnown()
+	})
+}
+
+// SetDateDayKnown sets the "date_day_known" field.
+func (u *RecordingUpsertBulk) SetDateDayKnown(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateDayKnown(v)
+	})
+}
+
+// UpdateDateDayKnown sets the "date_day_known" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateDateDayKnown() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateDayKnown()
+	})
+}
+
+// SetDateVariant sets the "date_variant" field.
+func (u *RecordingUpsertBulk) SetDateVariant(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateVariant(v)
+	})
+}
+
+// UpdateDateVariant sets the "date_variant" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateDateVariant() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateVariant()
+	})
+}
+
+// ClearDateVariant clears the value of the "date_variant" field.
+func (u *RecordingUpsertBulk) ClearDateVariant() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearDateVariant()
+	})
+}
+
+// SetDateTime sets the "date_time" field.
+func (u *RecordingUpsertBulk) SetDateTime(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetDateTime(v)
+	})
+}
+
+// UpdateDateTime sets the "date_time" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateDateTime() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateDateTime()
+	})
+}
+
+// SetMaster sets the "master" field.
+func (u *RecordingUpsertBulk) SetMaster(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetMaster(v)
+	})
+}
+
+// UpdateMaster sets the "master" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateMaster() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateMaster()
+	})
+}
+
+// SetNftDate sets the "nft_date" field.
+func (u *RecordingUpsertBulk) SetNftDate(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetNftDate(v)
+	})
+}
+
+// UpdateNftDate sets the "nft_date" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateNftDate() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateNftDate()
+	})
+}
+
+// ClearNftDate clears the value of the "nft_date" field.
+func (u *RecordingUpsertBulk) ClearNftDate() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearNftDate()
+	})
+}
+
+// SetNftForever sets the "nft_forever" field.
+func (u *RecordingUpsertBulk) SetNftForever(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetNftForever(v)
+	})
+}
+
+// UpdateNftForever sets the "nft_forever" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateNftForever() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateNftForever()
+	})
+}
+
+// SetNotes sets the "notes" field.
+func (u *RecordingUpsertBulk) SetNotes(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetNotes(v)
+	})
+}
+
+// UpdateNotes sets the "notes" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateNotes() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateNotes()
+	})
+}
+
+// SetMasterNotes sets the "master_notes" field.
+func (u *RecordingUpsertBulk) SetMasterNotes(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetMasterNotes(v)
+	})
+}
+
+// UpdateMasterNotes sets the "master_notes" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateMasterNotes() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateMasterNotes()
+	})
+}
+
+// ClearMasterNotes clears the value of the "master_notes" field.
+func (u *RecordingUpsertBulk) ClearMasterNotes() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearMasterNotes()
+	})
+}
+
+// SetReleaseFormat sets the "release_format" field.
+func (u *RecordingUpsertBulk) SetReleaseFormat(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetReleaseFormat(v)
+	})
+}
+
+// UpdateReleaseFormat sets the "release_format" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateReleaseFormat() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateReleaseFormat()
+	})
+}
+
+// ClearReleaseFormat clears the value of the "release_format" field.
+func (u *RecordingUpsertBulk) ClearReleaseFormat() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.ClearReleaseFormat()
+	})
+}
+
+// SetVenue sets the "venue" field.
+func (u *RecordingUpsertBulk) SetVenue(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetVenue(v)
+	})
+}
+
+// UpdateVenue sets the "venue" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateVenue() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateVenue()
+	})
+}
+
+// SetCity sets the "city" field.
+func (u *RecordingUpsertBulk) SetCity(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetCity(v)
+	})
+}
+
+// UpdateCity sets the "city" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateCity() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateCity()
+	})
+}
+
+// SetMediaType sets the "media_type" field.
+func (u *RecordingUpsertBulk) SetMediaType(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetMediaType(v)
+	})
+}
+
+// UpdateMediaType sets the "media_type" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateMediaType() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateMediaType()
+	})
+}
+
+// SetRecordingType sets the "recording_type" field.
+func (u *RecordingUpsertBulk) SetRecordingType(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetRecordingType(v)
+	})
+}
+
+// UpdateRecordingType sets the "recording_type" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateRecordingType() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateRecordingType()
+	})
+}
+
+// SetAmountRecorded sets the "amount_recorded" field.
+func (u *RecordingUpsertBulk) SetAmountRecorded(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetAmountRecorded(v)
+	})
+}
+
+// UpdateAmountRecorded sets the "amount_recorded" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateAmountRecorded() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateAmountRecorded()
+	})
+}
+
+// SetGiftingStatus sets the "gifting_status" field.
+func (u *RecordingUpsertBulk) SetGiftingStatus(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetGiftingStatus(v)
+	})
+}
+
+// UpdateGiftingStatus sets the "gifting_status" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateGiftingStatus() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateGiftingStatus()
+	})
+}
+
+// SetLimitedStatus sets the "limited_status" field.
+func (u *RecordingUpsertBulk) SetLimitedStatus(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetLimitedStatus(v)
+	})
+}
+
+// UpdateLimitedStatus sets the "limited_status" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateLimitedStatus() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateLimitedStatus()
+	})
+}
+
+// SetIsOpening sets the "is_opening" field.
+func (u *RecordingUpsertBulk) SetIsOpening(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsOpening(v)
+	})
+}
+
+// UpdateIsOpening sets the "is_opening" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateIsOpening() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsOpening()
+	})
+}
+
+// SetIsClosing sets the "is_closing" field.
+func (u *RecordingUpsertBulk) SetIsClosing(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsClosing(v)
+	})
+}
+
+// UpdateIsClosing sets the "is_closing" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateIsClosing() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsClosing()
+	})
+}
+
+// SetIsPreview sets the "is_preview" field.
+func (u *RecordingUpsertBulk) SetIsPreview(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsPreview(v)
+	})
+}
+
+// UpdateIsPreview sets the "is_preview" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateIsPreview() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsPreview()
+	})
+}
+
+// SetIsConcert sets the "is_concert" field.
+func (u *RecordingUpsertBulk) SetIsConcert(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsConcert(v)
+	})
+}
+
+// UpdateIsConcert sets the "is_concert" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateIsConcert() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsConcert()
+	})
+}
+
+// SetIsNfs sets the "is_nfs" field.
+func (u *RecordingUpsertBulk) SetIsNfs(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsNfs(v)
+	})
+}
+
+// UpdateIsNfs sets the "is_nfs" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateIsNfs() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsNfs()
+	})
+}
+
+// SetIsFavourite sets the "is_favourite" field.
+func (u *RecordingUpsertBulk) SetIsFavourite(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetIsFavourite(v)
+	})
+}
+
+// UpdateIsFavourite sets the "is_favourite" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateIsFavourite() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateIsFavourite()
+	})
+}
+
+// SetHasScreenshots sets the "has_screenshots" field.
+func (u *RecordingUpsertBulk) SetHasScreenshots(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetHasScreenshots(v)
+	})
+}
+
+// UpdateHasScreenshots sets the "has_screenshots" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateHasScreenshots() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateHasScreenshots()
+	})
+}
+
+// SetHasSubtitles sets the "has_subtitles" field.
+func (u *RecordingUpsertBulk) SetHasSubtitles(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetHasSubtitles(v)
+	})
+}
+
+// UpdateHasSubtitles sets the "has_subtitles" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateHasSubtitles() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateHasSubtitles()
+	})
+}
+
+// SetBootCampRecommended sets the "boot_camp_recommended" field.
+func (u *RecordingUpsertBulk) SetBootCampRecommended(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetBootCampRecommended(v)
+	})
+}
+
+// UpdateBootCampRecommended sets the "boot_camp_recommended" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateBootCampRecommended() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateBootCampRecommended()
+	})
+}
+
+// SetOwnersCount sets the "owners_count" field.
+func (u *RecordingUpsertBulk) SetOwnersCount(v int) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetOwnersCount(v)
+	})
+}
+
+// AddOwnersCount adds v to the "owners_count" field.
+func (u *RecordingUpsertBulk) AddOwnersCount(v int) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.AddOwnersCount(v)
+	})
+}
+
+// UpdateOwnersCount sets the "owners_count" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateOwnersCount() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateOwnersCount()
+	})
+}
+
+// SetWantersCount sets the "wanters_count" field.
+func (u *RecordingUpsertBulk) SetWantersCount(v int) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetWantersCount(v)
+	})
+}
+
+// AddWantersCount adds v to the "wanters_count" field.
+func (u *RecordingUpsertBulk) AddWantersCount(v int) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.AddWantersCount(v)
+	})
+}
+
+// UpdateWantersCount sets the "wanters_count" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateWantersCount() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateWantersCount()
+	})
+}
+
+// SetLastUpdated sets the "last_updated" field.
+func (u *RecordingUpsertBulk) SetLastUpdated(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetLastUpdated(v)
+	})
+}
+
+// UpdateLastUpdated sets the "last_updated" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateLastUpdated() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateLastUpdated()
+	})
+}
+
+// SetRawJSON sets the "raw_json" field.
+func (u *RecordingUpsertBulk) SetRawJSON(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetRawJSON(v)
+	})
+}
+
+// UpdateRawJSON sets the "raw_json" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateRawJSON() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateRawJSON()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *RecordingUpsertBulk) SetLastSeenAt(v time.Time) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateLastSeenAt() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *RecordingUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the RecordingCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for RecordingCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *RecordingUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

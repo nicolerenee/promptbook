@@ -18,8 +18,9 @@ import (
 // WantsEntryUpdate is the builder for updating WantsEntry entities.
 type WantsEntryUpdate struct {
 	config
-	hooks    []Hook
-	mutation *WantsEntryMutation
+	hooks     []Hook
+	mutation  *WantsEntryMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the WantsEntryUpdate builder.
@@ -74,6 +75,12 @@ func (_u *WantsEntryUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *WantsEntryUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *WantsEntryUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *WantsEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(wantsentry.Table, wantsentry.Columns, sqlgraph.NewFieldSpec(wantsentry.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -86,6 +93,7 @@ func (_u *WantsEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	if value, ok := _u.mutation.LastSyncedAt(); ok {
 		_spec.SetField(wantsentry.FieldLastSyncedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{wantsentry.Label}
@@ -101,9 +109,10 @@ func (_u *WantsEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 // WantsEntryUpdateOne is the builder for updating a single WantsEntry entity.
 type WantsEntryUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *WantsEntryMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *WantsEntryMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetLastSyncedAt sets the "last_synced_at" field.
@@ -165,6 +174,12 @@ func (_u *WantsEntryUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *WantsEntryUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *WantsEntryUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *WantsEntryUpdateOne) sqlSave(ctx context.Context) (_node *WantsEntry, err error) {
 	_spec := sqlgraph.NewUpdateSpec(wantsentry.Table, wantsentry.Columns, sqlgraph.NewFieldSpec(wantsentry.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
@@ -194,6 +209,7 @@ func (_u *WantsEntryUpdateOne) sqlSave(ctx context.Context) (_node *WantsEntry, 
 	if value, ok := _u.mutation.LastSyncedAt(); ok {
 		_spec.SetField(wantsentry.FieldLastSyncedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &WantsEntry{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

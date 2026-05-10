@@ -2,10 +2,14 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
+
+	entsql "entgo.io/ent/dialect/sql"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
 )
 
 // FormatSeparator is the delimiter joining per-version format labels into
@@ -36,34 +40,24 @@ type RecordingVersion struct {
 // recording, largest file first then by insertion order. The order is
 // deliberate: ComputeFormatString relies on it so the canonical format
 // string leads with the highest-quality master.
-func ListVersions(ctx context.Context, db *sql.DB, recordingID int64) ([]RecordingVersion, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT id, recording_id, file_path, file_size_bytes, container,
-		       quality, video_codec, audio_codec, format_label, notes,
-		       added_at, last_seen_at
-		FROM recording_versions
-		WHERE recording_id = ?
-		ORDER BY file_size_bytes DESC, id ASC
-	`, recordingID)
+func ListVersions(
+	ctx context.Context,
+	client *ent.Client,
+	recordingID int64,
+) ([]RecordingVersion, error) {
+	rows, err := client.RecordingVersion.Query().
+		Where(recordingversion.RecordingID(recordingID)).
+		Order(
+			recordingversion.ByFileSizeBytes(entsql.OrderDesc()),
+			recordingversion.ByID(),
+		).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query recording_versions: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	var out []RecordingVersion
-	for rows.Next() {
-		var v RecordingVersion
-		if scanErr := rows.Scan(
-			&v.ID, &v.RecordingID, &v.FilePath, &v.FileSizeBytes,
-			&v.Container, &v.Quality, &v.VideoCodec, &v.AudioCodec,
-			&v.FormatLabel, &v.Notes, &v.AddedAt, &v.LastSeenAt,
-		); scanErr != nil {
-			return nil, fmt.Errorf("scan recording_version row: %w", scanErr)
-		}
-		out = append(out, v)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate recording_versions: %w", err)
+	out := make([]RecordingVersion, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, recordingVersionFromEnt(r))
 	}
 	return out, nil
 }
@@ -72,28 +66,51 @@ func ListVersions(ctx context.Context, db *sql.DB, recordingID int64) ([]Recordi
 // row already exists for (recording_id, file_path). On conflict, every
 // mutable field is overwritten with the incoming values except added_at,
 // which preserves the original insertion timestamp.
-func UpsertVersion(ctx context.Context, db *sql.DB, v RecordingVersion) error {
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO recording_versions (
-			recording_id, file_path, file_size_bytes, container,
-			quality, video_codec, audio_codec, format_label, notes,
-			last_seen_at
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(recording_id, file_path) DO UPDATE SET
-			file_size_bytes = excluded.file_size_bytes,
-			container = excluded.container,
-			quality = excluded.quality,
-			video_codec = excluded.video_codec,
-			audio_codec = excluded.audio_codec,
-			format_label = excluded.format_label,
-			notes = excluded.notes,
-			last_seen_at = excluded.last_seen_at
-	`,
-		v.RecordingID, v.FilePath, v.FileSizeBytes, v.Container,
-		v.Quality, v.VideoCodec, v.AudioCodec, v.FormatLabel, v.Notes,
-		v.lastSeenOrNow(),
-	)
+func UpsertVersion(ctx context.Context, client *ent.Client, v RecordingVersion) error {
+	return upsertVersion(ctx, client.RecordingVersion.Create(), v)
+}
+
+// UpsertVersionTx is the transaction-scoped sibling of UpsertVersion for
+// callers that already hold an *ent.Tx.
+func UpsertVersionTx(ctx context.Context, tx *ent.Tx, v RecordingVersion) error {
+	return upsertVersion(ctx, tx.RecordingVersion.Create(), v)
+}
+
+func upsertVersion(
+	ctx context.Context,
+	c *ent.RecordingVersionCreate,
+	v RecordingVersion,
+) error {
+	// On conflict, refresh every mutable field except added_at — the
+	// original insertion timestamp is part of the row's identity for
+	// audit purposes. UpdateNewValues would clobber it, so we name
+	// each updatable column explicitly.
+	err := c.
+		SetRecordingID(v.RecordingID).
+		SetFilePath(v.FilePath).
+		SetFileSizeBytes(v.FileSizeBytes).
+		SetContainer(v.Container).
+		SetQuality(v.Quality).
+		SetVideoCodec(v.VideoCodec).
+		SetAudioCodec(v.AudioCodec).
+		SetFormatLabel(v.FormatLabel).
+		SetNotes(v.Notes).
+		SetLastSeenAt(v.lastSeenOrNow()).
+		OnConflictColumns(
+			recordingversion.FieldRecordingID,
+			recordingversion.FieldFilePath,
+		).
+		Update(func(u *ent.RecordingVersionUpsert) {
+			u.UpdateFileSizeBytes()
+			u.UpdateContainer()
+			u.UpdateQuality()
+			u.UpdateVideoCodec()
+			u.UpdateAudioCodec()
+			u.UpdateFormatLabel()
+			u.UpdateNotes()
+			u.UpdateLastSeenAt()
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert recording_version: %w", err)
 	}
@@ -102,9 +119,14 @@ func UpsertVersion(ctx context.Context, db *sql.DB, v RecordingVersion) error {
 
 // DeleteVersion removes a single recording_versions row by primary key.
 // Missing rows are not an error — callers reconciling against on-disk
-// state may issue deletes optimistically.
-func DeleteVersion(ctx context.Context, db *sql.DB, id int64) error {
-	if _, err := db.ExecContext(ctx, `DELETE FROM recording_versions WHERE id = ?`, id); err != nil {
+// state may issue deletes optimistically. id is taken as int64 for
+// caller convenience; the ent ID column is a smaller int but the cache
+// would require a billion rows before truncation matters.
+func DeleteVersion(ctx context.Context, client *ent.Client, id int64) error {
+	_, err := client.RecordingVersion.Delete().
+		Where(recordingversion.IDEQ(int(id))).
+		Exec(ctx)
+	if err != nil {
 		return fmt.Errorf("delete recording_version %d: %w", id, err)
 	}
 	return nil
@@ -113,12 +135,15 @@ func DeleteVersion(ctx context.Context, db *sql.DB, id int64) error {
 // DeleteVersionsForRecording removes every version row for a recording.
 // Useful for full-resync flows that rebuild the per-recording version
 // list from scratch.
-func DeleteVersionsForRecording(ctx context.Context, db *sql.DB, recordingID int64) error {
-	if _, err := db.ExecContext(
-		ctx,
-		`DELETE FROM recording_versions WHERE recording_id = ?`,
-		recordingID,
-	); err != nil {
+func DeleteVersionsForRecording(
+	ctx context.Context,
+	client *ent.Client,
+	recordingID int64,
+) error {
+	_, err := client.RecordingVersion.Delete().
+		Where(recordingversion.RecordingID(recordingID)).
+		Exec(ctx)
+	if err != nil {
 		return fmt.Errorf("delete recording_versions for %d: %w", recordingID, err)
 	}
 	return nil
@@ -150,4 +175,24 @@ func (v RecordingVersion) lastSeenOrNow() time.Time {
 		return time.Now().UTC()
 	}
 	return v.LastSeenAt
+}
+
+// recordingVersionFromEnt converts an ent.RecordingVersion to the
+// package-local RecordingVersion DTO. Callers consume the DTO so the
+// JSON-wire shape stays decoupled from the ORM.
+func recordingVersionFromEnt(r *ent.RecordingVersion) RecordingVersion {
+	return RecordingVersion{
+		ID:            int64(r.ID),
+		RecordingID:   r.RecordingID,
+		FilePath:      r.FilePath,
+		FileSizeBytes: r.FileSizeBytes,
+		Container:     r.Container,
+		Quality:       r.Quality,
+		VideoCodec:    r.VideoCodec,
+		AudioCodec:    r.AudioCodec,
+		FormatLabel:   r.FormatLabel,
+		Notes:         r.Notes,
+		AddedAt:       r.AddedAt,
+		LastSeenAt:    r.LastSeenAt,
+	}
 }

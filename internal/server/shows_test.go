@@ -24,9 +24,9 @@ func TestAPIListShows(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	type rec struct {
 		recordingID  int64
@@ -84,26 +84,19 @@ func TestAPIListShows(t *testing.T) {
 	}
 
 	for _, sh := range shows {
-		_, seedErr := db.ExecContext(ctx,
-			`INSERT INTO shows (show_id, name) VALUES (?, ?)`, sh.showID, sh.name)
-		require.NoError(t, seedErr)
+		require.NoError(t, db.Show.Create().
+			SetID(sh.showID).SetName(sh.name).Exec(ctx))
 		for _, r := range sh.records {
-			_, seedErr = db.ExecContext(ctx, `
-				INSERT INTO recordings (
-					recording_id, show_id, tour, date_full, raw_json
-				) VALUES (?, ?, '', ?, '{}')
-			`, r.recordingID, sh.showID, r.dateFull)
-			require.NoError(t, seedErr)
+			require.NoError(t, db.Recording.Create().
+				SetID(r.recordingID).SetShowID(sh.showID).
+				SetDateFull(r.dateFull).SetRawJSON("{}").Exec(ctx))
 			if r.inCollection {
-				_, seedErr = db.ExecContext(ctx,
-					`INSERT INTO collection (recording_id, format) VALUES (?, ?)`,
-					r.recordingID, r.encoraFormat)
-				require.NoError(t, seedErr)
+				require.NoError(t, db.CollectionEntry.Create().
+					SetID(r.recordingID).SetFormat(r.encoraFormat).Exec(ctx))
 			}
 			if r.inWants {
-				_, seedErr = db.ExecContext(ctx,
-					`INSERT INTO wants (recording_id) VALUES (?)`, r.recordingID)
-				require.NoError(t, seedErr)
+				require.NoError(t, db.WantsEntry.Create().
+					SetID(r.recordingID).Exec(ctx))
 			}
 			if r.hasFile {
 				require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{

@@ -82,23 +82,18 @@ func uploadTestServer(
 ) (*server.Server, *imagecache.Cache) {
 	t.Helper()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, t.TempDir()+"/promptbook.db")
+	sqlDB, db, err := storage.OpenEnt(ctx, t.TempDir()+"/promptbook.db")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, "UploadShow")
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(showID).SetName("UploadShow").Exec(ctx))
 	rawJSON, err := json.Marshal(map[string]any{
 		"id": recordingID, "show": "UploadShow",
 		"metadata": map[string]any{"show_id": showID},
 	})
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		VALUES (?, ?, '', '', ?)
-	`, recordingID, showID, string(rawJSON))
-	require.NoError(t, err)
+	require.NoError(t, db.Recording.Create().
+		SetID(recordingID).SetShowID(showID).SetRawJSON(string(rawJSON)).Exec(ctx))
 
 	cache := imagecache.New(t.TempDir(), nil, zerolog.Nop())
 	srv, err := server.New(server.Options{DB: db, ImageCache: cache})
@@ -185,9 +180,9 @@ func TestAPIUploadRejectsBadImage(t *testing.T) {
 
 func TestAPIUploadRequiresImageCache(t *testing.T) {
 	t.Parallel()
-	db, err := storage.Open(t.Context(), t.TempDir()+"/promptbook.db")
+	sqlDB, db, err := storage.OpenEnt(t.Context(), t.TempDir()+"/promptbook.db")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)

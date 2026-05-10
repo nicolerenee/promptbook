@@ -18,8 +18,9 @@ import (
 // ProfileUpdate is the builder for updating Profile entities.
 type ProfileUpdate struct {
 	config
-	hooks    []Hook
-	mutation *ProfileMutation
+	hooks     []Hook
+	mutation  *ProfileMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the ProfileUpdate builder.
@@ -235,6 +236,12 @@ func (_u *ProfileUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *ProfileUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *ProfileUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *ProfileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(profile.Table, profile.Columns, sqlgraph.NewFieldSpec(profile.FieldID, field.TypeInt))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -286,6 +293,7 @@ func (_u *ProfileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.LastSyncedAt(); ok {
 		_spec.SetField(profile.FieldLastSyncedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{profile.Label}
@@ -301,9 +309,10 @@ func (_u *ProfileUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 // ProfileUpdateOne is the builder for updating a single Profile entity.
 type ProfileUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *ProfileMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *ProfileMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetEncoraID sets the "encora_id" field.
@@ -526,6 +535,12 @@ func (_u *ProfileUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *ProfileUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *ProfileUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *ProfileUpdateOne) sqlSave(ctx context.Context) (_node *Profile, err error) {
 	_spec := sqlgraph.NewUpdateSpec(profile.Table, profile.Columns, sqlgraph.NewFieldSpec(profile.FieldID, field.TypeInt))
 	id, ok := _u.mutation.ID()
@@ -594,6 +609,7 @@ func (_u *ProfileUpdateOne) sqlSave(ctx context.Context) (_node *Profile, err er
 	if value, ok := _u.mutation.LastSyncedAt(); ok {
 		_spec.SetField(profile.FieldLastSyncedAt, field.TypeTime, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &Profile{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

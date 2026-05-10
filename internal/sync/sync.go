@@ -10,7 +10,6 @@ package sync
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +18,12 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/show"
+	"github.com/nicolerenee/promptbook/internal/ent/wantsentry"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -111,10 +116,10 @@ type Options struct {
 	Logger            zerolog.Logger
 }
 
-// Sync runs a full collection + wants sync into db. The sync_runs row is
-// always written (even on failure) so the caller can correlate errors to
-// the run.
-func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, error) {
+// Sync runs a full collection + wants sync into client. The sync_runs row
+// is always written (even on failure) so the caller can correlate errors
+// to the run.
+func Sync(ctx context.Context, c Client, client *ent.Client, opts Options) (*Result, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -125,7 +130,7 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 	res := &Result{}
 	startedAt := opts.Now().UTC()
 
-	runID, runErr := insertSyncRun(ctx, db, SyncKindAll, startedAt)
+	runID, runErr := insertSyncRun(ctx, client, SyncKindAll, startedAt)
 	if runErr != nil {
 		return res, fmt.Errorf("insert sync_run: %w", runErr)
 	}
@@ -134,13 +139,13 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 	// Profile is best-effort: a failure here logs a warning but does not
 	// block collection/wants. The cached counts surfaced in the UI may be
 	// stale until the next sync, but recordings remain importable.
-	if profErr := syncProfile(ctx, c, db, opts, res); profErr != nil {
+	if profErr := syncProfile(ctx, c, client, opts, res); profErr != nil {
 		opts.Logger.Warn().Err(profErr).Msg("profile sync failed; continuing")
 	}
 
-	syncErr := syncCollection(ctx, c, db, opts, res)
+	syncErr := syncCollection(ctx, c, client, opts, res)
 	if syncErr == nil && !res.RateLimitedBailedOut {
-		syncErr = syncWants(ctx, c, db, opts, res)
+		syncErr = syncWants(ctx, c, client, opts, res)
 	} else if res.RateLimitedBailedOut {
 		opts.Logger.Warn().Int("remaining", res.RateLimitRemaining).
 			Msg("bailing before /wants — rate-limit floor reached")
@@ -152,7 +157,7 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 		errText = syncErr.Error()
 	}
 	if upErr := updateSyncRun(
-		ctx, db, runID, finished,
+		ctx, client, runID, finished,
 		res.CollectionCount+res.WantsCount,
 		res.Errors,
 		res.RateLimitRemaining,
@@ -170,7 +175,7 @@ func Sync(ctx context.Context, c Client, db *sql.DB, opts Options) (*Result, err
 func syncProfile(
 	ctx context.Context,
 	c Client,
-	db *sql.DB,
+	client *ent.Client,
 	opts Options,
 	res *Result,
 ) error {
@@ -193,7 +198,7 @@ func syncProfile(
 		ColVisibility:     p.ColVisibility,
 		LastSyncedAt:      opts.Now().UTC(),
 	}
-	if upErr := storage.UpsertProfile(ctx, db, row); upErr != nil {
+	if upErr := storage.UpsertProfile(ctx, client, row); upErr != nil {
 		return fmt.Errorf("persist profile: %w", upErr)
 	}
 	return nil
@@ -255,7 +260,7 @@ func retryOnRateLimit[T any](
 func syncCollection(
 	ctx context.Context,
 	c Client,
-	db *sql.DB,
+	client *ent.Client,
 	opts Options,
 	res *Result,
 ) error {
@@ -270,7 +275,7 @@ func syncCollection(
 	res.RateLimitRemaining = rl.Remaining
 
 	for {
-		writeErr := writeCollectionPage(ctx, db, page.Data, opts.Now)
+		writeErr := writeCollectionPage(ctx, client, page.Data, opts.Now)
 		if writeErr != nil {
 			return fmt.Errorf("write collection page %d: %w", page.CurrentPage, writeErr)
 		}
@@ -305,7 +310,7 @@ func syncCollection(
 func syncWants(
 	ctx context.Context,
 	c Client,
-	db *sql.DB,
+	client *ent.Client,
 	opts Options,
 	res *Result,
 ) error {
@@ -320,7 +325,7 @@ func syncWants(
 	res.RateLimitRemaining = rl.Remaining
 
 	for {
-		writeErr := writeWantsPage(ctx, db, page.Data, opts.Now)
+		writeErr := writeWantsPage(ctx, client, page.Data, opts.Now)
 		if writeErr != nil {
 			return fmt.Errorf("write wants page %d: %w", page.CurrentPage, writeErr)
 		}
@@ -353,11 +358,11 @@ func syncWants(
 
 func writeCollectionPage(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	entries []encora.CollectionEntry,
 	now func() time.Time,
 ) error {
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := client.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -379,11 +384,11 @@ func writeCollectionPage(
 
 func writeWantsPage(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	entries []encora.WantEntry,
 	now func() time.Time,
 ) error {
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := client.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -408,7 +413,7 @@ func writeWantsPage(
 // data don't leave stale rows.
 func upsertRecording(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx *ent.Tx,
 	r encora.Recording,
 	now func() time.Time,
 ) error {
@@ -421,21 +426,25 @@ func upsertRecording(
 	if serr := upsertShow(ctx, tx, r, nowTS); serr != nil {
 		return serr
 	}
-	if rerr := upsertRecordingRow(ctx, tx, r, rawJSON, nowTS); rerr != nil {
+	if rerr := upsertRecordingRow(ctx, tx, r, string(rawJSON), nowTS); rerr != nil {
 		return rerr
 	}
 	return refreshCastEntries(ctx, tx, r, now)
 }
 
-func upsertShow(ctx context.Context, tx *sql.Tx, r encora.Recording, ts time.Time) error {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO shows (show_id, name, description_html, last_seen_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(show_id) DO UPDATE SET
-			name             = excluded.name,
-			description_html = excluded.description_html,
-			last_seen_at     = excluded.last_seen_at
-	`, r.Metadata.ShowID, r.Show, r.Metadata.ShowDescription, ts)
+func upsertShow(ctx context.Context, tx *ent.Tx, r encora.Recording, ts time.Time) error {
+	err := tx.Show.Create().
+		SetID(r.Metadata.ShowID).
+		SetName(r.Show).
+		SetDescriptionHTML(r.Metadata.ShowDescription).
+		SetLastSeenAt(ts).
+		OnConflictColumns(show.FieldID).
+		Update(func(u *ent.ShowUpsert) {
+			u.UpdateName()
+			u.UpdateDescriptionHTML()
+			u.UpdateLastSeenAt()
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert show: %w", err)
 	}
@@ -444,88 +453,135 @@ func upsertShow(ctx context.Context, tx *sql.Tx, r encora.Recording, ts time.Tim
 
 func upsertRecordingRow(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx *ent.Tx,
 	r encora.Recording,
-	rawJSON []byte,
+	rawJSON string,
 	ts time.Time,
 ) error {
-	const stmt = `
-		INSERT INTO recordings (
-			recording_id, show_id, tour,
-			date_full, date_month_known, date_day_known, date_variant, date_time,
-			master, nft_date, nft_forever, notes, master_notes, release_format,
-			venue, city, media_type, recording_type, amount_recorded,
-			gifting_status, limited_status,
-			is_opening, is_closing, is_preview, is_concert, is_nfs, is_favourite,
-			has_screenshots, has_subtitles, boot_camp_recommended,
-			owners_count, wanters_count, last_updated, raw_json, last_seen_at
-		) VALUES (
-			?, ?, ?,
-			?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?,
-			?, ?,
-			?, ?, ?, ?, ?, ?,
-			?, ?, ?,
-			?, ?, ?, ?, ?
-		)
-		ON CONFLICT(recording_id) DO UPDATE SET
-			show_id               = excluded.show_id,
-			tour                  = excluded.tour,
-			date_full             = excluded.date_full,
-			date_month_known      = excluded.date_month_known,
-			date_day_known        = excluded.date_day_known,
-			date_variant          = excluded.date_variant,
-			date_time             = excluded.date_time,
-			master                = excluded.master,
-			nft_date              = excluded.nft_date,
-			nft_forever           = excluded.nft_forever,
-			notes                 = excluded.notes,
-			master_notes          = excluded.master_notes,
-			release_format        = excluded.release_format,
-			venue                 = excluded.venue,
-			city                  = excluded.city,
-			media_type            = excluded.media_type,
-			recording_type        = excluded.recording_type,
-			amount_recorded       = excluded.amount_recorded,
-			gifting_status        = excluded.gifting_status,
-			limited_status        = excluded.limited_status,
-			is_opening            = excluded.is_opening,
-			is_closing            = excluded.is_closing,
-			is_preview            = excluded.is_preview,
-			is_concert            = excluded.is_concert,
-			is_nfs                = excluded.is_nfs,
-			is_favourite          = excluded.is_favourite,
-			has_screenshots       = excluded.has_screenshots,
-			has_subtitles         = excluded.has_subtitles,
-			boot_camp_recommended = excluded.boot_camp_recommended,
-			owners_count          = excluded.owners_count,
-			wanters_count         = excluded.wanters_count,
-			last_updated          = excluded.last_updated,
-			raw_json              = excluded.raw_json,
-			last_seen_at          = excluded.last_seen_at
-	`
-	_, err := tx.ExecContext(ctx, stmt,
-		r.ID, r.Metadata.ShowID, r.Tour,
-		r.Date.FullDate, boolToInt(r.Date.MonthKnown), boolToInt(r.Date.DayKnown),
-		r.Date.DateVariant, r.Date.Time,
-		r.Master, r.NFT.NFTDate, boolToInt(r.NFT.NFTForever), r.Notes,
-		nullableString(r.MasterNotes), r.ReleaseFormat,
-		r.Metadata.Venue, r.Metadata.City, r.Metadata.MediaType,
-		r.Metadata.RecordingType, r.Metadata.AmountRecorded,
-		r.Metadata.GiftingStatus, r.Metadata.LimitedStatus,
-		boolToInt(r.Metadata.IsOpening), boolToInt(r.Metadata.IsClosing),
-		boolToInt(r.Metadata.IsPreview), boolToInt(r.Metadata.IsConcert),
-		boolToInt(r.Metadata.IsNFS), boolToInt(r.Metadata.IsFavourite),
-		boolToInt(r.Metadata.HasScreenshots), boolToInt(r.Metadata.HasSubtitles),
-		boolToInt(r.Metadata.BootCampRecommended),
-		r.Metadata.OwnersCount, r.Metadata.WantersCount,
-		r.Metadata.LastUpdated, string(rawJSON), ts,
-	)
+	create := newRecordingCreate(tx, r, rawJSON, ts)
+	err := create.
+		OnConflictColumns(recording.FieldID).
+		Update(recordingUpsertFn(r)).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert recording row: %w", err)
 	}
 	return nil
+}
+
+// newRecordingCreate constructs the per-recording Create builder used
+// by both the bare insert path and the upsert path. Pulled out of
+// upsertRecordingRow so the funlen lint stays under cap with the
+// fully-typed ent SetX() chain.
+func newRecordingCreate(
+	tx *ent.Tx, r encora.Recording, rawJSON string, ts time.Time,
+) *ent.RecordingCreate {
+	create := tx.Recording.Create().
+		SetID(r.ID).
+		SetShowID(r.Metadata.ShowID).
+		SetTour(r.Tour).
+		SetDateFull(r.Date.FullDate).
+		SetDateMonthKnown(r.Date.MonthKnown).
+		SetDateDayKnown(r.Date.DayKnown).
+		SetDateTime(r.Date.Time).
+		SetMaster(r.Master).
+		SetNftForever(r.NFT.NFTForever).
+		SetNotes(r.Notes).
+		SetVenue(r.Metadata.Venue).
+		SetCity(r.Metadata.City).
+		SetMediaType(r.Metadata.MediaType).
+		SetRecordingType(r.Metadata.RecordingType).
+		SetAmountRecorded(r.Metadata.AmountRecorded).
+		SetGiftingStatus(r.Metadata.GiftingStatus).
+		SetLimitedStatus(r.Metadata.LimitedStatus).
+		SetIsOpening(r.Metadata.IsOpening).
+		SetIsClosing(r.Metadata.IsClosing).
+		SetIsPreview(r.Metadata.IsPreview).
+		SetIsConcert(r.Metadata.IsConcert).
+		SetIsNfs(r.Metadata.IsNFS).
+		SetIsFavourite(r.Metadata.IsFavourite).
+		SetHasScreenshots(r.Metadata.HasScreenshots).
+		SetHasSubtitles(r.Metadata.HasSubtitles).
+		SetBootCampRecommended(r.Metadata.BootCampRecommended).
+		SetOwnersCount(r.Metadata.OwnersCount).
+		SetWantersCount(r.Metadata.WantersCount).
+		SetLastUpdated(r.Metadata.LastUpdated).
+		SetRawJSON(rawJSON).
+		SetLastSeenAt(ts)
+	if r.Date.DateVariant != nil {
+		create = create.SetDateVariant(*r.Date.DateVariant)
+	}
+	if r.NFT.NFTDate != nil {
+		create = create.SetNftDate(*r.NFT.NFTDate)
+	}
+	if r.MasterNotes != "" {
+		create = create.SetMasterNotes(r.MasterNotes)
+	}
+	if r.ReleaseFormat != nil {
+		create = create.SetReleaseFormat(*r.ReleaseFormat)
+	}
+	return create
+}
+
+// recordingUpsertFn returns the closure that the OnConflict branch
+// runs to refresh every mutable column on an existing recording. The
+// nullable columns (date_variant, nft_date, master_notes,
+// release_format) are explicit Set/Clear so a recording that loses a
+// previously-populated value gets the column nulled rather than
+// velvet-antlers.
+func recordingUpsertFn(r encora.Recording) func(u *ent.RecordingUpsert) {
+	return func(u *ent.RecordingUpsert) {
+		u.UpdateShowID()
+		u.UpdateTour()
+		u.UpdateDateFull()
+		u.UpdateDateMonthKnown()
+		u.UpdateDateDayKnown()
+		if r.Date.DateVariant != nil {
+			u.SetDateVariant(*r.Date.DateVariant)
+		} else {
+			u.ClearDateVariant()
+		}
+		u.UpdateDateTime()
+		u.UpdateMaster()
+		if r.NFT.NFTDate != nil {
+			u.SetNftDate(*r.NFT.NFTDate)
+		} else {
+			u.ClearNftDate()
+		}
+		u.UpdateNftForever()
+		u.UpdateNotes()
+		if r.MasterNotes != "" {
+			u.SetMasterNotes(r.MasterNotes)
+		} else {
+			u.ClearMasterNotes()
+		}
+		if r.ReleaseFormat != nil {
+			u.SetReleaseFormat(*r.ReleaseFormat)
+		} else {
+			u.ClearReleaseFormat()
+		}
+		u.UpdateVenue()
+		u.UpdateCity()
+		u.UpdateMediaType()
+		u.UpdateRecordingType()
+		u.UpdateAmountRecorded()
+		u.UpdateGiftingStatus()
+		u.UpdateLimitedStatus()
+		u.UpdateIsOpening()
+		u.UpdateIsClosing()
+		u.UpdateIsPreview()
+		u.UpdateIsConcert()
+		u.UpdateIsNfs()
+		u.UpdateIsFavourite()
+		u.UpdateHasScreenshots()
+		u.UpdateHasSubtitles()
+		u.UpdateBootCampRecommended()
+		u.UpdateOwnersCount()
+		u.UpdateWantersCount()
+		u.UpdateLastUpdated()
+		u.UpdateRawJSON()
+		u.UpdateLastSeenAt()
+	}
 }
 
 // refreshCastEntries wipes and rewrites cast_entries for the recording while
@@ -536,13 +592,13 @@ func upsertRecordingRow(
 // joins (e.g. ListRecordingsForPerformer + LoadPerformer) work post-sync.
 func refreshCastEntries(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx *ent.Tx,
 	r encora.Recording,
 	now func() time.Time,
 ) error {
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM cast_entries WHERE recording_id = ?`, r.ID,
-	); err != nil {
+	if _, err := tx.CastEntry.Delete().
+		Where(castentry.RecordingID(r.ID)).
+		Exec(ctx); err != nil {
 		return fmt.Errorf("clear cast_entries: %w", err)
 	}
 	nowTS := now().UTC()
@@ -566,31 +622,23 @@ func refreshCastEntries(
 			return fmt.Errorf("upsert character for cast_entry: %w", cerr)
 		}
 
-		var label, abbrev *string
+		create := tx.CastEntry.Create().
+			SetRecordingID(r.ID).
+			SetPerformerID(cast.Performer.ID).
+			SetPerformerName(cast.Performer.Name).
+			SetPerformerSlug(cast.Performer.Slug).
+			SetPerformerURL(cast.Performer.URL).
+			SetCharacterID(cast.Character.ID).
+			SetCharacterName(cast.Character.Name).
+			SetCharacterSlug(cast.Character.Slug).
+			SetCharacterURL(cast.Character.URL).
+			SetCharacterOrder(cast.Character.Order)
 		if cast.Status != nil {
-			label = &cast.Status.Label
-			abbrev = &cast.Status.Abbreviation
+			create = create.
+				SetStatusLabel(cast.Status.Label).
+				SetStatusAbbrev(cast.Status.Abbreviation)
 		}
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO cast_entries (
-				recording_id,
-				performer_id, performer_name, performer_slug, performer_url,
-				character_id, character_name, character_slug, character_url, character_order,
-				status_label, status_abbrev
-			) VALUES (
-				?,
-				?, ?, ?, ?,
-				?, ?, ?, ?, ?,
-				?, ?
-			)
-		`,
-			r.ID,
-			cast.Performer.ID, cast.Performer.Name, cast.Performer.Slug, cast.Performer.URL,
-			cast.Character.ID, cast.Character.Name, cast.Character.Slug,
-			cast.Character.URL, cast.Character.Order,
-			label, abbrev,
-		)
-		if err != nil {
+		if _, err := create.Save(ctx); err != nil {
 			return fmt.Errorf("insert cast_entry: %w", err)
 		}
 	}
@@ -599,43 +647,94 @@ func refreshCastEntries(
 
 func upsertCollection(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx *ent.Tx,
 	entry encora.CollectionEntry,
 	now func() time.Time,
 ) error {
 	nowTS := now().UTC()
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO collection (
-			recording_id, format, user_notes, user_watched,
-			collected_at, updated_at, last_synced_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(recording_id) DO UPDATE SET
-			format         = excluded.format,
-			user_notes     = excluded.user_notes,
-			user_watched   = excluded.user_watched,
-			collected_at   = excluded.collected_at,
-			updated_at     = excluded.updated_at,
-			last_synced_at = excluded.last_synced_at
-	`, entry.Recording.ID, entry.Format, entry.Notes, entry.UserWatched,
-		entry.CollectedAt, entry.UpdatedAt, nowTS)
+	collectedAt, hasCollected := parseCollectionTimestamp(entry.CollectedAt)
+	updatedAt, hasUpdated := parseCollectionTimestamp(entry.UpdatedAt)
+
+	create := tx.CollectionEntry.Create().
+		SetID(entry.Recording.ID).
+		SetFormat(entry.Format).
+		SetUserWatched(entry.UserWatched != 0).
+		SetLastSyncedAt(nowTS)
+	if entry.Notes != nil {
+		create = create.SetUserNotes(*entry.Notes)
+	}
+	if hasCollected {
+		create = create.SetCollectedAt(collectedAt)
+	}
+	if hasUpdated {
+		create = create.SetUpdatedAt(updatedAt)
+	}
+	err := create.
+		OnConflictColumns(collectionentry.FieldID).
+		Update(func(u *ent.CollectionEntryUpsert) {
+			u.UpdateFormat()
+			if entry.Notes != nil {
+				u.SetUserNotes(*entry.Notes)
+			} else {
+				u.ClearUserNotes()
+			}
+			u.UpdateUserWatched()
+			if hasCollected {
+				u.SetCollectedAt(collectedAt)
+			} else {
+				u.ClearCollectedAt()
+			}
+			if hasUpdated {
+				u.SetUpdatedAt(updatedAt)
+			} else {
+				u.ClearUpdatedAt()
+			}
+			u.SetLastSyncedAt(nowTS)
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert collection row: %w", err)
 	}
 	return nil
 }
 
+// parseCollectionTimestamp parses Encora's RFC3339-ish collection
+// timestamp (e.g. "2024-10-19T12:10:29.000000Z"). Returns the parsed
+// value + true on success; an empty input or parse failure returns
+// the zero time + false so the caller can treat it as "absent".
+//
+// Supported formats: RFC3339 / RFC3339Nano (the only shapes observed
+// in production fixtures). Any other input is silently treated as
+// missing — Encora's audit trail is best-effort and we'd rather drop
+// a malformed timestamp than fail the entire sync page.
+func parseCollectionTimestamp(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t.UTC(), true
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.UTC(), true
+	}
+	return time.Time{}, false
+}
+
 func upsertWant(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx *ent.Tx,
 	recordingID int64,
 	now func() time.Time,
 ) error {
 	nowTS := now().UTC()
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO wants (recording_id, last_synced_at)
-		VALUES (?, ?)
-		ON CONFLICT(recording_id) DO UPDATE SET last_synced_at = excluded.last_synced_at
-	`, recordingID, nowTS)
+	err := tx.WantsEntry.Create().
+		SetID(recordingID).
+		SetLastSyncedAt(nowTS).
+		OnConflictColumns(wantsentry.FieldID).
+		Update(func(u *ent.WantsEntryUpsert) {
+			u.SetLastSyncedAt(nowTS)
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert wants row: %w", err)
 	}
@@ -644,59 +743,37 @@ func upsertWant(
 
 func insertSyncRun(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	kind string,
 	startedAt time.Time,
 ) (int64, error) {
-	res, err := db.ExecContext(ctx, `
-		INSERT INTO sync_runs (kind, started_at) VALUES (?, ?)
-	`, kind, startedAt)
+	row, err := client.SyncRun.Create().
+		SetKind(kind).
+		SetStartedAt(startedAt).
+		Save(ctx)
 	if err != nil {
 		return 0, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("last insert id: %w", err)
-	}
-	return id, nil
+	return int64(row.ID), nil
 }
 
 func updateSyncRun(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	runID int64,
 	finishedAt time.Time,
 	okCount, errorCount, rateLimitRemaining int,
 	errorText string,
 ) error {
-	_, err := db.ExecContext(ctx, `
-		UPDATE sync_runs SET
-			finished_at          = ?,
-			ok_count             = ?,
-			error_count          = ?,
-			rate_limit_remaining = ?,
-			error_text           = ?
-		WHERE id = ?
-	`, finishedAt, okCount, errorCount, rateLimitRemaining, errorText, runID)
+	_, err := client.SyncRun.UpdateOneID(int(runID)).
+		SetFinishedAt(finishedAt).
+		SetOkCount(okCount).
+		SetErrorCount(errorCount).
+		SetRateLimitRemaining(rateLimitRemaining).
+		SetErrorText(errorText).
+		Save(ctx)
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-// boolToInt is the SQLite-friendly cast for go bools.
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-// nullableString turns "" into NULL so the DB distinguishes empty from
-// absent. Encora's payloads use both; preserve the round-trip via raw_json.
-func nullableString(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }

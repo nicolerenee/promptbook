@@ -19,9 +19,9 @@ import (
 func openTestStore(t *testing.T) *jobs.Store {
 	t.Helper()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "p.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "p.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return jobs.NewStore(db)
 }
 
@@ -66,9 +66,9 @@ func TestStore_RunLifecycle(t *testing.T) {
 func TestStore_LoadStateNoRow(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "p.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "p.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	r := jobs.New(jobs.Options{DB: db, Workers: 1})
 	require.NoError(t, r.Register(jobs.JobDef{

@@ -18,8 +18,9 @@ import (
 // ManualImportQueueUpdate is the builder for updating ManualImportQueue entities.
 type ManualImportQueueUpdate struct {
 	config
-	hooks    []Hook
-	mutation *ManualImportQueueMutation
+	hooks     []Hook
+	mutation  *ManualImportQueueMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the ManualImportQueueUpdate builder.
@@ -178,6 +179,12 @@ func (_u *ManualImportQueueUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *ManualImportQueueUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *ManualImportQueueUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *ManualImportQueueUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(manualimportqueue.Table, manualimportqueue.Columns, sqlgraph.NewFieldSpec(manualimportqueue.FieldID, field.TypeInt))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -217,6 +224,7 @@ func (_u *ManualImportQueueUpdate) sqlSave(ctx context.Context) (_node int, err 
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(manualimportqueue.FieldNotes, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{manualimportqueue.Label}
@@ -232,9 +240,10 @@ func (_u *ManualImportQueueUpdate) sqlSave(ctx context.Context) (_node int, err 
 // ManualImportQueueUpdateOne is the builder for updating a single ManualImportQueue entity.
 type ManualImportQueueUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *ManualImportQueueMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *ManualImportQueueMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetFilePath sets the "file_path" field.
@@ -400,6 +409,12 @@ func (_u *ManualImportQueueUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *ManualImportQueueUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *ManualImportQueueUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *ManualImportQueueUpdateOne) sqlSave(ctx context.Context) (_node *ManualImportQueue, err error) {
 	_spec := sqlgraph.NewUpdateSpec(manualimportqueue.Table, manualimportqueue.Columns, sqlgraph.NewFieldSpec(manualimportqueue.FieldID, field.TypeInt))
 	id, ok := _u.mutation.ID()
@@ -456,6 +471,7 @@ func (_u *ManualImportQueueUpdateOne) sqlSave(ctx context.Context) (_node *Manua
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(manualimportqueue.FieldNotes, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &ManualImportQueue{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

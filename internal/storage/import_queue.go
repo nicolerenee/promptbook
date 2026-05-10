@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/manualimportqueue"
 )
 
 // Confidence labels for the scanner's auto-suggested Encora ID. Empty
@@ -44,62 +46,52 @@ type QueueEntry struct {
 // suggested_confidence, and notes all refresh to e's values.
 //
 // Returns the row id (newly inserted or pre-existing).
-func EnqueueFile(ctx context.Context, db *sql.DB, e QueueEntry) (int64, error) {
-	res, err := db.ExecContext(ctx, `
-		INSERT INTO manual_import_queue (
-			file_path,
-			file_size_bytes,
-			last_seen_at,
-			suggested_recording_id,
-			suggested_confidence,
-			notes
-		) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)
-		ON CONFLICT(file_path) DO UPDATE SET
-			file_size_bytes        = excluded.file_size_bytes,
-			last_seen_at           = CURRENT_TIMESTAMP,
-			suggested_recording_id = excluded.suggested_recording_id,
-			suggested_confidence   = excluded.suggested_confidence,
-			notes                  = excluded.notes
-	`, e.FilePath, e.FileSizeBytes, nullableInt64(e.SuggestedRecordingID), e.SuggestedConfidence, e.Notes)
+func EnqueueFile(ctx context.Context, client *ent.Client, e QueueEntry) (int64, error) {
+	now := time.Now().UTC()
+	create := client.ManualImportQueue.Create().
+		SetFilePath(e.FilePath).
+		SetFileSizeBytes(e.FileSizeBytes).
+		SetLastSeenAt(now).
+		SetSuggestedConfidence(e.SuggestedConfidence).
+		SetNotes(e.Notes)
+	if e.SuggestedRecordingID != nil {
+		create = create.SetSuggestedRecordingID(*e.SuggestedRecordingID)
+	}
+	err := create.
+		OnConflictColumns(manualimportqueue.FieldFilePath).
+		Update(func(u *ent.ManualImportQueueUpsert) {
+			u.UpdateFileSizeBytes()
+			u.SetLastSeenAt(now)
+			if e.SuggestedRecordingID != nil {
+				u.SetSuggestedRecordingID(*e.SuggestedRecordingID)
+			} else {
+				u.ClearSuggestedRecordingID()
+			}
+			u.UpdateSuggestedConfidence()
+			u.UpdateNotes()
+		}).
+		Exec(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("upsert manual_import_queue: %w", err)
 	}
 
-	// LastInsertId returns the rowid of the affected row on both INSERT
-	// and ON CONFLICT DO UPDATE in SQLite, but to be defensive (and to
-	// match the contract callers expect — "id of the row, new or old")
-	// we re-query by file_path on the update path. In practice
-	// LastInsertId is correct here, but a SELECT is cheap and explicit.
-	if rows, raffErr := res.RowsAffected(); raffErr == nil && rows > 0 {
-		if id, lerr := res.LastInsertId(); lerr == nil && id > 0 {
-			// Verify the row id matches what's actually stored — on
-			// SQLite UPSERT, LastInsertId can lag the conflict path.
-			var storedID int64
-			if qerr := db.QueryRowContext(ctx, `
-				SELECT id FROM manual_import_queue WHERE file_path = ?
-			`, e.FilePath).Scan(&storedID); qerr == nil {
-				return storedID, nil
-			}
-			return id, nil
-		}
-	}
-
-	var id int64
-	if err = db.QueryRowContext(ctx, `
-		SELECT id FROM manual_import_queue WHERE file_path = ?
-	`, e.FilePath).Scan(&id); err != nil {
+	row, err := client.ManualImportQueue.Query().
+		Where(manualimportqueue.FilePath(e.FilePath)).
+		Only(ctx)
+	if err != nil {
 		return 0, fmt.Errorf("lookup manual_import_queue id: %w", err)
 	}
-	return id, nil
+	return int64(row.ID), nil
 }
 
 // RemoveQueueEntry deletes the queue row with the given id. Used after a
 // human resolves an entry to an Encora recording. Returns nil if the
 // row didn't exist — removal is idempotent from the caller's view.
-func RemoveQueueEntry(ctx context.Context, db *sql.DB, id int64) error {
-	if _, err := db.ExecContext(ctx, `
-		DELETE FROM manual_import_queue WHERE id = ?
-	`, id); err != nil {
+func RemoveQueueEntry(ctx context.Context, client *ent.Client, id int64) error {
+	_, err := client.ManualImportQueue.Delete().
+		Where(manualimportqueue.IDEQ(int(id))).
+		Exec(ctx)
+	if err != nil {
 		return fmt.Errorf("delete manual_import_queue id %d: %w", id, err)
 	}
 	return nil
@@ -108,10 +100,11 @@ func RemoveQueueEntry(ctx context.Context, db *sql.DB, id int64) error {
 // RemoveQueueEntryByPath deletes the queue row whose file_path matches.
 // Useful for the scanner: when a file disappears between sweeps, we
 // drop its queue entry without needing to remember the row id.
-func RemoveQueueEntryByPath(ctx context.Context, db *sql.DB, path string) error {
-	if _, err := db.ExecContext(ctx, `
-		DELETE FROM manual_import_queue WHERE file_path = ?
-	`, path); err != nil {
+func RemoveQueueEntryByPath(ctx context.Context, client *ent.Client, path string) error {
+	_, err := client.ManualImportQueue.Delete().
+		Where(manualimportqueue.FilePath(path)).
+		Exec(ctx)
+	if err != nil {
 		return fmt.Errorf("delete manual_import_queue path %q: %w", path, err)
 	}
 	return nil
@@ -121,89 +114,50 @@ func RemoveQueueEntryByPath(ctx context.Context, db *sql.DB, path string) error 
 // — oldest-first, with id as the tiebreaker for entries enqueued in the
 // same CURRENT_TIMESTAMP tick. Returns an empty (non-nil) slice when
 // the table is empty so callers can range over it safely.
-func ListQueue(ctx context.Context, db *sql.DB) ([]QueueEntry, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT id, file_path, file_size_bytes, discovered_at, last_seen_at,
-		       suggested_recording_id, suggested_confidence, notes
-		FROM manual_import_queue
-		ORDER BY discovered_at ASC, id ASC
-	`)
+func ListQueue(ctx context.Context, client *ent.Client) ([]QueueEntry, error) {
+	rows, err := client.ManualImportQueue.Query().
+		Order(
+			manualimportqueue.ByDiscoveredAt(),
+			manualimportqueue.ByID(),
+		).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query manual_import_queue: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make([]QueueEntry, 0)
-	for rows.Next() {
-		entry, scanErr := scanQueueEntry(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		out = append(out, entry)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate manual_import_queue: %w", err)
+	out := make([]QueueEntry, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, queueEntryFromEnt(r))
 	}
 	return out, nil
 }
 
 // LoadQueueEntry fetches a single queue row by id. Returns
 // ErrQueueEntryNotFound if no row matches.
-func LoadQueueEntry(ctx context.Context, db *sql.DB, id int64) (*QueueEntry, error) {
-	row := db.QueryRowContext(ctx, `
-		SELECT id, file_path, file_size_bytes, discovered_at, last_seen_at,
-		       suggested_recording_id, suggested_confidence, notes
-		FROM manual_import_queue
-		WHERE id = ?
-	`, id)
-	entry, err := scanQueueEntry(row)
-	if errors.Is(err, sql.ErrNoRows) {
+func LoadQueueEntry(ctx context.Context, client *ent.Client, id int64) (*QueueEntry, error) {
+	row, err := client.ManualImportQueue.Get(ctx, int(id))
+	if ent.IsNotFound(err) {
 		return nil, fmt.Errorf("queue entry %d: %w", id, ErrQueueEntryNotFound)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query manual_import_queue %d: %w", id, err)
 	}
-	return &entry, nil
+	out := queueEntryFromEnt(row)
+	return &out, nil
 }
 
-// scanRow narrows database/sql's *Row and *Rows down to the one method
-// scanQueueEntry actually needs, so it can scan from either.
-type scanRow interface {
-	Scan(dest ...any) error
-}
-
-// scanQueueEntry reads one queue row from a *sql.Row or *sql.Rows. Wraps
-// the SQL error with context so callers see "scan manual_import_queue:"
-// in the stack rather than a bare driver error.
-func scanQueueEntry(row scanRow) (QueueEntry, error) {
-	var (
-		entry        QueueEntry
-		suggestedID  sql.NullInt64
-		discoveredAt time.Time
-		lastSeenAt   time.Time
-	)
-	if err := row.Scan(
-		&entry.ID,
-		&entry.FilePath,
-		&entry.FileSizeBytes,
-		&discoveredAt,
-		&lastSeenAt,
-		&suggestedID,
-		&entry.SuggestedConfidence,
-		&entry.Notes,
-	); err != nil {
-		// Bubble sql.ErrNoRows through unwrapped so callers can errors.Is
-		// it; only wrap other errors with our context.
-		if errors.Is(err, sql.ErrNoRows) {
-			return QueueEntry{}, err
-		}
-		return QueueEntry{}, fmt.Errorf("scan manual_import_queue: %w", err)
+func queueEntryFromEnt(r *ent.ManualImportQueue) QueueEntry {
+	entry := QueueEntry{
+		ID:                  int64(r.ID),
+		FilePath:            r.FilePath,
+		FileSizeBytes:       r.FileSizeBytes,
+		DiscoveredAt:        r.DiscoveredAt,
+		LastSeenAt:          r.LastSeenAt,
+		SuggestedConfidence: r.SuggestedConfidence,
+		Notes:               r.Notes,
 	}
-	entry.DiscoveredAt = discoveredAt
-	entry.LastSeenAt = lastSeenAt
-	if suggestedID.Valid {
-		v := suggestedID.Int64
+	if r.SuggestedRecordingID != nil {
+		v := *r.SuggestedRecordingID
 		entry.SuggestedRecordingID = &v
 	}
-	return entry, nil
+	return entry
 }

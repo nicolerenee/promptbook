@@ -2,20 +2,22 @@ package storage_test
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	"github.com/brianvoe/gofakeit/v7"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // seedRandomRecording wraps the canonical seedRecording with random IDs
 // so versions tests don't have to invent unique IDs at every call site.
 // Returns the recording_id.
-func seedRandomRecording(ctx context.Context, t *testing.T, db *sql.DB) int64 {
+func seedRandomRecording(ctx context.Context, t *testing.T, db *ent.Client) int64 {
 	t.Helper()
 	gofakeit.Seed(0)
 	showID := int64(gofakeit.Number(1, 1_000_000))
@@ -130,14 +132,12 @@ func TestCascadeDeleteOnRecording(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, versions, 1)
 
-	_, err = db.ExecContext(ctx, `DELETE FROM recordings WHERE recording_id = ?`, recordingID)
+	_, err = db.Recording.Delete().Where(recording.IDEQ(recordingID)).Exec(ctx)
 	require.NoError(t, err)
 
-	var count int
-	require.NoError(t, db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM recording_versions WHERE recording_id = ?`,
-		recordingID,
-	).Scan(&count))
+	count, err := db.RecordingVersion.Query().
+		Where(recordingversion.RecordingID(recordingID)).Count(ctx)
+	require.NoError(t, err)
 	assert.Equal(t, 0, count, "deleting recording must cascade-delete its versions")
 }
 

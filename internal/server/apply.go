@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -75,8 +75,8 @@ type validationResult struct {
 // shapes the apply handler needs. Built once per request so a malicious
 // or stale form can't slip a stale (or fabricated) action past the
 // EncoraWriteClient surface.
-func buildValidationSet(ctx context.Context, db *sql.DB) (validationResult, error) {
-	items, err := loadMismatches(ctx, db, nil)
+func buildValidationSet(ctx context.Context, client *ent.Client) (validationResult, error) {
+	items, err := loadMismatches(ctx, client, nil)
 	if err != nil {
 		return validationResult{}, fmt.Errorf("load mismatches for apply validation: %w", err)
 	}
@@ -139,7 +139,7 @@ func (v validationResult) validate(action ApplyAction) (ApplyResult, bool) {
 func applyOne(
 	ctx context.Context,
 	client EncoraWriteClient,
-	db *sql.DB,
+	db *ent.Client,
 	action ApplyAction,
 	sleepBudget *time.Duration,
 ) ApplyResult {
@@ -296,7 +296,7 @@ func describeEncoraError(err error) (string, int) {
 // error after logging it. A failed history insert must not roll back a
 // successful Encora push — the upstream change has already happened.
 func recordEncoraPush(
-	ctx context.Context, db *sql.DB, summary string, action ApplyAction,
+	ctx context.Context, db *ent.Client, summary string, action ApplyAction,
 ) {
 	rid := action.RecordingID
 	details := map[string]any{

@@ -10,7 +10,6 @@ package nfo
 
 import (
 	"context"
-	"database/sql"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -21,6 +20,7 @@ import (
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/rename"
 )
@@ -297,8 +297,10 @@ func MovieNFOPathForPlan(p rename.Plan) string {
 // and a future audit-trail use case.
 type WriteOptions struct {
 	// DB is reserved for future use (audit trail of which choice was
-	// in effect when the NFO was written). Currently ignored.
-	DB *sql.DB
+	// in effect when the NFO was written). Currently ignored. Typed as
+	// *ent.Client to match the rest of the codebase post-cutover; nil
+	// is fine since the field is not consulted.
+	DB *ent.Client
 	// Cache is the on-disk image cache. nil or Cache.Disabled() == true
 	// disables image references.
 	Cache *imagecache.Cache

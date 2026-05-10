@@ -21,9 +21,13 @@ func main() {
 	// against Profile's int id vs the int64 PKs everywhere else
 	// without giving us anything we use yet.
 	cfg := &gen.Config{
-		Target:   "./",
-		Package:  "github.com/nicolerenee/promptbook/internal/ent",
-		Features: []gen.Feature{gen.FeatureVersionedMigration},
+		Target:  "./",
+		Package: "github.com/nicolerenee/promptbook/internal/ent",
+		Features: []gen.Feature{
+			gen.FeatureVersionedMigration,
+			gen.FeatureUpsert,
+			gen.FeatureModifier,
+		},
 	}
 
 	if err := entc.Generate("./schema", cfg); err != nil {

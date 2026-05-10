@@ -3,7 +3,6 @@ package server_test
 import (
 	"bytes"
 	"context"
-	gosql "database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -26,27 +26,22 @@ import (
 func pickerTestServer(
 	t *testing.T,
 	recordingID, showID int64,
-) (*server.Server, *gosql.DB) {
+) (*server.Server, *ent.Client) {
 	t.Helper()
 	ctx := t.Context()
 
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, "PickerShow")
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(showID).SetName("PickerShow").Exec(ctx))
 	rawJSON, err := json.Marshal(map[string]any{
 		"id": recordingID, "show": "PickerShow",
 		"metadata": map[string]any{"show_id": showID},
 	})
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		VALUES (?, ?, '', '', ?)
-	`, recordingID, showID, string(rawJSON))
-	require.NoError(t, err)
+	require.NoError(t, db.Recording.Create().
+		SetID(recordingID).SetShowID(showID).SetRawJSON(string(rawJSON)).Exec(ctx))
 
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerolog.Nop())
@@ -76,7 +71,7 @@ func postChoiceJSON(
 // loadChoice is a tiny test-side helper around storage.GetImageChoice
 // so tests can read back what they wrote without re-deriving the
 // scan boilerplate.
-func loadChoice(t *testing.T, db *gosql.DB, recordingID int64) storage.ImageChoice {
+func loadChoice(t *testing.T, db *ent.Client, recordingID int64) storage.ImageChoice {
 	t.Helper()
 	c, err := storage.GetImageChoice(context.Background(), db, recordingID)
 	require.NoError(t, err)
@@ -154,9 +149,9 @@ func TestAPISetOverlayDisabledFlipsAndSurfacesInDetail(t *testing.T) {
 func TestAPIOverlayRequiresImageCache(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	// No ImageCache on Options → 503 on every overlay route.
 	srv, err := server.New(server.Options{DB: db})
@@ -186,9 +181,9 @@ func TestAPIOverlayRequiresImageCache(t *testing.T) {
 func TestAPIOverlayRecordingNotFound(t *testing.T) {
 	t.Parallel()
 
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	cache := imagecache.New(t.TempDir(), nil, zerolog.Nop())
 	srv, err := server.New(server.Options{DB: db, ImageCache: cache})

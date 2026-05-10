@@ -115,14 +115,14 @@ func seededDBPath(t *testing.T) string {
 	t.Cleanup(srv.Close)
 
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	c, err := encora.New(encora.Options{BaseURL: srv.URL, APIKey: "test"})
 	require.NoError(t, err)
 	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
 	require.NoError(t, err)
-	require.NoError(t, db.Close())
+	require.NoError(t, sqlDB.Close())
 
 	return dbPath
 }
@@ -131,9 +131,9 @@ func TestEngineIngestSingleFileDryRun(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srcDir := t.TempDir()
 	src := filepath.Join(srcDir, "Marigold [encora-90100222].mp4")
@@ -167,9 +167,9 @@ func TestEngineIngestRealMove(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srcDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, ".encora-id"), []byte("90100222\n"), 0o644))
@@ -227,9 +227,9 @@ func TestEngineIngestSkipsUnknownID(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	src := filepath.Join(t.TempDir(), "video.mp4")
 	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
@@ -274,9 +274,9 @@ func TestEngineAddToCollectionMockOnly(t *testing.T) {
 	t.Parallel()
 
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	src := filepath.Join(t.TempDir(), "Show [encora-99999].mp4")
 	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
@@ -314,9 +314,9 @@ func TestEngineIngestAutoAddsUnknownID(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	src := filepath.Join(t.TempDir(), "Test Show [encora-77777].mp4")
 	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
@@ -359,9 +359,9 @@ func TestEngineIngestAutoAddsUnknownIDWithCollection(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	src := filepath.Join(t.TempDir(), "Test Show [encora-77777].mp4")
 	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))
@@ -400,9 +400,9 @@ func TestEngineIngestDirectoryWalk(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srcRoot := t.TempDir()
 	for _, name := range []string{"Marigold [encora-90100222].mp4", "skip-me.txt", "subdir/Other [encora-90001143].mkv"} {
@@ -431,9 +431,9 @@ func TestIngestRecordsHistoryOnSuccess(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srcDir := t.TempDir()
 	src := filepath.Join(srcDir, "Marigold [encora-90100222].mp4")
@@ -479,9 +479,9 @@ func TestIngestSkipsHistoryForDryRun(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srcDir := t.TempDir()
 	src := filepath.Join(srcDir, "Marigold [encora-90100222].mp4")
@@ -510,9 +510,9 @@ func TestIngestSkipsHistoryForNoEncoraIDSkip(t *testing.T) {
 	t.Parallel()
 
 	dbPath := seededDBPath(t)
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	src := filepath.Join(t.TempDir(), "video-no-id.mp4")
 	require.NoError(t, os.WriteFile(src, []byte("v"), 0o644))

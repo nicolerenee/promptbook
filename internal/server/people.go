@@ -2,15 +2,19 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/performer"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -33,11 +37,7 @@ type PersonListItem struct {
 	StateCounts    map[string]int `json:"state_counts"`
 }
 
-// PersonRecording is a recording credit on the people-detail JSON. The
-// shape mirrors what the home/recordings list pages use so the same
-// smartDate template helper formats it on the HTML side. State is the
-// per-recording reconciled status string (one of storage.Status) so the
-// detail page can render the same status pill the library page uses.
+// PersonRecording is a recording credit on the people-detail JSON.
 type PersonRecording struct {
 	ID             int64  `json:"id"`
 	Show           string `json:"show"`
@@ -50,17 +50,6 @@ type PersonRecording struct {
 }
 
 // PersonDetail is the JSON payload for /api/v1/people/{id}.
-//
-// LocalHeadshotURL is the cache-served /images/... path when the
-// actor's headshot is on disk, "" otherwise. The placeholder
-// generator (Phase 3) backstops a missing slot with a generated
-// avatar so the frontend can render the URL unconditionally.
-//
-// Upstream stagemedia URLs are NOT exposed on this payload — Phase 4
-// dropped them so all detail responses only carry local /images/...
-// paths. The picker modal queries
-// GET /api/v1/actors/:id/headshot-options live when the user wants
-// to swap the slot.
 type PersonDetail struct {
 	PerformerID      int64             `json:"performer_id"`
 	Name             string            `json:"name"`
@@ -77,41 +66,44 @@ func (s *Server) handleListPeople(c echo.Context) error {
 	dir := parseSortDir(c)
 
 	ctx := c.Request().Context()
-	total, err := countPeopleList(ctx, s.db)
+	all, err := loadPeopleList(ctx, s.db)
 	if err != nil {
 		return err
 	}
-	items, err := loadPeopleList(ctx, s.db, sortKey, dir, limit, offset)
-	if err != nil {
-		return err
+	sortPeople(all, sortKey, dir)
+	total := len(all)
+	if offset >= total {
+		return c.JSON(http.StatusOK, pageEnvelope([]PersonListItem{}, total, limit, offset))
 	}
-	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
+	end := min(offset+limit, total)
+	page := all[offset:end]
+	return c.JSON(http.StatusOK, pageEnvelope(page, total, limit, offset))
 }
 
-// countPeopleList counts every performer with at least one cast credit
-// against a recording the user owns or wants. Mirrors the FROM/WHERE
-// in loadPeopleList exactly so the SPA's "Page N of M" math agrees
-// with the row count.
-func countPeopleList(ctx context.Context, db *sql.DB) (int, error) {
-	var n int
-	err := db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM (
-			SELECT p.performer_id
-			FROM performers p
-			JOIN cast_entries ce ON ce.performer_id = p.performer_id
-			WHERE ce.recording_id IN (
-				SELECT recording_id FROM collection
-				UNION
-				SELECT recording_id FROM wants
-			)
-			GROUP BY p.performer_id
-		)
-	`).Scan(&n)
+// ownedOrWantedIDs returns the union of recording ids that appear in
+// either the collection or wants table — the "in scope for the people
+// list" set used by every people endpoint.
+func ownedOrWantedIDs(ctx context.Context, client *ent.Client) ([]int64, error) {
+	colIDs, err := client.CollectionEntry.Query().IDs(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("count people list: %w", err)
+		return nil, fmt.Errorf("query collection ids: %w", err)
 	}
-	return n, nil
+	wantsIDs, err := client.WantsEntry.Query().IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query wants ids: %w", err)
+	}
+	set := make(map[int64]struct{}, len(colIDs)+len(wantsIDs))
+	for _, id := range colIDs {
+		set[id] = struct{}{}
+	}
+	for _, id := range wantsIDs {
+		set[id] = struct{}{}
+	}
+	out := make([]int64, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 func (s *Server) handleGetPerson(c echo.Context) error {
@@ -122,10 +114,10 @@ func (s *Server) handleGetPerson(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	detail, err := loadPersonDetail(ctx, s.db, id)
-	if errors.Is(err, storage.ErrPerformerNotFound) {
-		return echo.NewHTTPError(http.StatusNotFound, err.Error())
-	}
 	if err != nil {
+		if isStorageNotFound(err) {
+			return echo.NewHTTPError(http.StatusNotFound, err.Error())
+		}
 		return err
 	}
 
@@ -134,6 +126,24 @@ func (s *Server) handleGetPerson(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, detail)
+}
+
+// isStorageNotFound returns true when err is one of the package-level
+// "X not found" sentinels storage exposes for the people-related
+// loaders. Used by the people-detail handler to map the error to a
+// 404 without dragging the storage error vocabulary into the import
+// graph at every call site.
+func isStorageNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, storage.ErrPerformerNotFound) {
+		return true
+	}
+	if errors.Is(err, storage.ErrCharacterNotFound) {
+		return true
+	}
+	return errors.Is(err, storage.ErrRecordingNotFound)
 }
 
 // parsePerformerID validates a CLI-style positive int id from the path.
@@ -148,121 +158,119 @@ func parsePerformerID(s string) (int64, error) {
 	return id, nil
 }
 
-// peopleSortFragments maps the sort keys exposed on the SPA's People
-// page to the SQL ORDER BY tail used to satisfy them. Whitelist-only
-// — every code path consults this map via resolveSortKey so user input
-// can never reach the SQL string verbatim.
-//
-//nolint:gochecknoglobals // immutable lookup table.
-var peopleSortFragments = map[string]string{
-	"name":  "p.name",
-	"count": "rcount",
-}
-
-// loadPeopleList returns performers that appear on at least one cast
-// entry tied to a recording in either the collection or wants table.
-// Default sort is name ascending. StateCounts is filled per-performer
-// by walking the performer's recording credits and asking
-// storage.LoadState for each — the page-size cap (peopleListLimit
-// performers, each with a small number of credits) keeps the cost
-// bounded; the alternative single-pass SQL is awkward because
-// LocalFormat needs ordered version data ComputeFormatString can chew
-// on.
+// loadPeopleList returns every performer with at least one cast credit
+// against an in-scope recording (collection ∪ wants), with their
+// recording count and per-recording state tallies. The legacy SQL did
+// this with a single GROUP BY + N+1 LoadState calls; the ent variant
+// keeps the same shape.
 func loadPeopleList(
 	ctx context.Context,
-	db *sql.DB,
-	sortKey string,
-	dir sortDir,
-	limit, offset int,
+	client *ent.Client,
 ) ([]PersonListItem, error) {
-	frag := resolveSortKey(sortKey, peopleSortFragments, "p.name")
-	orderTail := frag + " " + dir.sortDirSQL() + ", p.performer_id ASC"
-	// orderTail comes from the whitelist + a normalized direction
-	// constant — no user input ends up in the SQL.
-	//nolint:gosec // G202: see comment above; user input is mapped via whitelist.
-	q := `
-		SELECT p.performer_id, p.name, p.slug, COUNT(DISTINCT ce.recording_id) AS rcount
-		FROM performers p
-		JOIN cast_entries ce ON ce.performer_id = p.performer_id
-		WHERE ce.recording_id IN (
-			SELECT recording_id FROM collection
-			UNION
-			SELECT recording_id FROM wants
-		)
-		GROUP BY p.performer_id, p.name, p.slug
-		ORDER BY ` + orderTail + `
-		LIMIT ? OFFSET ?
-	`
-	rows, err := db.QueryContext(ctx, q, limit, offset)
+	scopeIDs, err := ownedOrWantedIDs(ctx, client)
 	if err != nil {
-		return nil, fmt.Errorf("query people list: %w", err)
+		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make([]PersonListItem, 0)
-	for rows.Next() {
-		var item PersonListItem
-		if scanErr := rows.Scan(&item.PerformerID, &item.Name, &item.Slug, &item.RecordingCount); scanErr != nil {
-			return nil, fmt.Errorf("scan people row: %w", scanErr)
-		}
-		out = append(out, item)
-	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate people rows: %w", rerr)
+	if len(scopeIDs) == 0 {
+		return []PersonListItem{}, nil
 	}
 
-	for i := range out {
-		counts, countErr := loadPerformerStateCounts(ctx, db, out[i].PerformerID)
-		if countErr != nil {
-			return nil, countErr
+	// Cast entries scoped to in-scope recordings: maps performer_id ->
+	// set of recording_ids.
+	casts, err := client.CastEntry.Query().
+		Where(castentry.RecordingIDIn(scopeIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query cast entries: %w", err)
+	}
+	credits := make(map[int64]map[int64]struct{})
+	for _, ce := range casts {
+		s := credits[ce.PerformerID]
+		if s == nil {
+			s = make(map[int64]struct{})
+			credits[ce.PerformerID] = s
 		}
-		out[i].StateCounts = counts
+		s[ce.RecordingID] = struct{}{}
+	}
+	if len(credits) == 0 {
+		return []PersonListItem{}, nil
+	}
+
+	performerIDs := make([]int64, 0, len(credits))
+	for id := range credits {
+		performerIDs = append(performerIDs, id)
+	}
+	performers, err := client.Performer.Query().
+		Where(performer.IDIn(performerIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query performers: %w", err)
+	}
+
+	out := make([]PersonListItem, 0, len(performers))
+	for _, p := range performers {
+		recIDs := credits[p.ID]
+		counts := make(map[string]int, len(recIDs))
+		for recID := range recIDs {
+			st, stErr := storage.LoadState(ctx, client, recID)
+			if stErr != nil {
+				return nil, fmt.Errorf("load state for recording %d: %w", recID, stErr)
+			}
+			counts[string(st.Status)]++
+		}
+		out = append(out, PersonListItem{
+			PerformerID:    p.ID,
+			Name:           p.Name,
+			Slug:           p.Slug,
+			RecordingCount: len(recIDs),
+			StateCounts:    counts,
+		})
 	}
 	return out, nil
 }
 
-// loadPerformerStateCounts walks the recordings credited to a performer
-// and tallies them by reconciled storage.Status. Returns a non-nil empty
-// map when the performer has no recordings — JSON consumers can iterate
-// without a nil-check.
-func loadPerformerStateCounts(
-	ctx context.Context,
-	db *sql.DB,
-	performerID int64,
-) (map[string]int, error) {
-	recIDs, err := storage.ListRecordingsForPerformer(ctx, db, performerID)
-	if err != nil {
-		return nil, fmt.Errorf("list recordings for performer %d: %w", performerID, err)
-	}
-	counts := make(map[string]int, len(recIDs))
-	for _, id := range recIDs {
-		st, stErr := storage.LoadState(ctx, db, id)
-		if stErr != nil {
-			return nil, fmt.Errorf("load state for recording %d: %w", id, stErr)
+// sortPeople orders the list according to the SPA's sort keys.
+// Stable, ascending by default; "count" sorts by RecordingCount.
+func sortPeople(items []PersonListItem, sortKey string, dir sortDir) {
+	desc := dir == sortDesc
+	cmp := func(a, b PersonListItem) int {
+		switch sortKey {
+		case "count":
+			return a.RecordingCount - b.RecordingCount
+		default:
+			return cmpString(a.Name, b.Name)
 		}
-		counts[string(st.Status)]++
 	}
-	return counts, nil
+	sort.SliceStable(items, func(i, j int) bool {
+		c := cmp(items[i], items[j])
+		if desc {
+			c = -c
+		}
+		if c != 0 {
+			return c < 0
+		}
+		return items[i].PerformerID < items[j].PerformerID
+	})
 }
 
 // loadPersonDetail loads the performer + the recordings they appear in.
 // Returns ErrPerformerNotFound when no performers row matches.
 func loadPersonDetail(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	id int64,
 ) (*PersonDetail, error) {
-	p, err := storage.LoadPerformer(ctx, db, id)
+	p, err := storage.LoadPerformer(ctx, client, id)
 	if err != nil {
 		return nil, err
 	}
 
-	recIDs, err := storage.ListRecordingsForPerformer(ctx, db, id)
+	recIDs, err := storage.ListRecordingsForPerformer(ctx, client, id)
 	if err != nil {
 		return nil, fmt.Errorf("list recordings for performer %d: %w", id, err)
 	}
 
-	recs, err := loadPersonRecordings(ctx, db, recIDs)
+	recs, err := loadPersonRecordings(ctx, client, recIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -278,59 +286,68 @@ func loadPersonDetail(
 
 // loadPersonRecordings resolves a slice of recording ids into the
 // PersonRecording shape used by the JSON + HTML detail views. Sorted
-// by show name, tour, date so the table reads alphabetically. Each row
-// is decorated with the reconciled storage.Status via storage.LoadState
-// — the N+1 cost is acceptable here because N is the number of
-// performances a single performer is in (typically under 10).
+// by show name, tour, date so the table reads alphabetically. Each
+// row is decorated with the reconciled storage.Status — the N+1 cost
+// is acceptable here because N is the number of performances a single
+// performer is in (typically under 10).
 func loadPersonRecordings(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	ids []int64,
 ) ([]PersonRecording, error) {
 	if len(ids) == 0 {
 		return []PersonRecording{}, nil
 	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	// placeholders are bind markers, not user input.
-	//nolint:gosec // G202: ? placeholders, recording ids are passed as args.
-	q := `
-		SELECT r.recording_id, COALESCE(s.name, ''), r.tour, r.date_full,
-		       r.date_month_known, r.date_day_known, r.show_id
-		FROM recordings r
-		LEFT JOIN shows s ON s.show_id = r.show_id
-		WHERE r.recording_id IN (` + strings.Join(placeholders, ",") + `)
-		ORDER BY s.name, r.tour, r.date_full
-	`
-	rows, err := db.QueryContext(ctx, q, args...)
+	recs, err := client.Recording.Query().
+		Where(recording.IDIn(ids...)).
+		Order(recording.ByID()).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query person recordings: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	out := make([]PersonRecording, 0, len(ids))
-	for rows.Next() {
-		var r PersonRecording
-		var monthKnown, dayKnown int
-		if scanErr := rows.Scan(
-			&r.ID, &r.Show, &r.Tour, &r.DateFull,
-			&monthKnown, &dayKnown, &r.ShowID,
-		); scanErr != nil {
-			return nil, fmt.Errorf("scan person recording: %w", scanErr)
+	showIDSet := make(map[int64]struct{}, len(recs))
+	for _, r := range recs {
+		showIDSet[r.ShowID] = struct{}{}
+	}
+	showIDs := make([]int64, 0, len(showIDSet))
+	for sID := range showIDSet {
+		showIDs = append(showIDs, sID)
+	}
+	showNames := map[int64]string{}
+	if len(showIDs) > 0 {
+		shows, sErr := client.Show.Query().
+			Where(show.IDIn(showIDs...)).All(ctx)
+		if sErr != nil {
+			return nil, fmt.Errorf("query shows: %w", sErr)
 		}
-		r.DateMonthKnown = monthKnown == 1
-		r.DateDayKnown = dayKnown == 1
-		out = append(out, r)
+		for _, sh := range shows {
+			showNames[sh.ID] = sh.Name
+		}
 	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate person recordings: %w", rerr)
+
+	out := make([]PersonRecording, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, PersonRecording{
+			ID:             r.ID,
+			Show:           showNames[r.ShowID],
+			Tour:           r.Tour,
+			DateFull:       r.DateFull,
+			DateMonthKnown: r.DateMonthKnown,
+			DateDayKnown:   r.DateDayKnown,
+			ShowID:         r.ShowID,
+		})
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if c := cmpString(out[i].Show, out[j].Show); c != 0 {
+			return c < 0
+		}
+		if c := cmpString(out[i].Tour, out[j].Tour); c != 0 {
+			return c < 0
+		}
+		return out[i].DateFull < out[j].DateFull
+	})
 	for i := range out {
-		st, stErr := storage.LoadState(ctx, db, out[i].ID)
+		st, stErr := storage.LoadState(ctx, client, out[i].ID)
 		if stErr != nil {
 			return nil, fmt.Errorf("load state for recording %d: %w", out[i].ID, stErr)
 		}

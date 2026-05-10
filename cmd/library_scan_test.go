@@ -41,14 +41,14 @@ func fixtureSync(t *testing.T) string {
 	t.Cleanup(srv.Close)
 
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
 
 	c, err := encora.New(encora.Options{BaseURL: srv.URL, APIKey: "test"})
 	require.NoError(t, err)
 	_, err = syncpkg.Sync(t.Context(), c, db, syncpkg.Options{BurstReserve: 2})
 	require.NoError(t, err)
-	require.NoError(t, db.Close())
+	require.NoError(t, sqlDB.Close())
 	return dbPath
 }
 

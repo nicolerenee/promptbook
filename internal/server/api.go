@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,8 +13,14 @@ import (
 	"strings"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/show"
+	"github.com/nicolerenee/promptbook/internal/ent/syncrun"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -31,6 +36,13 @@ const (
 	// a shared constant because goconst flags the duplication once
 	// three or more sibling tab tables exist.
 	allTabLabel = "All"
+
+	// sortKeyDate / sortKeyMaster are the sort-key tokens shared by
+	// the recordings + wants list comparators. Hoisted into constants
+	// because goconst trips on the literal once the same token shows
+	// up in three sibling switch statements.
+	sortKeyDate   = "date"
+	sortKeyMaster = "master"
 )
 
 // RecordingListItem is the shape returned by /api/v1/recordings and
@@ -409,18 +421,19 @@ func (s *Server) handleListWants(c echo.Context) error {
 	return c.JSON(http.StatusOK, pageEnvelope(items, total, limit, offset))
 }
 
+// syncRunsListLimit is how many sync_runs rows /api/v1/sync-runs
+// surfaces. The list fronts an admin debug surface and a small fixed
+// cap is enough to spot runaway error patterns.
+const syncRunsListLimit = 30
+
 func (s *Server) handleSyncRuns(c echo.Context) error {
-	rows, err := s.db.QueryContext(c.Request().Context(), `
-		SELECT id, kind, started_at, finished_at, ok_count, error_count,
-		       rate_limit_remaining, error_text
-		FROM sync_runs
-		ORDER BY id DESC
-		LIMIT 30
-	`)
+	rows, err := s.db.SyncRun.Query().
+		Order(syncrun.ByID(entsql.OrderDesc())).
+		Limit(syncRunsListLimit).
+		All(c.Request().Context())
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rows.Close() }()
 
 	type runRow struct {
 		ID                 int64   `json:"id"`
@@ -433,22 +446,22 @@ func (s *Server) handleSyncRuns(c echo.Context) error {
 		ErrorText          string  `json:"error_text"`
 	}
 
-	var out []runRow
-	for rows.Next() {
-		var row runRow
-		var finishedAt sql.NullString
-		if scanErr := rows.Scan(&row.ID, &row.Kind, &row.StartedAt, &finishedAt,
-			&row.OkCount, &row.ErrorCount, &row.RateLimitRemaining, &row.ErrorText); scanErr != nil {
-			return scanErr
+	out := make([]runRow, 0, len(rows))
+	for _, r := range rows {
+		row := runRow{
+			ID:                 int64(r.ID),
+			Kind:               r.Kind,
+			StartedAt:          r.StartedAt.Format("2006-01-02 15:04:05"),
+			OkCount:            r.OkCount,
+			ErrorCount:         r.ErrorCount,
+			RateLimitRemaining: r.RateLimitRemaining,
+			ErrorText:          r.ErrorText,
 		}
-		if finishedAt.Valid {
-			s := finishedAt.String
-			row.FinishedAt = &s
+		if r.FinishedAt != nil {
+			f := r.FinishedAt.Format("2006-01-02 15:04:05")
+			row.FinishedAt = &f
 		}
 		out = append(out, row)
-	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		return rowsErr
 	}
 	return c.JSON(http.StatusOK, map[string]any{itemsKey: out})
 }
@@ -488,7 +501,7 @@ func parseStatusParam(raw string) []storage.Status {
 // without re-querying).
 func loadStatefulRecordings(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	statuses []storage.Status,
 	ownedFilter, sortKey string,
 	dir sortDir,
@@ -498,7 +511,7 @@ func loadStatefulRecordings(
 	// we want to apply the legacy owned filter before paginating, so ask
 	// for a wide window and slice it ourselves).
 	listOpts := storage.ListStatesOptions{Status: statuses, Limit: maxStateScan}
-	states, err := storage.ListStates(ctx, db, listOpts)
+	states, err := storage.ListStates(ctx, client, listOpts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list states: %w", err)
 	}
@@ -510,7 +523,7 @@ func loadStatefulRecordings(
 	// Resolve metadata for the entire filtered set so we can sort by
 	// show / date / master before paginating. Page-size is capped at
 	// maxStateScan (1024), well within "load once" territory.
-	meta, err := loadRecordingMeta(ctx, db, states)
+	meta, err := loadRecordingMeta(ctx, client, states)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -575,9 +588,9 @@ func recordingsCompareFn(key string) func(a, b RecordingListItem) int {
 	switch key {
 	case "status":
 		return func(a, b RecordingListItem) int { return cmpString(a.Status, b.Status) }
-	case "date":
+	case sortKeyDate:
 		return func(a, b RecordingListItem) int { return cmpString(a.DateFull, b.DateFull) }
-	case "master":
+	case sortKeyMaster:
 		return func(a, b RecordingListItem) int { return cmpString(a.Master, b.Master) }
 	case "local_format":
 		return func(a, b RecordingListItem) int { return cmpEmptyLast(a.LocalFormat, b.LocalFormat) }
@@ -637,95 +650,92 @@ type recordingMeta struct {
 }
 
 // loadRecordingMeta resolves show/tour/date/master for a slice of
-// states in a single SQL query keyed on recording_id. Recordings that
-// don't exist in the recordings table (orphaned versions sans payload)
-// surface as the zero value.
+// states in a single ent query keyed on recording_id, then a follow-up
+// shows fetch to pull the show name. Recordings that don't exist in
+// the recordings table (orphaned versions sans payload) surface as the
+// zero value.
 func loadRecordingMeta(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	states []storage.RecordingState,
 ) (map[int64]recordingMeta, error) {
 	if len(states) == 0 {
 		return map[int64]recordingMeta{}, nil
 	}
-	placeholders := make([]string, len(states))
-	args := make([]any, len(states))
+	ids := make([]int64, len(states))
 	for i, st := range states {
-		placeholders[i] = "?"
-		args[i] = st.RecordingID
+		ids[i] = st.RecordingID
 	}
-	// Concatenated placeholders are bind-parameter markers (no
-	// user-controlled SQL); the recording_id args are passed via
-	// QueryContext.
-	//nolint:gosec // G202: placeholders are "?" markers, not user input.
-	q := `
-		SELECT r.recording_id, r.show_id, COALESCE(s.name, ''), r.tour, r.date_full,
-		       r.date_month_known, r.date_day_known, r.master
-		FROM recordings r
-		LEFT JOIN shows s ON s.show_id = r.show_id
-		WHERE r.recording_id IN (` + strings.Join(placeholders, ",") + `)
-	`
-	rows, err := db.QueryContext(ctx, q, args...)
+
+	recs, err := client.Recording.Query().
+		Where(recording.IDIn(ids...)).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query recording meta: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	out := make(map[int64]recordingMeta, len(states))
-	for rows.Next() {
-		var (
-			id                   int64
-			m                    recordingMeta
-			monthKnown, dayKnown int
-		)
-		if scanErr := rows.Scan(
-			&id, &m.showID, &m.show, &m.tour, &m.dateFull,
-			&monthKnown, &dayKnown, &m.master,
-		); scanErr != nil {
-			return nil, fmt.Errorf("scan recording meta: %w", scanErr)
-		}
-		m.monthKnown = monthKnown == 1
-		m.dayKnown = dayKnown == 1
-		out[id] = m
+	showIDSet := make(map[int64]struct{}, len(recs))
+	for _, r := range recs {
+		showIDSet[r.ShowID] = struct{}{}
 	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate recording meta: %w", rerr)
+	showIDs := make([]int64, 0, len(showIDSet))
+	for id := range showIDSet {
+		showIDs = append(showIDs, id)
+	}
+	showNames := map[int64]string{}
+	if len(showIDs) > 0 {
+		shows, sErr := client.Show.Query().
+			Where(show.IDIn(showIDs...)).
+			All(ctx)
+		if sErr != nil {
+			return nil, fmt.Errorf("query shows: %w", sErr)
+		}
+		for _, sh := range shows {
+			showNames[sh.ID] = sh.Name
+		}
+	}
+
+	out := make(map[int64]recordingMeta, len(recs))
+	for _, r := range recs {
+		out[r.ID] = recordingMeta{
+			showID:     r.ShowID,
+			show:       showNames[r.ShowID],
+			tour:       r.Tour,
+			dateFull:   r.DateFull,
+			monthKnown: r.DateMonthKnown,
+			dayKnown:   r.DateDayKnown,
+			master:     r.Master,
+		}
 	}
 	return out, nil
 }
 
-// wantsSortFragments maps sort keys exposed on the SPA's Wants page to
-// the SQL ORDER BY tail used to satisfy them. NULL last_synced_at rows
-// always pin to the bottom (NULLS LAST) so legacy backfilled rows
-// don't dominate the top of either direction. NEVER bypass this map —
-// every code path goes through resolveSortKey.
-//
-// The fallback (default) sort is wants_added DESC, recording_id DESC —
-// newest additions first, consistent with the legacy behavior.
-//
-//nolint:gochecknoglobals // immutable lookup table.
-var wantsSortFragments = map[string]string{
-	"wants_added": "w.last_synced_at",
-	"date":        "r.date_full",
-	"master":      "r.master",
-	"recording":   "s.name, r.date_full, r.tour",
-	"show":        "s.name",
-}
-
 // countWantsList returns the count of rows the wants list will surface
-// (mirrors the WHERE clause in loadWantsList exactly). Powers the SPA
-// pagination indicator.
-func countWantsList(ctx context.Context, db *sql.DB) (int, error) {
-	const q = `
-		SELECT COUNT(*)
-		FROM wants w
-		JOIN recordings r ON r.recording_id = w.recording_id
-		LEFT JOIN collection c ON c.recording_id = r.recording_id
-		WHERE c.recording_id IS NULL
-	`
-	var n int
-	if err := db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+// (mirrors the filter in loadWantsList exactly): wants whose recording
+// is NOT also in the collection. Powers the SPA pagination indicator.
+func countWantsList(ctx context.Context, client *ent.Client) (int, error) {
+	wantIDs, err := client.WantsEntry.Query().IDs(ctx)
+	if err != nil {
 		return 0, fmt.Errorf("count wants list: %w", err)
+	}
+	if len(wantIDs) == 0 {
+		return 0, nil
+	}
+	colIDs, err := client.CollectionEntry.Query().
+		Where(collectionentry.IDIn(wantIDs...)).
+		IDs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count wants ∩ collection: %w", err)
+	}
+	colSet := make(map[int64]struct{}, len(colIDs))
+	for _, id := range colIDs {
+		colSet[id] = struct{}{}
+	}
+	n := 0
+	for _, id := range wantIDs {
+		if _, ok := colSet[id]; !ok {
+			n++
+		}
 	}
 	return n, nil
 }
@@ -736,69 +746,184 @@ func countWantsList(ctx context.Context, db *sql.DB) (int, error) {
 // UI's "added" timeline reads chronologically; sortKey can override.
 // Excludes wants whose recording is also in the collection — those are
 // no longer "wants" from a UX standpoint.
+//
+// The legacy implementation pushed sort + pagination into SQL; the ent
+// version pulls every want, filters out the collection overlap, then
+// sorts + paginates in memory. Wants lists run O(hundreds) of rows in
+// practice — well within materialize-once territory.
 func loadWantsList(
 	ctx context.Context,
-	db *sql.DB,
+	client *ent.Client,
 	sortKey string,
 	dir sortDir,
 	limit, offset int,
 ) ([]wantsListItem, error) {
-	frag := resolveSortKey(sortKey, wantsSortFragments, "w.last_synced_at")
-	// Default direction is desc for the natural keys (newest first); only
-	// flip to ASC when the user supplied an explicit sort with dir=asc.
-	orderTail := frag + " " + dir.sortDirSQL() + ", r.recording_id DESC"
-	// Concatenated tail comes from the whitelist + a normalized direction
-	// constant — no user input ends up in the SQL.
-	//nolint:gosec // G202: see comment above; user input is mapped via whitelist.
-	q := `
-		SELECT
-			r.recording_id, COALESCE(s.name, ''), r.tour, r.date_full,
-			r.date_month_known, r.date_day_known, r.master,
-			c.recording_id IS NOT NULL AS in_collection,
-			w.last_synced_at
-		FROM wants w
-		JOIN recordings r ON r.recording_id = w.recording_id
-		LEFT JOIN shows s ON s.show_id = r.show_id
-		LEFT JOIN collection c ON c.recording_id = r.recording_id
-		WHERE c.recording_id IS NULL
-		ORDER BY ` + orderTail + `
-		LIMIT ? OFFSET ?
-	`
-	rows, err := db.QueryContext(ctx, q, limit, offset)
+	wants, err := client.WantsEntry.Query().All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query wants list: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	if len(wants) == 0 {
+		return []wantsListItem{}, nil
+	}
 
-	out := make([]wantsListItem, 0)
-	for rows.Next() {
-		var (
-			item                 wantsListItem
-			monthKnown, dayKnown int
-			inColl               int
-			lastSynced           sql.NullString
-		)
-		if scanErr := rows.Scan(
-			&item.ID, &item.Show, &item.Tour, &item.DateFull,
-			&monthKnown, &dayKnown, &item.Master,
-			&inColl, &lastSynced,
-		); scanErr != nil {
-			return nil, fmt.Errorf("scan wants list row: %w", scanErr)
-		}
-		item.DateMonthKnown = monthKnown == 1
-		item.DateDayKnown = dayKnown == 1
-		item.InCollection = inColl == 1
-		item.InWants = true
-		if lastSynced.Valid {
-			s := lastSynced.String
-			item.WantsAdded = &s
-		}
-		out = append(out, item)
+	wantIDs := make([]int64, len(wants))
+	wantsByID := make(map[int64]*ent.WantsEntry, len(wants))
+	for i, w := range wants {
+		wantIDs[i] = w.ID
+		wantsByID[w.ID] = w
 	}
-	if rerr := rows.Err(); rerr != nil {
-		return nil, fmt.Errorf("iterate wants list rows: %w", rerr)
+
+	// Recording metadata for every want id.
+	recs, err := client.Recording.Query().
+		Where(recording.IDIn(wantIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query wants recordings: %w", err)
 	}
-	return out, nil
+
+	// Filter out wants whose recording is also in the collection.
+	colIDs, err := client.CollectionEntry.Query().
+		Where(collectionentry.IDIn(wantIDs...)).
+		IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query wants ∩ collection: %w", err)
+	}
+	colSet := make(map[int64]struct{}, len(colIDs))
+	for _, id := range colIDs {
+		colSet[id] = struct{}{}
+	}
+
+	showIDSet := make(map[int64]struct{})
+	for _, r := range recs {
+		if _, drop := colSet[r.ID]; drop {
+			continue
+		}
+		showIDSet[r.ShowID] = struct{}{}
+	}
+	showIDs := make([]int64, 0, len(showIDSet))
+	for id := range showIDSet {
+		showIDs = append(showIDs, id)
+	}
+	showNames := map[int64]string{}
+	if len(showIDs) > 0 {
+		shows, sErr := client.Show.Query().Where(show.IDIn(showIDs...)).All(ctx)
+		if sErr != nil {
+			return nil, fmt.Errorf("query wants shows: %w", sErr)
+		}
+		for _, sh := range shows {
+			showNames[sh.ID] = sh.Name
+		}
+	}
+
+	out := make([]wantsListItem, 0, len(recs))
+	for _, r := range recs {
+		if _, drop := colSet[r.ID]; drop {
+			continue
+		}
+		w := wantsByID[r.ID]
+		ts := w.LastSyncedAt.Format("2006-01-02 15:04:05")
+		out = append(out, wantsListItem{
+			ID:             r.ID,
+			Show:           showNames[r.ShowID],
+			Tour:           r.Tour,
+			DateFull:       r.DateFull,
+			DateMonthKnown: r.DateMonthKnown,
+			DateDayKnown:   r.DateDayKnown,
+			Master:         r.Master,
+			InCollection:   false,
+			InWants:        true,
+			WantsAdded:     &ts,
+		})
+	}
+
+	sortWants(out, sortKey, dir)
+
+	if offset >= len(out) {
+		return []wantsListItem{}, nil
+	}
+	end := min(offset+limit, len(out))
+	return out[offset:end], nil
+}
+
+// sortWants orders the in-memory wants page in place. Mirrors the legacy
+// SQL ORDER BY mapping: the default key is wants_added desc with
+// recording_id desc as the stable tiebreaker; alternative keys map to
+// the natural columns the SPA exposes.
+func sortWants(items []wantsListItem, sortKey string, dir sortDir) {
+	desc := dir == sortDesc
+	if sortKey == "" {
+		// Default: newest-added first, recording_id desc tiebreak.
+		sort.SliceStable(items, func(i, j int) bool {
+			a, b := items[i], items[j]
+			ai, bi := "", ""
+			if a.WantsAdded != nil {
+				ai = *a.WantsAdded
+			}
+			if b.WantsAdded != nil {
+				bi = *b.WantsAdded
+			}
+			if ai != bi {
+				return ai > bi
+			}
+			return a.ID > b.ID
+		})
+		return
+	}
+	cmp := wantsCompareFn(sortKey)
+	sort.SliceStable(items, func(i, j int) bool {
+		c := cmp(items[i], items[j])
+		if desc {
+			c = -c
+		}
+		if c != 0 {
+			return c < 0
+		}
+		// Stable tiebreak on id desc (matches legacy "ORDER BY ..., r.recording_id DESC").
+		return items[i].ID > items[j].ID
+	})
+}
+
+func wantsCompareFn(key string) func(a, b wantsListItem) int {
+	switch key {
+	case "wants_added":
+		return func(a, b wantsListItem) int {
+			ai, bi := "", ""
+			if a.WantsAdded != nil {
+				ai = *a.WantsAdded
+			}
+			if b.WantsAdded != nil {
+				bi = *b.WantsAdded
+			}
+			return cmpString(ai, bi)
+		}
+	case sortKeyDate:
+		return func(a, b wantsListItem) int { return cmpString(a.DateFull, b.DateFull) }
+	case sortKeyMaster:
+		return func(a, b wantsListItem) int { return cmpString(a.Master, b.Master) }
+	case "show":
+		return func(a, b wantsListItem) int { return cmpString(a.Show, b.Show) }
+	case "recording":
+		return func(a, b wantsListItem) int {
+			if c := cmpString(a.Show, b.Show); c != 0 {
+				return c
+			}
+			if c := cmpString(a.DateFull, b.DateFull); c != 0 {
+				return c
+			}
+			return cmpString(a.Tour, b.Tour)
+		}
+	default:
+		return func(a, b wantsListItem) int {
+			ai, bi := "", ""
+			if a.WantsAdded != nil {
+				ai = *a.WantsAdded
+			}
+			if b.WantsAdded != nil {
+				bi = *b.WantsAdded
+			}
+			return cmpString(ai, bi)
+		}
+	}
 }
 
 func paramInt(c echo.Context, name string, fallback int) int {

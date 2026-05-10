@@ -18,8 +18,9 @@ import (
 // HistoryEventUpdate is the builder for updating HistoryEvent entities.
 type HistoryEventUpdate struct {
 	config
-	hooks    []Hook
-	mutation *HistoryEventMutation
+	hooks     []Hook
+	mutation  *HistoryEventMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // Where appends a list predicates to the HistoryEventUpdate builder.
@@ -143,6 +144,12 @@ func (_u *HistoryEventUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *HistoryEventUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *HistoryEventUpdate {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *HistoryEventUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	_spec := sqlgraph.NewUpdateSpec(historyevent.Table, historyevent.Columns, sqlgraph.NewFieldSpec(historyevent.FieldID, field.TypeInt))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
@@ -173,6 +180,7 @@ func (_u *HistoryEventUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if value, ok := _u.mutation.DetailsJSON(); ok {
 		_spec.SetField(historyevent.FieldDetailsJSON, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{historyevent.Label}
@@ -188,9 +196,10 @@ func (_u *HistoryEventUpdate) sqlSave(ctx context.Context) (_node int, err error
 // HistoryEventUpdateOne is the builder for updating a single HistoryEvent entity.
 type HistoryEventUpdateOne struct {
 	config
-	fields   []string
-	hooks    []Hook
-	mutation *HistoryEventMutation
+	fields    []string
+	hooks     []Hook
+	mutation  *HistoryEventMutation
+	modifiers []func(*sql.UpdateBuilder)
 }
 
 // SetOccurredAt sets the "occurred_at" field.
@@ -321,6 +330,12 @@ func (_u *HistoryEventUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// Modify adds a statement modifier for attaching custom logic to the UPDATE statement.
+func (_u *HistoryEventUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *HistoryEventUpdateOne {
+	_u.modifiers = append(_u.modifiers, modifiers...)
+	return _u
+}
+
 func (_u *HistoryEventUpdateOne) sqlSave(ctx context.Context) (_node *HistoryEvent, err error) {
 	_spec := sqlgraph.NewUpdateSpec(historyevent.Table, historyevent.Columns, sqlgraph.NewFieldSpec(historyevent.FieldID, field.TypeInt))
 	id, ok := _u.mutation.ID()
@@ -368,6 +383,7 @@ func (_u *HistoryEventUpdateOne) sqlSave(ctx context.Context) (_node *HistoryEve
 	if value, ok := _u.mutation.DetailsJSON(); ok {
 		_spec.SetField(historyevent.FieldDetailsJSON, field.TypeString, value)
 	}
+	_spec.AddModifiers(_u.modifiers...)
 	_node = &HistoryEvent{config: _u.config}
 	_spec.Assign = _node.assignValues
 	_spec.ScanValues = _node.scanValues

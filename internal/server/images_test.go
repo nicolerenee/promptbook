@@ -3,7 +3,6 @@ package server_test
 import (
 	"bytes"
 	"context"
-	gosql "database/sql"
 	"encoding/json"
 	"image"
 	"image/color"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -29,13 +29,13 @@ import (
 // real-looking IDs without seeding the full Encora fixture set.
 //
 //nolint:unparam // db return is symmetric with sibling helpers.
-func imagesRouteServer(t *testing.T) (*server.Server, *gosql.DB, *imagecache.Cache) {
+func imagesRouteServer(t *testing.T) (*server.Server, *ent.Client, *imagecache.Cache) {
 	t.Helper()
 	ctx := t.Context()
 
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	// Performer 90001001 — Avery Morrison.
 	require.NoError(t, storage.UpsertPerformer(ctx, db, storage.Performer{
@@ -43,9 +43,7 @@ func imagesRouteServer(t *testing.T) (*server.Server, *gosql.DB, *imagecache.Cac
 		Name:        "Avery Morrison",
 	}))
 	// Show 90004089 — Cresthaven.
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, int64(90004089), "Cresthaven")
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(90004089).SetName("Cresthaven").Exec(ctx))
 	// Recording 90100222 — minimal raw_json so LoadRecording succeeds.
 	rawJSON, err := json.Marshal(map[string]any{
 		"id":   90100222,
@@ -58,11 +56,9 @@ func imagesRouteServer(t *testing.T) (*server.Server, *gosql.DB, *imagecache.Cac
 		},
 	})
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		VALUES (?, ?, ?, ?, ?)
-	`, int64(90100222), int64(90004089), "OBC", "2009-12-13", string(rawJSON))
-	require.NoError(t, err)
+	require.NoError(t, db.Recording.Create().
+		SetID(90100222).SetShowID(90004089).SetTour("OBC").
+		SetDateFull("2009-12-13").SetRawJSON(string(rawJSON)).Exec(ctx))
 
 	cache := imagecache.New(t.TempDir(), nil, zerolog.Nop())
 	srv, err := server.New(server.Options{DB: db, ImageCache: cache})
@@ -207,9 +203,9 @@ func TestImagesRoute_DisabledCache_404(t *testing.T) {
 	// No ImageCache configured at all → /images/* isn't even
 	// registered, so the SPA fallback handles the path. We just need
 	// to verify it does NOT return a placeholder image.
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)
 

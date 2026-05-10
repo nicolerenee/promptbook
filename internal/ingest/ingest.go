@@ -5,7 +5,6 @@ package ingest
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
 	"github.com/nicolerenee/promptbook/internal/rename"
@@ -52,7 +52,7 @@ type Client interface {
 
 // Engine bundles ingest dependencies. One Engine handles many paths.
 type Engine struct {
-	DB                *sql.DB
+	DB                *ent.Client
 	Client            Client
 	LibraryRoot       string
 	FolderTemplate    string

@@ -79,8 +79,8 @@ func TestUpsertProfileOverwrites(t *testing.T) {
 	assert.WithinDuration(t, second.LastSyncedAt, got.LastSyncedAt, time.Second)
 
 	// CHECK (id = 1) means no second row ever lands.
-	var n int
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM profile`).Scan(&n))
+	n, err := db.Profile.Query().Count(ctx)
+	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 }
 

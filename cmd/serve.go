@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
@@ -66,11 +66,11 @@ func init() {
 func runServe(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	db, err := storage.Open(ctx, appConfig.Storage.DatabasePath)
+	sqlDB, db, err := storage.OpenEnt(ctx, appConfig.Storage.DatabasePath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	defer func() { _ = sqlDB.Close() }()
 
 	var smClient *stagemedia.Client
 	if appConfig.Stagemedia.APIKey != "" {
@@ -196,7 +196,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 // the queue-import handler 503s instead of failing requests at run
 // time.
 func buildIngestEngine(
-	db *sql.DB, encClient *encora.Client, imgCache *imagecache.Cache,
+	db *ent.Client, encClient *encora.Client, imgCache *imagecache.Cache,
 ) server.IngestRunner {
 	if encClient == nil || appConfig.Library.Root == "" {
 		log.Info().Msg("queue import disabled (encora api key or library.root missing)")
@@ -227,7 +227,7 @@ func buildIngestEngine(
 // refresh-encora's fan-out enqueues them or a user clicks Run.
 func buildJobRunner(
 	_ context.Context,
-	db *sql.DB,
+	db *ent.Client,
 	encClient *encora.Client,
 	smClient *stagemedia.Client,
 	imgCache *imagecache.Cache,
@@ -255,7 +255,7 @@ func buildJobRunner(
 // post-registration Enqueuer back-reference. Returns 1 on success, 0
 // otherwise.
 func registerRefreshEncora(
-	runner *jobs.Runner, db *sql.DB, encClient *encora.Client, imgCache *imagecache.Cache,
+	runner *jobs.Runner, db *ent.Client, encClient *encora.Client, imgCache *imagecache.Cache,
 ) int {
 	if encClient == nil {
 		return 0
@@ -287,7 +287,7 @@ func registerRefreshEncora(
 // jobs as manual-only. Returns the number successfully registered.
 func registerImageRefreshJobs(
 	runner *jobs.Runner,
-	db *sql.DB,
+	db *ent.Client,
 	encClient *encora.Client,
 	smClient *stagemedia.Client,
 	imgCache *imagecache.Cache,
@@ -329,7 +329,7 @@ func registerImageRefreshJobs(
 
 // registerScanIncoming wires the scan-incoming job when at least one
 // incoming directory is configured. Returns 1 on success, 0 otherwise.
-func registerScanIncoming(runner *jobs.Runner, db *sql.DB) int {
+func registerScanIncoming(runner *jobs.Runner, db *ent.Client) int {
 	if len(appConfig.Library.IncomingDirs) == 0 {
 		return 0
 	}

@@ -2,12 +2,12 @@ package storage_test
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -17,24 +17,21 @@ import (
 func seedCollection(
 	ctx context.Context,
 	t *testing.T,
-	db *sql.DB,
+	db *ent.Client,
 	recordingID int64,
 	format string,
 ) {
 	t.Helper()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO collection (recording_id, format) VALUES (?, ?)
-	`, recordingID, format)
-	require.NoError(t, err)
+	require.NoError(t, db.CollectionEntry.Create().
+		SetID(recordingID).
+		SetFormat(format).
+		Exec(ctx))
 }
 
 // seedWants inserts a row into the wants table for the given recording.
-func seedWants(ctx context.Context, t *testing.T, db *sql.DB, recordingID int64) {
+func seedWants(ctx context.Context, t *testing.T, db *ent.Client, recordingID int64) {
 	t.Helper()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO wants (recording_id) VALUES (?)
-	`, recordingID)
-	require.NoError(t, err)
+	require.NoError(t, db.WantsEntry.Create().SetID(recordingID).Exec(ctx))
 }
 
 // seedVersion inserts a recording_version row with the given format
@@ -42,7 +39,7 @@ func seedWants(ctx context.Context, t *testing.T, db *sql.DB, recordingID int64)
 func seedVersion(
 	ctx context.Context,
 	t *testing.T,
-	db *sql.DB,
+	db *ent.Client,
 	recordingID int64,
 	filePath, formatLabel string,
 ) {

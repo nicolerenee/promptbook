@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/profile"
@@ -18,6 +19,7 @@ type ProfileCreate struct {
 	config
 	mutation *ProfileMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetEncoraID sets the "encora_id" field.
@@ -312,6 +314,7 @@ func (_c *ProfileCreate) createSpec() (*Profile, *sqlgraph.CreateSpec) {
 		_node = &Profile{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(profile.Table, sqlgraph.NewFieldSpec(profile.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -363,11 +366,467 @@ func (_c *ProfileCreate) createSpec() (*Profile, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Profile.Create().
+//		SetEncoraID(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.ProfileUpsert) {
+//			SetEncoraID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *ProfileCreate) OnConflict(opts ...sql.ConflictOption) *ProfileUpsertOne {
+	_c.conflict = opts
+	return &ProfileUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Profile.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *ProfileCreate) OnConflictColumns(columns ...string) *ProfileUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &ProfileUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// ProfileUpsertOne is the builder for "upsert"-ing
+	//  one Profile node.
+	ProfileUpsertOne struct {
+		create *ProfileCreate
+	}
+
+	// ProfileUpsert is the "OnConflict" setter.
+	ProfileUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetEncoraID sets the "encora_id" field.
+func (u *ProfileUpsert) SetEncoraID(v int64) *ProfileUpsert {
+	u.Set(profile.FieldEncoraID, v)
+	return u
+}
+
+// UpdateEncoraID sets the "encora_id" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateEncoraID() *ProfileUpsert {
+	u.SetExcluded(profile.FieldEncoraID)
+	return u
+}
+
+// AddEncoraID adds v to the "encora_id" field.
+func (u *ProfileUpsert) AddEncoraID(v int64) *ProfileUpsert {
+	u.Add(profile.FieldEncoraID, v)
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *ProfileUpsert) SetName(v string) *ProfileUpsert {
+	u.Set(profile.FieldName, v)
+	return u
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateName() *ProfileUpsert {
+	u.SetExcluded(profile.FieldName)
+	return u
+}
+
+// SetSlug sets the "slug" field.
+func (u *ProfileUpsert) SetSlug(v string) *ProfileUpsert {
+	u.Set(profile.FieldSlug, v)
+	return u
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateSlug() *ProfileUpsert {
+	u.SetExcluded(profile.FieldSlug)
+	return u
+}
+
+// SetUsername sets the "username" field.
+func (u *ProfileUpsert) SetUsername(v string) *ProfileUpsert {
+	u.Set(profile.FieldUsername, v)
+	return u
+}
+
+// UpdateUsername sets the "username" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateUsername() *ProfileUpsert {
+	u.SetExcluded(profile.FieldUsername)
+	return u
+}
+
+// SetStatus sets the "status" field.
+func (u *ProfileUpsert) SetStatus(v string) *ProfileUpsert {
+	u.Set(profile.FieldStatus, v)
+	return u
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateStatus() *ProfileUpsert {
+	u.SetExcluded(profile.FieldStatus)
+	return u
+}
+
+// SetRecordingsCount sets the "recordings_count" field.
+func (u *ProfileUpsert) SetRecordingsCount(v int) *ProfileUpsert {
+	u.Set(profile.FieldRecordingsCount, v)
+	return u
+}
+
+// UpdateRecordingsCount sets the "recordings_count" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateRecordingsCount() *ProfileUpsert {
+	u.SetExcluded(profile.FieldRecordingsCount)
+	return u
+}
+
+// AddRecordingsCount adds v to the "recordings_count" field.
+func (u *ProfileUpsert) AddRecordingsCount(v int) *ProfileUpsert {
+	u.Add(profile.FieldRecordingsCount, v)
+	return u
+}
+
+// SetWantsCount sets the "wants_count" field.
+func (u *ProfileUpsert) SetWantsCount(v int) *ProfileUpsert {
+	u.Set(profile.FieldWantsCount, v)
+	return u
+}
+
+// UpdateWantsCount sets the "wants_count" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateWantsCount() *ProfileUpsert {
+	u.SetExcluded(profile.FieldWantsCount)
+	return u
+}
+
+// AddWantsCount adds v to the "wants_count" field.
+func (u *ProfileUpsert) AddWantsCount(v int) *ProfileUpsert {
+	u.Add(profile.FieldWantsCount, v)
+	return u
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *ProfileUpsert) SetLastSeenAt(v string) *ProfileUpsert {
+	u.Set(profile.FieldLastSeenAt, v)
+	return u
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateLastSeenAt() *ProfileUpsert {
+	u.SetExcluded(profile.FieldLastSeenAt)
+	return u
+}
+
+// SetProfileVisibility sets the "profile_visibility" field.
+func (u *ProfileUpsert) SetProfileVisibility(v string) *ProfileUpsert {
+	u.Set(profile.FieldProfileVisibility, v)
+	return u
+}
+
+// UpdateProfileVisibility sets the "profile_visibility" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateProfileVisibility() *ProfileUpsert {
+	u.SetExcluded(profile.FieldProfileVisibility)
+	return u
+}
+
+// SetColVisibility sets the "col_visibility" field.
+func (u *ProfileUpsert) SetColVisibility(v string) *ProfileUpsert {
+	u.Set(profile.FieldColVisibility, v)
+	return u
+}
+
+// UpdateColVisibility sets the "col_visibility" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateColVisibility() *ProfileUpsert {
+	u.SetExcluded(profile.FieldColVisibility)
+	return u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (u *ProfileUpsert) SetLastSyncedAt(v time.Time) *ProfileUpsert {
+	u.Set(profile.FieldLastSyncedAt, v)
+	return u
+}
+
+// UpdateLastSyncedAt sets the "last_synced_at" field to the value that was provided on create.
+func (u *ProfileUpsert) UpdateLastSyncedAt() *ProfileUpsert {
+	u.SetExcluded(profile.FieldLastSyncedAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.Profile.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(profile.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *ProfileUpsertOne) UpdateNewValues() *ProfileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(profile.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Profile.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *ProfileUpsertOne) Ignore() *ProfileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *ProfileUpsertOne) DoNothing() *ProfileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the ProfileCreate.OnConflict
+// documentation for more info.
+func (u *ProfileUpsertOne) Update(set func(*ProfileUpsert)) *ProfileUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&ProfileUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetEncoraID sets the "encora_id" field.
+func (u *ProfileUpsertOne) SetEncoraID(v int64) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetEncoraID(v)
+	})
+}
+
+// AddEncoraID adds v to the "encora_id" field.
+func (u *ProfileUpsertOne) AddEncoraID(v int64) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.AddEncoraID(v)
+	})
+}
+
+// UpdateEncoraID sets the "encora_id" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateEncoraID() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateEncoraID()
+	})
+}
+
+// SetName sets the "name" field.
+func (u *ProfileUpsertOne) SetName(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateName() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetSlug sets the "slug" field.
+func (u *ProfileUpsertOne) SetSlug(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetSlug(v)
+	})
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateSlug() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateSlug()
+	})
+}
+
+// SetUsername sets the "username" field.
+func (u *ProfileUpsertOne) SetUsername(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetUsername(v)
+	})
+}
+
+// UpdateUsername sets the "username" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateUsername() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateUsername()
+	})
+}
+
+// SetStatus sets the "status" field.
+func (u *ProfileUpsertOne) SetStatus(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetStatus(v)
+	})
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateStatus() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateStatus()
+	})
+}
+
+// SetRecordingsCount sets the "recordings_count" field.
+func (u *ProfileUpsertOne) SetRecordingsCount(v int) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetRecordingsCount(v)
+	})
+}
+
+// AddRecordingsCount adds v to the "recordings_count" field.
+func (u *ProfileUpsertOne) AddRecordingsCount(v int) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.AddRecordingsCount(v)
+	})
+}
+
+// UpdateRecordingsCount sets the "recordings_count" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateRecordingsCount() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateRecordingsCount()
+	})
+}
+
+// SetWantsCount sets the "wants_count" field.
+func (u *ProfileUpsertOne) SetWantsCount(v int) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetWantsCount(v)
+	})
+}
+
+// AddWantsCount adds v to the "wants_count" field.
+func (u *ProfileUpsertOne) AddWantsCount(v int) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.AddWantsCount(v)
+	})
+}
+
+// UpdateWantsCount sets the "wants_count" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateWantsCount() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateWantsCount()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *ProfileUpsertOne) SetLastSeenAt(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateLastSeenAt() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// SetProfileVisibility sets the "profile_visibility" field.
+func (u *ProfileUpsertOne) SetProfileVisibility(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetProfileVisibility(v)
+	})
+}
+
+// UpdateProfileVisibility sets the "profile_visibility" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateProfileVisibility() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateProfileVisibility()
+	})
+}
+
+// SetColVisibility sets the "col_visibility" field.
+func (u *ProfileUpsertOne) SetColVisibility(v string) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetColVisibility(v)
+	})
+}
+
+// UpdateColVisibility sets the "col_visibility" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateColVisibility() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateColVisibility()
+	})
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (u *ProfileUpsertOne) SetLastSyncedAt(v time.Time) *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetLastSyncedAt(v)
+	})
+}
+
+// UpdateLastSyncedAt sets the "last_synced_at" field to the value that was provided on create.
+func (u *ProfileUpsertOne) UpdateLastSyncedAt() *ProfileUpsertOne {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateLastSyncedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *ProfileUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for ProfileCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *ProfileUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *ProfileUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *ProfileUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // ProfileCreateBulk is the builder for creating many Profile entities in bulk.
 type ProfileCreateBulk struct {
 	config
 	err      error
 	builders []*ProfileCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the Profile entities in the database.
@@ -397,6 +856,7 @@ func (_c *ProfileCreateBulk) Save(ctx context.Context) ([]*Profile, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -447,6 +907,295 @@ func (_c *ProfileCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *ProfileCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Profile.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.ProfileUpsert) {
+//			SetEncoraID(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *ProfileCreateBulk) OnConflict(opts ...sql.ConflictOption) *ProfileUpsertBulk {
+	_c.conflict = opts
+	return &ProfileUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Profile.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *ProfileCreateBulk) OnConflictColumns(columns ...string) *ProfileUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &ProfileUpsertBulk{
+		create: _c,
+	}
+}
+
+// ProfileUpsertBulk is the builder for "upsert"-ing
+// a bulk of Profile nodes.
+type ProfileUpsertBulk struct {
+	create *ProfileCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.Profile.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(profile.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *ProfileUpsertBulk) UpdateNewValues() *ProfileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(profile.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Profile.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *ProfileUpsertBulk) Ignore() *ProfileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *ProfileUpsertBulk) DoNothing() *ProfileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the ProfileCreateBulk.OnConflict
+// documentation for more info.
+func (u *ProfileUpsertBulk) Update(set func(*ProfileUpsert)) *ProfileUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&ProfileUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetEncoraID sets the "encora_id" field.
+func (u *ProfileUpsertBulk) SetEncoraID(v int64) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetEncoraID(v)
+	})
+}
+
+// AddEncoraID adds v to the "encora_id" field.
+func (u *ProfileUpsertBulk) AddEncoraID(v int64) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.AddEncoraID(v)
+	})
+}
+
+// UpdateEncoraID sets the "encora_id" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateEncoraID() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateEncoraID()
+	})
+}
+
+// SetName sets the "name" field.
+func (u *ProfileUpsertBulk) SetName(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateName() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetSlug sets the "slug" field.
+func (u *ProfileUpsertBulk) SetSlug(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetSlug(v)
+	})
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateSlug() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateSlug()
+	})
+}
+
+// SetUsername sets the "username" field.
+func (u *ProfileUpsertBulk) SetUsername(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetUsername(v)
+	})
+}
+
+// UpdateUsername sets the "username" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateUsername() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateUsername()
+	})
+}
+
+// SetStatus sets the "status" field.
+func (u *ProfileUpsertBulk) SetStatus(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetStatus(v)
+	})
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateStatus() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateStatus()
+	})
+}
+
+// SetRecordingsCount sets the "recordings_count" field.
+func (u *ProfileUpsertBulk) SetRecordingsCount(v int) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetRecordingsCount(v)
+	})
+}
+
+// AddRecordingsCount adds v to the "recordings_count" field.
+func (u *ProfileUpsertBulk) AddRecordingsCount(v int) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.AddRecordingsCount(v)
+	})
+}
+
+// UpdateRecordingsCount sets the "recordings_count" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateRecordingsCount() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateRecordingsCount()
+	})
+}
+
+// SetWantsCount sets the "wants_count" field.
+func (u *ProfileUpsertBulk) SetWantsCount(v int) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetWantsCount(v)
+	})
+}
+
+// AddWantsCount adds v to the "wants_count" field.
+func (u *ProfileUpsertBulk) AddWantsCount(v int) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.AddWantsCount(v)
+	})
+}
+
+// UpdateWantsCount sets the "wants_count" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateWantsCount() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateWantsCount()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *ProfileUpsertBulk) SetLastSeenAt(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateLastSeenAt() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// SetProfileVisibility sets the "profile_visibility" field.
+func (u *ProfileUpsertBulk) SetProfileVisibility(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetProfileVisibility(v)
+	})
+}
+
+// UpdateProfileVisibility sets the "profile_visibility" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateProfileVisibility() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateProfileVisibility()
+	})
+}
+
+// SetColVisibility sets the "col_visibility" field.
+func (u *ProfileUpsertBulk) SetColVisibility(v string) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetColVisibility(v)
+	})
+}
+
+// UpdateColVisibility sets the "col_visibility" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateColVisibility() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateColVisibility()
+	})
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (u *ProfileUpsertBulk) SetLastSyncedAt(v time.Time) *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.SetLastSyncedAt(v)
+	})
+}
+
+// UpdateLastSyncedAt sets the "last_synced_at" field to the value that was provided on create.
+func (u *ProfileUpsertBulk) UpdateLastSyncedAt() *ProfileUpsertBulk {
+	return u.Update(func(s *ProfileUpsert) {
+		s.UpdateLastSyncedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *ProfileUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the ProfileCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for ProfileCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *ProfileUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

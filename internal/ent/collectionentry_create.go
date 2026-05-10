@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
@@ -18,6 +19,7 @@ type CollectionEntryCreate struct {
 	config
 	mutation *CollectionEntryMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetFormat sets the "format" field.
@@ -198,6 +200,7 @@ func (_c *CollectionEntryCreate) createSpec() (*CollectionEntry, *sqlgraph.Creat
 		_node = &CollectionEntry{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(collectionentry.Table, sqlgraph.NewFieldSpec(collectionentry.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -229,11 +232,337 @@ func (_c *CollectionEntryCreate) createSpec() (*CollectionEntry, *sqlgraph.Creat
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.CollectionEntry.Create().
+//		SetFormat(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.CollectionEntryUpsert) {
+//			SetFormat(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *CollectionEntryCreate) OnConflict(opts ...sql.ConflictOption) *CollectionEntryUpsertOne {
+	_c.conflict = opts
+	return &CollectionEntryUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.CollectionEntry.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *CollectionEntryCreate) OnConflictColumns(columns ...string) *CollectionEntryUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &CollectionEntryUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// CollectionEntryUpsertOne is the builder for "upsert"-ing
+	//  one CollectionEntry node.
+	CollectionEntryUpsertOne struct {
+		create *CollectionEntryCreate
+	}
+
+	// CollectionEntryUpsert is the "OnConflict" setter.
+	CollectionEntryUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetFormat sets the "format" field.
+func (u *CollectionEntryUpsert) SetFormat(v string) *CollectionEntryUpsert {
+	u.Set(collectionentry.FieldFormat, v)
+	return u
+}
+
+// UpdateFormat sets the "format" field to the value that was provided on create.
+func (u *CollectionEntryUpsert) UpdateFormat() *CollectionEntryUpsert {
+	u.SetExcluded(collectionentry.FieldFormat)
+	return u
+}
+
+// SetUserNotes sets the "user_notes" field.
+func (u *CollectionEntryUpsert) SetUserNotes(v string) *CollectionEntryUpsert {
+	u.Set(collectionentry.FieldUserNotes, v)
+	return u
+}
+
+// UpdateUserNotes sets the "user_notes" field to the value that was provided on create.
+func (u *CollectionEntryUpsert) UpdateUserNotes() *CollectionEntryUpsert {
+	u.SetExcluded(collectionentry.FieldUserNotes)
+	return u
+}
+
+// ClearUserNotes clears the value of the "user_notes" field.
+func (u *CollectionEntryUpsert) ClearUserNotes() *CollectionEntryUpsert {
+	u.SetNull(collectionentry.FieldUserNotes)
+	return u
+}
+
+// SetUserWatched sets the "user_watched" field.
+func (u *CollectionEntryUpsert) SetUserWatched(v bool) *CollectionEntryUpsert {
+	u.Set(collectionentry.FieldUserWatched, v)
+	return u
+}
+
+// UpdateUserWatched sets the "user_watched" field to the value that was provided on create.
+func (u *CollectionEntryUpsert) UpdateUserWatched() *CollectionEntryUpsert {
+	u.SetExcluded(collectionentry.FieldUserWatched)
+	return u
+}
+
+// SetCollectedAt sets the "collected_at" field.
+func (u *CollectionEntryUpsert) SetCollectedAt(v time.Time) *CollectionEntryUpsert {
+	u.Set(collectionentry.FieldCollectedAt, v)
+	return u
+}
+
+// UpdateCollectedAt sets the "collected_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsert) UpdateCollectedAt() *CollectionEntryUpsert {
+	u.SetExcluded(collectionentry.FieldCollectedAt)
+	return u
+}
+
+// ClearCollectedAt clears the value of the "collected_at" field.
+func (u *CollectionEntryUpsert) ClearCollectedAt() *CollectionEntryUpsert {
+	u.SetNull(collectionentry.FieldCollectedAt)
+	return u
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *CollectionEntryUpsert) SetUpdatedAt(v time.Time) *CollectionEntryUpsert {
+	u.Set(collectionentry.FieldUpdatedAt, v)
+	return u
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsert) UpdateUpdatedAt() *CollectionEntryUpsert {
+	u.SetExcluded(collectionentry.FieldUpdatedAt)
+	return u
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *CollectionEntryUpsert) ClearUpdatedAt() *CollectionEntryUpsert {
+	u.SetNull(collectionentry.FieldUpdatedAt)
+	return u
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (u *CollectionEntryUpsert) SetLastSyncedAt(v time.Time) *CollectionEntryUpsert {
+	u.Set(collectionentry.FieldLastSyncedAt, v)
+	return u
+}
+
+// UpdateLastSyncedAt sets the "last_synced_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsert) UpdateLastSyncedAt() *CollectionEntryUpsert {
+	u.SetExcluded(collectionentry.FieldLastSyncedAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.CollectionEntry.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(collectionentry.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *CollectionEntryUpsertOne) UpdateNewValues() *CollectionEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(collectionentry.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.CollectionEntry.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *CollectionEntryUpsertOne) Ignore() *CollectionEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *CollectionEntryUpsertOne) DoNothing() *CollectionEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the CollectionEntryCreate.OnConflict
+// documentation for more info.
+func (u *CollectionEntryUpsertOne) Update(set func(*CollectionEntryUpsert)) *CollectionEntryUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&CollectionEntryUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetFormat sets the "format" field.
+func (u *CollectionEntryUpsertOne) SetFormat(v string) *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetFormat(v)
+	})
+}
+
+// UpdateFormat sets the "format" field to the value that was provided on create.
+func (u *CollectionEntryUpsertOne) UpdateFormat() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateFormat()
+	})
+}
+
+// SetUserNotes sets the "user_notes" field.
+func (u *CollectionEntryUpsertOne) SetUserNotes(v string) *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetUserNotes(v)
+	})
+}
+
+// UpdateUserNotes sets the "user_notes" field to the value that was provided on create.
+func (u *CollectionEntryUpsertOne) UpdateUserNotes() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateUserNotes()
+	})
+}
+
+// ClearUserNotes clears the value of the "user_notes" field.
+func (u *CollectionEntryUpsertOne) ClearUserNotes() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.ClearUserNotes()
+	})
+}
+
+// SetUserWatched sets the "user_watched" field.
+func (u *CollectionEntryUpsertOne) SetUserWatched(v bool) *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetUserWatched(v)
+	})
+}
+
+// UpdateUserWatched sets the "user_watched" field to the value that was provided on create.
+func (u *CollectionEntryUpsertOne) UpdateUserWatched() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateUserWatched()
+	})
+}
+
+// SetCollectedAt sets the "collected_at" field.
+func (u *CollectionEntryUpsertOne) SetCollectedAt(v time.Time) *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetCollectedAt(v)
+	})
+}
+
+// UpdateCollectedAt sets the "collected_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsertOne) UpdateCollectedAt() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateCollectedAt()
+	})
+}
+
+// ClearCollectedAt clears the value of the "collected_at" field.
+func (u *CollectionEntryUpsertOne) ClearCollectedAt() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.ClearCollectedAt()
+	})
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *CollectionEntryUpsertOne) SetUpdatedAt(v time.Time) *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsertOne) UpdateUpdatedAt() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *CollectionEntryUpsertOne) ClearUpdatedAt() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.ClearUpdatedAt()
+	})
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (u *CollectionEntryUpsertOne) SetLastSyncedAt(v time.Time) *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetLastSyncedAt(v)
+	})
+}
+
+// UpdateLastSyncedAt sets the "last_synced_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsertOne) UpdateLastSyncedAt() *CollectionEntryUpsertOne {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateLastSyncedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *CollectionEntryUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for CollectionEntryCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *CollectionEntryUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *CollectionEntryUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *CollectionEntryUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // CollectionEntryCreateBulk is the builder for creating many CollectionEntry entities in bulk.
 type CollectionEntryCreateBulk struct {
 	config
 	err      error
 	builders []*CollectionEntryCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the CollectionEntry entities in the database.
@@ -263,6 +592,7 @@ func (_c *CollectionEntryCreateBulk) Save(ctx context.Context) ([]*CollectionEnt
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -313,6 +643,225 @@ func (_c *CollectionEntryCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *CollectionEntryCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.CollectionEntry.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.CollectionEntryUpsert) {
+//			SetFormat(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *CollectionEntryCreateBulk) OnConflict(opts ...sql.ConflictOption) *CollectionEntryUpsertBulk {
+	_c.conflict = opts
+	return &CollectionEntryUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.CollectionEntry.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *CollectionEntryCreateBulk) OnConflictColumns(columns ...string) *CollectionEntryUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &CollectionEntryUpsertBulk{
+		create: _c,
+	}
+}
+
+// CollectionEntryUpsertBulk is the builder for "upsert"-ing
+// a bulk of CollectionEntry nodes.
+type CollectionEntryUpsertBulk struct {
+	create *CollectionEntryCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.CollectionEntry.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(collectionentry.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *CollectionEntryUpsertBulk) UpdateNewValues() *CollectionEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(collectionentry.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.CollectionEntry.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *CollectionEntryUpsertBulk) Ignore() *CollectionEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *CollectionEntryUpsertBulk) DoNothing() *CollectionEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the CollectionEntryCreateBulk.OnConflict
+// documentation for more info.
+func (u *CollectionEntryUpsertBulk) Update(set func(*CollectionEntryUpsert)) *CollectionEntryUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&CollectionEntryUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetFormat sets the "format" field.
+func (u *CollectionEntryUpsertBulk) SetFormat(v string) *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetFormat(v)
+	})
+}
+
+// UpdateFormat sets the "format" field to the value that was provided on create.
+func (u *CollectionEntryUpsertBulk) UpdateFormat() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateFormat()
+	})
+}
+
+// SetUserNotes sets the "user_notes" field.
+func (u *CollectionEntryUpsertBulk) SetUserNotes(v string) *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetUserNotes(v)
+	})
+}
+
+// UpdateUserNotes sets the "user_notes" field to the value that was provided on create.
+func (u *CollectionEntryUpsertBulk) UpdateUserNotes() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateUserNotes()
+	})
+}
+
+// ClearUserNotes clears the value of the "user_notes" field.
+func (u *CollectionEntryUpsertBulk) ClearUserNotes() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.ClearUserNotes()
+	})
+}
+
+// SetUserWatched sets the "user_watched" field.
+func (u *CollectionEntryUpsertBulk) SetUserWatched(v bool) *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetUserWatched(v)
+	})
+}
+
+// UpdateUserWatched sets the "user_watched" field to the value that was provided on create.
+func (u *CollectionEntryUpsertBulk) UpdateUserWatched() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateUserWatched()
+	})
+}
+
+// SetCollectedAt sets the "collected_at" field.
+func (u *CollectionEntryUpsertBulk) SetCollectedAt(v time.Time) *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetCollectedAt(v)
+	})
+}
+
+// UpdateCollectedAt sets the "collected_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsertBulk) UpdateCollectedAt() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateCollectedAt()
+	})
+}
+
+// ClearCollectedAt clears the value of the "collected_at" field.
+func (u *CollectionEntryUpsertBulk) ClearCollectedAt() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.ClearCollectedAt()
+	})
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (u *CollectionEntryUpsertBulk) SetUpdatedAt(v time.Time) *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetUpdatedAt(v)
+	})
+}
+
+// UpdateUpdatedAt sets the "updated_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsertBulk) UpdateUpdatedAt() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateUpdatedAt()
+	})
+}
+
+// ClearUpdatedAt clears the value of the "updated_at" field.
+func (u *CollectionEntryUpsertBulk) ClearUpdatedAt() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.ClearUpdatedAt()
+	})
+}
+
+// SetLastSyncedAt sets the "last_synced_at" field.
+func (u *CollectionEntryUpsertBulk) SetLastSyncedAt(v time.Time) *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.SetLastSyncedAt(v)
+	})
+}
+
+// UpdateLastSyncedAt sets the "last_synced_at" field to the value that was provided on create.
+func (u *CollectionEntryUpsertBulk) UpdateLastSyncedAt() *CollectionEntryUpsertBulk {
+	return u.Update(func(s *CollectionEntryUpsert) {
+		s.UpdateLastSyncedAt()
+	})
+}
+
+// Exec executes the query.
+func (u *CollectionEntryUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the CollectionEntryCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for CollectionEntryCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *CollectionEntryUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

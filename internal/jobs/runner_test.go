@@ -70,9 +70,9 @@ func (j *counterJob) buttonshotArgs() (jobs.JobArgs, []jobs.JobArgs) {
 func newRunner(t *testing.T) *jobs.Runner {
 	t.Helper()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "p.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "p.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return jobs.New(jobs.Options{
 		DB:      db,
 		Logger:  zerolog.Nop(),
@@ -277,7 +277,7 @@ func TestRunner_RestartHydratesState(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "p.db")
 
 	// First runner: register + run once + observe persisted state.
-	db1, err := storage.Open(ctx, dbPath)
+	sqlDB1, db1, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
 	r1 := jobs.New(jobs.Options{DB: db1, Logger: zerolog.Nop(), Workers: 1})
 
@@ -317,12 +317,12 @@ func TestRunner_RestartHydratesState(t *testing.T) {
 	}
 	cancel1()
 	<-doneCh
-	_ = db1.Close()
+	_ = sqlDB1.Close()
 
 	// Second runner against the same database: state should hydrate.
-	db2, err := storage.Open(ctx, dbPath)
+	sqlDB2, db2, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db2.Close() })
+	t.Cleanup(func() { _ = sqlDB2.Close() })
 	r2 := jobs.New(jobs.Options{DB: db2, Logger: zerolog.Nop(), Workers: 1})
 	require.NoError(t, r2.Register(jobs.JobDef{
 		Job:      &fnJob{name: "persisted", fn: func(_ context.Context, _ jobs.JobArgs) error { return nil }},
@@ -528,7 +528,7 @@ func TestRestartState_PreservesArgs(t *testing.T) {
 	ctx := t.Context()
 	dbPath := filepath.Join(t.TempDir(), "p.db")
 
-	db1, err := storage.Open(ctx, dbPath)
+	sqlDB1, db1, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
 	r1 := jobs.New(jobs.Options{DB: db1, Logger: zerolog.Nop(), Workers: 1})
 
@@ -555,13 +555,13 @@ func TestRestartState_PreservesArgs(t *testing.T) {
 	}
 	cancel1()
 	<-doneCh
-	_ = db1.Close()
+	_ = sqlDB1.Close()
 
 	// Reopen against the same database; ListRecent is on the store,
 	// so we don't need to start the runner.
-	db2, err := storage.Open(ctx, dbPath)
+	sqlDB2, db2, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db2.Close() })
+	t.Cleanup(func() { _ = sqlDB2.Close() })
 	r2 := jobs.New(jobs.Options{DB: db2, Logger: zerolog.Nop(), Workers: 1})
 
 	runs, err := r2.ListRecent(ctx, 5)

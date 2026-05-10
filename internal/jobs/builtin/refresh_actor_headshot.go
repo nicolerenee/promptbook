@@ -7,6 +7,8 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
@@ -142,18 +144,44 @@ func lookupShowForActor(ctx context.Context, db *DBConn, actorID int64) (int64, 
 	if db == nil {
 		return 0, errors.New("db is nil")
 	}
-	var showID int64
-	err := db.QueryRowContext(ctx, `
-		SELECT MIN(r.show_id)
-		FROM cast_entries ce
-		JOIN recordings r ON r.recording_id = ce.recording_id
-		WHERE ce.performer_id = ?
-		  AND r.show_id > 0
-	`, actorID).Scan(&showID)
-	if err != nil {
-		// SQLite returns NULL → 0 when MIN matches nothing; that scans
-		// fine. A real error is the only path we treat as fatal.
-		return 0, fmt.Errorf("query show id for actor %d: %w", actorID, err)
+	// Cast entries credited to the actor → recording ids → minimum
+	// non-zero show id. The legacy SQL composed this in one MIN()
+	// query; the ent variant pulls cast entries scoped to the actor
+	// and the matching recordings, then picks the min show id in Go.
+	recIDs, err := db.CastEntry.Query().
+		Where(castentry.PerformerID(actorID)).
+		Select(castentry.FieldRecordingID).
+		Strings(ctx)
+	if err != nil || len(recIDs) == 0 {
+		if err != nil {
+			return 0, fmt.Errorf("query recording ids for actor %d: %w", actorID, err)
+		}
+		return 0, nil
 	}
-	return showID, nil
+	ids := make([]int64, 0, len(recIDs))
+	for _, s := range recIDs {
+		var id int64
+		if _, ferr := fmt.Sscanf(s, "%d", &id); ferr == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	recs, err := db.Recording.Query().
+		Where(recording.IDIn(ids...)).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query show ids for actor %d: %w", actorID, err)
+	}
+	var minShow int64
+	for _, r := range recs {
+		if r.ShowID <= 0 {
+			continue
+		}
+		if minShow == 0 || r.ShowID < minShow {
+			minShow = r.ShowID
+		}
+	}
+	return minShow, nil
 }

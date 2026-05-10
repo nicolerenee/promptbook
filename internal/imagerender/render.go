@@ -17,7 +17,6 @@ package imagerender
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"image"
@@ -31,6 +30,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -39,14 +39,14 @@ import (
 // overlay and writes the result to poster.jpg under the recording's
 // directory.
 type Renderer struct {
-	DB     *sql.DB
+	DB     *ent.Client
 	Cache  *imagecache.Cache
 	Logger zerolog.Logger
 }
 
 // New constructs a Renderer. Returns nil when cache is nil or
 // disabled — the caller's nil-check skips regeneration in that mode.
-func New(db *sql.DB, cache *imagecache.Cache, logger zerolog.Logger) *Renderer {
+func New(db *ent.Client, cache *imagecache.Cache, logger zerolog.Logger) *Renderer {
 	if cache == nil || cache.Disabled() {
 		return nil
 	}

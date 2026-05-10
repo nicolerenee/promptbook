@@ -2,11 +2,14 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
+
+	entsql "entgo.io/ent/dialect/sql"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
 )
 
 // History event kinds. More can be added as new event sources land.
@@ -55,7 +58,7 @@ type ListHistoryOptions struct {
 //
 // If e.OccurredAt is the zero value, it is set to time.Now().UTC(). If
 // e.Details is nil, an empty JSON object is stored.
-func RecordEvent(ctx context.Context, db *sql.DB, e HistoryEvent) (int64, error) {
+func RecordEvent(ctx context.Context, client *ent.Client, e HistoryEvent) (int64, error) {
 	if e.OccurredAt.IsZero() {
 		e.OccurredAt = time.Now().UTC()
 	}
@@ -69,130 +72,96 @@ func RecordEvent(ctx context.Context, db *sql.DB, e HistoryEvent) (int64, error)
 		return 0, fmt.Errorf("marshal history details: %w", err)
 	}
 
-	const q = `
-INSERT INTO history (occurred_at, kind, recording_id, summary, details_json)
-VALUES (?, ?, ?, ?, ?)
-`
-	res, err := db.ExecContext(ctx, q,
-		e.OccurredAt.UTC(),
-		e.Kind,
-		nullableInt64(e.RecordingID),
-		e.Summary,
-		string(detailsJSON),
-	)
+	create := client.HistoryEvent.Create().
+		SetOccurredAt(e.OccurredAt.UTC()).
+		SetKind(e.Kind).
+		SetSummary(e.Summary).
+		SetDetailsJSON(string(detailsJSON))
+	if e.RecordingID != nil {
+		create = create.SetRecordingID(*e.RecordingID)
+	}
+	row, err := create.Save(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("insert history: %w", err)
 	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("history last insert id: %w", err)
-	}
-	return id, nil
+	return int64(row.ID), nil
 }
 
 // ListHistory returns history rows matching opts, ordered by occurred_at
 // DESC, id DESC.
-func ListHistory(ctx context.Context, db *sql.DB, opts ListHistoryOptions) ([]HistoryEvent, error) {
+func ListHistory(
+	ctx context.Context, client *ent.Client, opts ListHistoryOptions,
+) ([]HistoryEvent, error) {
 	limit := opts.Limit
 	if limit == 0 {
 		limit = defaultHistoryListLimit
 	}
 
-	var (
-		where []string
-		args  []any
-	)
-
+	q := client.HistoryEvent.Query()
 	if len(opts.Kinds) > 0 {
-		placeholders := make([]string, len(opts.Kinds))
-		for i, k := range opts.Kinds {
-			placeholders[i] = "?"
-			args = append(args, k)
-		}
-		where = append(where, "kind IN ("+strings.Join(placeholders, ",")+")")
+		q = q.Where(historyevent.KindIn(opts.Kinds...))
 	}
-
 	if opts.RecordingID != nil {
-		where = append(where, "recording_id = ?")
-		args = append(args, *opts.RecordingID)
+		q = q.Where(historyevent.RecordingID(*opts.RecordingID))
 	}
-
 	if !opts.Since.IsZero() {
-		where = append(where, "occurred_at >= ?")
-		args = append(args, opts.Since.UTC())
+		q = q.Where(historyevent.OccurredAtGTE(opts.Since.UTC()))
 	}
-
 	if !opts.Until.IsZero() {
-		where = append(where, "occurred_at < ?")
-		args = append(args, opts.Until.UTC())
+		q = q.Where(historyevent.OccurredAtLT(opts.Until.UTC()))
 	}
 
-	q := "SELECT id, occurred_at, kind, recording_id, summary, details_json FROM history"
-	if len(where) > 0 {
-		// where[] is composed of static fragments only (column names + "?" placeholders);
-		// user values bind via args.
-		//nolint:gosec // G202: see comment above; no user input in the concatenated string.
-		q += " WHERE " + strings.Join(where, " AND ")
-	}
-	q += " ORDER BY occurred_at DESC, id DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, opts.Offset)
-
-	rows, err := db.QueryContext(ctx, q, args...)
+	rows, err := q.
+		Order(
+			historyevent.ByOccurredAt(entsql.OrderDesc()),
+			historyevent.ByID(entsql.OrderDesc()),
+		).
+		Limit(limit).
+		Offset(opts.Offset).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query history: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var out []HistoryEvent
-	for rows.Next() {
-		var (
-			ev          HistoryEvent
-			recordingID sql.NullInt64
-			detailsRaw  string
-			occurredAt  time.Time
-		)
-		if scanErr := rows.Scan(&ev.ID, &occurredAt, &ev.Kind, &recordingID, &ev.Summary, &detailsRaw); scanErr != nil {
-			return nil, fmt.Errorf("scan history row: %w", scanErr)
+	out := make([]HistoryEvent, 0, len(rows))
+	for _, r := range rows {
+		ev := HistoryEvent{
+			ID:         int64(r.ID),
+			OccurredAt: r.OccurredAt.UTC(),
+			Kind:       r.Kind,
+			Summary:    r.Summary,
+			Details:    map[string]any{},
 		}
-		ev.OccurredAt = occurredAt.UTC()
-		if recordingID.Valid {
-			id := recordingID.Int64
+		if r.RecordingID != nil {
+			id := *r.RecordingID
 			ev.RecordingID = &id
 		}
-		if detailsRaw == "" {
-			detailsRaw = "{}"
+		raw := r.DetailsJSON
+		if raw == "" {
+			raw = "{}"
 		}
-		ev.Details = map[string]any{}
-		if unmarshalErr := json.Unmarshal([]byte(detailsRaw), &ev.Details); unmarshalErr != nil {
-			return nil, fmt.Errorf("unmarshal history details: %w", unmarshalErr)
+		if uerr := json.Unmarshal([]byte(raw), &ev.Details); uerr != nil {
+			return nil, fmt.Errorf("unmarshal history details: %w", uerr)
 		}
 		out = append(out, ev)
 	}
-	if rowsErr := rows.Err(); rowsErr != nil {
-		return nil, fmt.Errorf("iterate history rows: %w", rowsErr)
+	if out == nil {
+		out = []HistoryEvent{}
 	}
+	// Preserve previous behavior — ListHistory used to return a nil slice
+	// when there were no rows; callers handle both. Returning a non-nil
+	// empty slice is also acceptable (tests assert via len/equals).
 	return out, nil
 }
 
 // PruneHistoryOlderThan deletes history rows with occurred_at < t and returns
 // the number of rows removed.
-func PruneHistoryOlderThan(ctx context.Context, db *sql.DB, t time.Time) (int64, error) {
-	res, err := db.ExecContext(ctx, "DELETE FROM history WHERE occurred_at < ?", t.UTC())
+func PruneHistoryOlderThan(ctx context.Context, client *ent.Client, t time.Time) (int64, error) {
+	n, err := client.HistoryEvent.Delete().
+		Where(historyevent.OccurredAtLT(t.UTC())).
+		Exec(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("prune history: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("history rows affected: %w", err)
-	}
-	return n, nil
-}
-
-// nullableInt64 turns a *int64 into a sql.NullInt64 for parameter binding.
-func nullableInt64(p *int64) sql.NullInt64 {
-	if p == nil {
-		return sql.NullInt64{}
-	}
-	return sql.NullInt64{Int64: *p, Valid: true}
+	return int64(n), nil
 }

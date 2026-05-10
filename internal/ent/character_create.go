@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/character"
@@ -18,6 +19,7 @@ type CharacterCreate struct {
 	config
 	mutation *CharacterMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetName sets the "name" field.
@@ -165,6 +167,7 @@ func (_c *CharacterCreate) createSpec() (*Character, *sqlgraph.CreateSpec) {
 		_node = &Character{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(character.Table, sqlgraph.NewFieldSpec(character.FieldID, field.TypeInt64))
 	)
+	_spec.OnConflict = _c.conflict
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
@@ -188,11 +191,246 @@ func (_c *CharacterCreate) createSpec() (*Character, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Character.Create().
+//		SetName(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.CharacterUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *CharacterCreate) OnConflict(opts ...sql.ConflictOption) *CharacterUpsertOne {
+	_c.conflict = opts
+	return &CharacterUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Character.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *CharacterCreate) OnConflictColumns(columns ...string) *CharacterUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &CharacterUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// CharacterUpsertOne is the builder for "upsert"-ing
+	//  one Character node.
+	CharacterUpsertOne struct {
+		create *CharacterCreate
+	}
+
+	// CharacterUpsert is the "OnConflict" setter.
+	CharacterUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetName sets the "name" field.
+func (u *CharacterUpsert) SetName(v string) *CharacterUpsert {
+	u.Set(character.FieldName, v)
+	return u
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *CharacterUpsert) UpdateName() *CharacterUpsert {
+	u.SetExcluded(character.FieldName)
+	return u
+}
+
+// SetSlug sets the "slug" field.
+func (u *CharacterUpsert) SetSlug(v string) *CharacterUpsert {
+	u.Set(character.FieldSlug, v)
+	return u
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *CharacterUpsert) UpdateSlug() *CharacterUpsert {
+	u.SetExcluded(character.FieldSlug)
+	return u
+}
+
+// SetURL sets the "url" field.
+func (u *CharacterUpsert) SetURL(v string) *CharacterUpsert {
+	u.Set(character.FieldURL, v)
+	return u
+}
+
+// UpdateURL sets the "url" field to the value that was provided on create.
+func (u *CharacterUpsert) UpdateURL() *CharacterUpsert {
+	u.SetExcluded(character.FieldURL)
+	return u
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *CharacterUpsert) SetLastSeenAt(v time.Time) *CharacterUpsert {
+	u.Set(character.FieldLastSeenAt, v)
+	return u
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *CharacterUpsert) UpdateLastSeenAt() *CharacterUpsert {
+	u.SetExcluded(character.FieldLastSeenAt)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
+// Using this option is equivalent to using:
+//
+//	client.Character.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(character.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *CharacterUpsertOne) UpdateNewValues() *CharacterUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(character.FieldID)
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Character.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *CharacterUpsertOne) Ignore() *CharacterUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *CharacterUpsertOne) DoNothing() *CharacterUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the CharacterCreate.OnConflict
+// documentation for more info.
+func (u *CharacterUpsertOne) Update(set func(*CharacterUpsert)) *CharacterUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&CharacterUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *CharacterUpsertOne) SetName(v string) *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *CharacterUpsertOne) UpdateName() *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetSlug sets the "slug" field.
+func (u *CharacterUpsertOne) SetSlug(v string) *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetSlug(v)
+	})
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *CharacterUpsertOne) UpdateSlug() *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateSlug()
+	})
+}
+
+// SetURL sets the "url" field.
+func (u *CharacterUpsertOne) SetURL(v string) *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetURL(v)
+	})
+}
+
+// UpdateURL sets the "url" field to the value that was provided on create.
+func (u *CharacterUpsertOne) UpdateURL() *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateURL()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *CharacterUpsertOne) SetLastSeenAt(v time.Time) *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *CharacterUpsertOne) UpdateLastSeenAt() *CharacterUpsertOne {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *CharacterUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for CharacterCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *CharacterUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *CharacterUpsertOne) ID(ctx context.Context) (id int64, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *CharacterUpsertOne) IDX(ctx context.Context) int64 {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // CharacterCreateBulk is the builder for creating many Character entities in bulk.
 type CharacterCreateBulk struct {
 	config
 	err      error
 	builders []*CharacterCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the Character entities in the database.
@@ -222,6 +460,7 @@ func (_c *CharacterCreateBulk) Save(ctx context.Context) ([]*Character, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -272,6 +511,176 @@ func (_c *CharacterCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *CharacterCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.Character.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.CharacterUpsert) {
+//			SetName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *CharacterCreateBulk) OnConflict(opts ...sql.ConflictOption) *CharacterUpsertBulk {
+	_c.conflict = opts
+	return &CharacterUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.Character.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *CharacterCreateBulk) OnConflictColumns(columns ...string) *CharacterUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &CharacterUpsertBulk{
+		create: _c,
+	}
+}
+
+// CharacterUpsertBulk is the builder for "upsert"-ing
+// a bulk of Character nodes.
+type CharacterUpsertBulk struct {
+	create *CharacterCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.Character.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(character.FieldID)
+//			}),
+//		).
+//		Exec(ctx)
+func (u *CharacterUpsertBulk) UpdateNewValues() *CharacterUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(character.FieldID)
+			}
+		}
+	}))
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.Character.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *CharacterUpsertBulk) Ignore() *CharacterUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *CharacterUpsertBulk) DoNothing() *CharacterUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the CharacterCreateBulk.OnConflict
+// documentation for more info.
+func (u *CharacterUpsertBulk) Update(set func(*CharacterUpsert)) *CharacterUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&CharacterUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetName sets the "name" field.
+func (u *CharacterUpsertBulk) SetName(v string) *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetName(v)
+	})
+}
+
+// UpdateName sets the "name" field to the value that was provided on create.
+func (u *CharacterUpsertBulk) UpdateName() *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateName()
+	})
+}
+
+// SetSlug sets the "slug" field.
+func (u *CharacterUpsertBulk) SetSlug(v string) *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetSlug(v)
+	})
+}
+
+// UpdateSlug sets the "slug" field to the value that was provided on create.
+func (u *CharacterUpsertBulk) UpdateSlug() *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateSlug()
+	})
+}
+
+// SetURL sets the "url" field.
+func (u *CharacterUpsertBulk) SetURL(v string) *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetURL(v)
+	})
+}
+
+// UpdateURL sets the "url" field to the value that was provided on create.
+func (u *CharacterUpsertBulk) UpdateURL() *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateURL()
+	})
+}
+
+// SetLastSeenAt sets the "last_seen_at" field.
+func (u *CharacterUpsertBulk) SetLastSeenAt(v time.Time) *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.SetLastSeenAt(v)
+	})
+}
+
+// UpdateLastSeenAt sets the "last_seen_at" field to the value that was provided on create.
+func (u *CharacterUpsertBulk) UpdateLastSeenAt() *CharacterUpsertBulk {
+	return u.Update(func(s *CharacterUpsert) {
+		s.UpdateLastSeenAt()
+	})
+}
+
+// Exec executes the query.
+func (u *CharacterUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the CharacterCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for CharacterCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *CharacterUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }

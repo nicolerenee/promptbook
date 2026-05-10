@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/profile"
 )
 
 // ErrProfileNotSynced signals that no profile row has been written yet.
@@ -37,37 +39,35 @@ type Profile struct {
 // UpsertProfile inserts the single profile row or refreshes the existing
 // one. The CHECK (id = 1) constraint on the table enforces single-row
 // semantics: promptbook only ever caches the authenticated user's profile.
-func UpsertProfile(ctx context.Context, db *sql.DB, p Profile) error {
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO profile (
-			id, encora_id, name, slug, username, status,
-			recordings_count, wants_count,
-			last_seen_at, profile_visibility, col_visibility,
-			last_synced_at
-		) VALUES (
-			1, ?, ?, ?, ?, ?,
-			?, ?,
-			?, ?, ?,
-			?
-		)
-		ON CONFLICT(id) DO UPDATE SET
-			encora_id          = excluded.encora_id,
-			name               = excluded.name,
-			slug               = excluded.slug,
-			username           = excluded.username,
-			status             = excluded.status,
-			recordings_count   = excluded.recordings_count,
-			wants_count        = excluded.wants_count,
-			last_seen_at       = excluded.last_seen_at,
-			profile_visibility = excluded.profile_visibility,
-			col_visibility     = excluded.col_visibility,
-			last_synced_at     = excluded.last_synced_at
-	`,
-		p.EncoraID, p.Name, p.Slug, p.Username, p.Status,
-		p.RecordingsCount, p.WantsCount,
-		p.LastSeenAt, p.ProfileVisibility, p.ColVisibility,
-		p.LastSyncedAt,
-	)
+func UpsertProfile(ctx context.Context, client *ent.Client, p Profile) error {
+	err := client.Profile.Create().
+		SetID(1).
+		SetEncoraID(p.EncoraID).
+		SetName(p.Name).
+		SetSlug(p.Slug).
+		SetUsername(p.Username).
+		SetStatus(p.Status).
+		SetRecordingsCount(p.RecordingsCount).
+		SetWantsCount(p.WantsCount).
+		SetLastSeenAt(p.LastSeenAt).
+		SetProfileVisibility(p.ProfileVisibility).
+		SetColVisibility(p.ColVisibility).
+		SetLastSyncedAt(p.LastSyncedAt).
+		OnConflictColumns(profile.FieldID).
+		Update(func(u *ent.ProfileUpsert) {
+			u.UpdateEncoraID()
+			u.UpdateName()
+			u.UpdateSlug()
+			u.UpdateUsername()
+			u.UpdateStatus()
+			u.UpdateRecordingsCount()
+			u.UpdateWantsCount()
+			u.UpdateLastSeenAt()
+			u.UpdateProfileVisibility()
+			u.UpdateColVisibility()
+			u.UpdateLastSyncedAt()
+		}).
+		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert profile: %w", err)
 	}
@@ -76,26 +76,25 @@ func UpsertProfile(ctx context.Context, db *sql.DB, p Profile) error {
 
 // LoadProfile returns the cached profile row, or ErrProfileNotSynced when
 // no sync has populated it yet.
-func LoadProfile(ctx context.Context, db *sql.DB) (*Profile, error) {
-	var p Profile
-	err := db.QueryRowContext(ctx, `
-		SELECT encora_id, name, slug, username, status,
-		       recordings_count, wants_count,
-		       last_seen_at, profile_visibility, col_visibility,
-		       last_synced_at
-		FROM profile
-		WHERE id = 1
-	`).Scan(
-		&p.EncoraID, &p.Name, &p.Slug, &p.Username, &p.Status,
-		&p.RecordingsCount, &p.WantsCount,
-		&p.LastSeenAt, &p.ProfileVisibility, &p.ColVisibility,
-		&p.LastSyncedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
+func LoadProfile(ctx context.Context, client *ent.Client) (*Profile, error) {
+	row, err := client.Profile.Get(ctx, 1)
+	if ent.IsNotFound(err) {
 		return nil, ErrProfileNotSynced
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query profile: %w", err)
 	}
-	return &p, nil
+	return &Profile{
+		EncoraID:          row.EncoraID,
+		Name:              row.Name,
+		Slug:              row.Slug,
+		Username:          row.Username,
+		Status:            row.Status,
+		RecordingsCount:   row.RecordingsCount,
+		WantsCount:        row.WantsCount,
+		LastSeenAt:        row.LastSeenAt,
+		ProfileVisibility: row.ProfileVisibility,
+		ColVisibility:     row.ColVisibility,
+		LastSyncedAt:      row.LastSyncedAt,
+	}, nil
 }

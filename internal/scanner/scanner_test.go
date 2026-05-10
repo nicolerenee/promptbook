@@ -2,7 +2,6 @@ package scanner_test
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/scanner"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -20,7 +21,7 @@ import (
 // both. Per-test instances keep cases parallel-safe.
 type fixture struct {
 	ctx      context.Context
-	db       *sql.DB
+	db       *ent.Client
 	watchDir string
 	engine   *scanner.Engine
 }
@@ -35,9 +36,9 @@ func newFixture(t *testing.T) *fixture {
 	tmp := t.TempDir()
 
 	dbPath := filepath.Join(tmp, "promptbook.db")
-	db, err := storage.Open(ctx, dbPath)
+	sqlDB, db, err := storage.OpenEnt(ctx, dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	watchDir := filepath.Join(tmp, "watch")
 	require.NoError(t, os.MkdirAll(watchDir, 0o755))
@@ -66,24 +67,26 @@ func (f *fixture) writeVideo(t *testing.T, name string) string {
 // seedRecording inserts a recordings row plus its parent show. Mirrors
 // the helpers in the storage package's own tests but kept local so the
 // scanner package doesn't depend on storage_test internals.
-func seedRecording(t *testing.T, db *sql.DB, recordingID int64) {
+func seedRecording(t *testing.T, db *ent.Client, recordingID int64) {
 	t.Helper()
 	ctx := t.Context()
 	const showID = int64(42)
-	_, err := db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO shows (show_id, name) VALUES (?, ?)`,
-		showID, "Some Show")
+	// Show may already exist across test cases — ignore conflicts.
+	exists, err := db.Show.Query().Where(show.IDEQ(showID)).Exist(ctx)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		VALUES (?, ?, '', '', '{}')
-	`, recordingID, showID)
-	require.NoError(t, err)
+	if !exists {
+		require.NoError(t, db.Show.Create().SetID(showID).SetName("Some Show").Exec(ctx))
+	}
+	require.NoError(t, db.Recording.Create().
+		SetID(recordingID).
+		SetShowID(showID).
+		SetRawJSON("{}").
+		Exec(ctx))
 }
 
 // seedVersion inserts a recording_versions row for the given recording
 // at path. seedRecording must be called first.
-func seedVersion(t *testing.T, db *sql.DB, recordingID int64, path string) {
+func seedVersion(t *testing.T, db *ent.Client, recordingID int64, path string) {
 	t.Helper()
 	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
 		RecordingID:   recordingID,

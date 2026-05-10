@@ -2,7 +2,6 @@ package storage_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	"github.com/nicolerenee/promptbook/internal/sync"
 )
@@ -55,9 +55,9 @@ func TestLoadRecording(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
-	db, err := storage.Open(t.Context(), dbPath)
+	sqlDB, db, err := storage.OpenEnt(t.Context(), dbPath)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	c, err := encora.New(encora.Options{BaseURL: srv.URL, APIKey: "test"})
 	require.NoError(t, err)
@@ -221,19 +221,18 @@ func TestLoadRecordingMissingPerformerSilent(t *testing.T) {
 func seedRecordingWithRawJSON(
 	ctx context.Context,
 	t *testing.T,
-	db *sql.DB,
+	db *ent.Client,
 	recordingID, showID int64,
 	rec encora.Recording,
 ) {
 	t.Helper()
 	raw, err := json.Marshal(rec)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (
-			recording_id, show_id, tour, date_full, raw_json
-		) VALUES (?, ?, '', '', ?)
-	`, recordingID, showID, string(raw))
-	require.NoError(t, err)
+	require.NoError(t, db.Recording.Create().
+		SetID(recordingID).
+		SetShowID(showID).
+		SetRawJSON(string(raw)).
+		Exec(ctx))
 }
 
 // newFixtureServer is a duplicate of the sync test's fixtureServer but

@@ -66,23 +66,18 @@ func refreshTestServer(
 ) (*server.Server, *jobs.Runner, *recordingJobStub, *recordingJobStub) {
 	t.Helper()
 	ctx := t.Context()
-	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(ctx, filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	_, err = db.ExecContext(ctx,
-		`INSERT INTO shows (show_id, name) VALUES (?, ?)`, showID, "RefreshShow")
-	require.NoError(t, err)
+	require.NoError(t, db.Show.Create().SetID(showID).SetName("RefreshShow").Exec(ctx))
 	rawJSON, err := json.Marshal(map[string]any{
 		"id": recordingID, "show": "RefreshShow",
 		"metadata": map[string]any{"show_id": showID},
 	})
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO recordings (recording_id, show_id, tour, date_full, raw_json)
-		VALUES (?, ?, '', '', ?)
-	`, recordingID, showID, string(rawJSON))
-	require.NoError(t, err)
+	require.NoError(t, db.Recording.Create().
+		SetID(recordingID).SetShowID(showID).SetRawJSON(string(rawJSON)).Exec(ctx))
 
 	runner := jobs.New(jobs.Options{
 		DB: db, Logger: zerolog.Nop(), Workers: 1,
@@ -181,9 +176,9 @@ func TestRefreshRecordingImages404OnUnknown(t *testing.T) {
 
 func TestRefreshImages503WhenNoRunner(t *testing.T) {
 	t.Parallel()
-	db, err := storage.Open(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	srv, err := server.New(server.Options{DB: db})
 	require.NoError(t, err)

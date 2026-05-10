@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/jobrun"
@@ -18,6 +19,7 @@ type JobRunCreate struct {
 	config
 	mutation *JobRunMutation
 	hooks    []Hook
+	conflict []sql.ConflictOption
 }
 
 // SetJobName sets the "job_name" field.
@@ -191,6 +193,7 @@ func (_c *JobRunCreate) createSpec() (*JobRun, *sqlgraph.CreateSpec) {
 		_node = &JobRun{config: _c.config}
 		_spec = sqlgraph.NewCreateSpec(jobrun.Table, sqlgraph.NewFieldSpec(jobrun.FieldID, field.TypeInt))
 	)
+	_spec.OnConflict = _c.conflict
 	if value, ok := _c.mutation.JobName(); ok {
 		_spec.SetField(jobrun.FieldJobName, field.TypeString, value)
 		_node.JobName = value
@@ -226,11 +229,368 @@ func (_c *JobRunCreate) createSpec() (*JobRun, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.JobRun.Create().
+//		SetJobName(v).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.JobRunUpsert) {
+//			SetJobName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *JobRunCreate) OnConflict(opts ...sql.ConflictOption) *JobRunUpsertOne {
+	_c.conflict = opts
+	return &JobRunUpsertOne{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.JobRun.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *JobRunCreate) OnConflictColumns(columns ...string) *JobRunUpsertOne {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &JobRunUpsertOne{
+		create: _c,
+	}
+}
+
+type (
+	// JobRunUpsertOne is the builder for "upsert"-ing
+	//  one JobRun node.
+	JobRunUpsertOne struct {
+		create *JobRunCreate
+	}
+
+	// JobRunUpsert is the "OnConflict" setter.
+	JobRunUpsert struct {
+		*sql.UpdateSet
+	}
+)
+
+// SetJobName sets the "job_name" field.
+func (u *JobRunUpsert) SetJobName(v string) *JobRunUpsert {
+	u.Set(jobrun.FieldJobName, v)
+	return u
+}
+
+// UpdateJobName sets the "job_name" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateJobName() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldJobName)
+	return u
+}
+
+// SetQueuedAt sets the "queued_at" field.
+func (u *JobRunUpsert) SetQueuedAt(v time.Time) *JobRunUpsert {
+	u.Set(jobrun.FieldQueuedAt, v)
+	return u
+}
+
+// UpdateQueuedAt sets the "queued_at" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateQueuedAt() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldQueuedAt)
+	return u
+}
+
+// SetStartedAt sets the "started_at" field.
+func (u *JobRunUpsert) SetStartedAt(v time.Time) *JobRunUpsert {
+	u.Set(jobrun.FieldStartedAt, v)
+	return u
+}
+
+// UpdateStartedAt sets the "started_at" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateStartedAt() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldStartedAt)
+	return u
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (u *JobRunUpsert) ClearStartedAt() *JobRunUpsert {
+	u.SetNull(jobrun.FieldStartedAt)
+	return u
+}
+
+// SetEndedAt sets the "ended_at" field.
+func (u *JobRunUpsert) SetEndedAt(v time.Time) *JobRunUpsert {
+	u.Set(jobrun.FieldEndedAt, v)
+	return u
+}
+
+// UpdateEndedAt sets the "ended_at" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateEndedAt() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldEndedAt)
+	return u
+}
+
+// ClearEndedAt clears the value of the "ended_at" field.
+func (u *JobRunUpsert) ClearEndedAt() *JobRunUpsert {
+	u.SetNull(jobrun.FieldEndedAt)
+	return u
+}
+
+// SetStatus sets the "status" field.
+func (u *JobRunUpsert) SetStatus(v string) *JobRunUpsert {
+	u.Set(jobrun.FieldStatus, v)
+	return u
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateStatus() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldStatus)
+	return u
+}
+
+// SetError sets the "error" field.
+func (u *JobRunUpsert) SetError(v string) *JobRunUpsert {
+	u.Set(jobrun.FieldError, v)
+	return u
+}
+
+// UpdateError sets the "error" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateError() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldError)
+	return u
+}
+
+// SetTrigger sets the "trigger" field.
+func (u *JobRunUpsert) SetTrigger(v string) *JobRunUpsert {
+	u.Set(jobrun.FieldTrigger, v)
+	return u
+}
+
+// UpdateTrigger sets the "trigger" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateTrigger() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldTrigger)
+	return u
+}
+
+// SetArgs sets the "args" field.
+func (u *JobRunUpsert) SetArgs(v string) *JobRunUpsert {
+	u.Set(jobrun.FieldArgs, v)
+	return u
+}
+
+// UpdateArgs sets the "args" field to the value that was provided on create.
+func (u *JobRunUpsert) UpdateArgs() *JobRunUpsert {
+	u.SetExcluded(jobrun.FieldArgs)
+	return u
+}
+
+// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// Using this option is equivalent to using:
+//
+//	client.JobRun.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *JobRunUpsertOne) UpdateNewValues() *JobRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.JobRun.Create().
+//	    OnConflict(sql.ResolveWithIgnore()).
+//	    Exec(ctx)
+func (u *JobRunUpsertOne) Ignore() *JobRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *JobRunUpsertOne) DoNothing() *JobRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the JobRunCreate.OnConflict
+// documentation for more info.
+func (u *JobRunUpsertOne) Update(set func(*JobRunUpsert)) *JobRunUpsertOne {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&JobRunUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetJobName sets the "job_name" field.
+func (u *JobRunUpsertOne) SetJobName(v string) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetJobName(v)
+	})
+}
+
+// UpdateJobName sets the "job_name" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateJobName() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateJobName()
+	})
+}
+
+// SetQueuedAt sets the "queued_at" field.
+func (u *JobRunUpsertOne) SetQueuedAt(v time.Time) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetQueuedAt(v)
+	})
+}
+
+// UpdateQueuedAt sets the "queued_at" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateQueuedAt() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateQueuedAt()
+	})
+}
+
+// SetStartedAt sets the "started_at" field.
+func (u *JobRunUpsertOne) SetStartedAt(v time.Time) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetStartedAt(v)
+	})
+}
+
+// UpdateStartedAt sets the "started_at" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateStartedAt() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateStartedAt()
+	})
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (u *JobRunUpsertOne) ClearStartedAt() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.ClearStartedAt()
+	})
+}
+
+// SetEndedAt sets the "ended_at" field.
+func (u *JobRunUpsertOne) SetEndedAt(v time.Time) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetEndedAt(v)
+	})
+}
+
+// UpdateEndedAt sets the "ended_at" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateEndedAt() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateEndedAt()
+	})
+}
+
+// ClearEndedAt clears the value of the "ended_at" field.
+func (u *JobRunUpsertOne) ClearEndedAt() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.ClearEndedAt()
+	})
+}
+
+// SetStatus sets the "status" field.
+func (u *JobRunUpsertOne) SetStatus(v string) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetStatus(v)
+	})
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateStatus() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateStatus()
+	})
+}
+
+// SetError sets the "error" field.
+func (u *JobRunUpsertOne) SetError(v string) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetError(v)
+	})
+}
+
+// UpdateError sets the "error" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateError() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateError()
+	})
+}
+
+// SetTrigger sets the "trigger" field.
+func (u *JobRunUpsertOne) SetTrigger(v string) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetTrigger(v)
+	})
+}
+
+// UpdateTrigger sets the "trigger" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateTrigger() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateTrigger()
+	})
+}
+
+// SetArgs sets the "args" field.
+func (u *JobRunUpsertOne) SetArgs(v string) *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetArgs(v)
+	})
+}
+
+// UpdateArgs sets the "args" field to the value that was provided on create.
+func (u *JobRunUpsertOne) UpdateArgs() *JobRunUpsertOne {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateArgs()
+	})
+}
+
+// Exec executes the query.
+func (u *JobRunUpsertOne) Exec(ctx context.Context) error {
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for JobRunCreate.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *JobRunUpsertOne) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// Exec executes the UPSERT query and returns the inserted/updated ID.
+func (u *JobRunUpsertOne) ID(ctx context.Context) (id int, err error) {
+	node, err := u.create.Save(ctx)
+	if err != nil {
+		return id, err
+	}
+	return node.ID, nil
+}
+
+// IDX is like ID, but panics if an error occurs.
+func (u *JobRunUpsertOne) IDX(ctx context.Context) int {
+	id, err := u.ID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 // JobRunCreateBulk is the builder for creating many JobRun entities in bulk.
 type JobRunCreateBulk struct {
 	config
 	err      error
 	builders []*JobRunCreate
+	conflict []sql.ConflictOption
 }
 
 // Save creates the JobRun entities in the database.
@@ -260,6 +620,7 @@ func (_c *JobRunCreateBulk) Save(ctx context.Context) ([]*JobRun, error) {
 					_, err = mutators[i+1].Mutate(root, _c.builders[i+1].mutation)
 				} else {
 					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
+					spec.OnConflict = _c.conflict
 					// Invoke the actual operation on the latest mutation in the chain.
 					if err = sqlgraph.BatchCreate(ctx, _c.driver, spec); err != nil {
 						if sqlgraph.IsConstraintError(err) {
@@ -310,6 +671,236 @@ func (_c *JobRunCreateBulk) Exec(ctx context.Context) error {
 // ExecX is like Exec, but panics if an error occurs.
 func (_c *JobRunCreateBulk) ExecX(ctx context.Context) {
 	if err := _c.Exec(ctx); err != nil {
+		panic(err)
+	}
+}
+
+// OnConflict allows configuring the `ON CONFLICT` / `ON DUPLICATE KEY` clause
+// of the `INSERT` statement. For example:
+//
+//	client.JobRun.CreateBulk(builders...).
+//		OnConflict(
+//			// Update the row with the new values
+//			// the was proposed for insertion.
+//			sql.ResolveWithNewValues(),
+//		).
+//		// Override some of the fields with custom
+//		// update values.
+//		Update(func(u *ent.JobRunUpsert) {
+//			SetJobName(v+v).
+//		}).
+//		Exec(ctx)
+func (_c *JobRunCreateBulk) OnConflict(opts ...sql.ConflictOption) *JobRunUpsertBulk {
+	_c.conflict = opts
+	return &JobRunUpsertBulk{
+		create: _c,
+	}
+}
+
+// OnConflictColumns calls `OnConflict` and configures the columns
+// as conflict target. Using this option is equivalent to using:
+//
+//	client.JobRun.Create().
+//		OnConflict(sql.ConflictColumns(columns...)).
+//		Exec(ctx)
+func (_c *JobRunCreateBulk) OnConflictColumns(columns ...string) *JobRunUpsertBulk {
+	_c.conflict = append(_c.conflict, sql.ConflictColumns(columns...))
+	return &JobRunUpsertBulk{
+		create: _c,
+	}
+}
+
+// JobRunUpsertBulk is the builder for "upsert"-ing
+// a bulk of JobRun nodes.
+type JobRunUpsertBulk struct {
+	create *JobRunCreateBulk
+}
+
+// UpdateNewValues updates the mutable fields using the new values that
+// were set on create. Using this option is equivalent to using:
+//
+//	client.JobRun.Create().
+//		OnConflict(
+//			sql.ResolveWithNewValues(),
+//		).
+//		Exec(ctx)
+func (u *JobRunUpsertBulk) UpdateNewValues() *JobRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	return u
+}
+
+// Ignore sets each column to itself in case of conflict.
+// Using this option is equivalent to using:
+//
+//	client.JobRun.Create().
+//		OnConflict(sql.ResolveWithIgnore()).
+//		Exec(ctx)
+func (u *JobRunUpsertBulk) Ignore() *JobRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWithIgnore())
+	return u
+}
+
+// DoNothing configures the conflict_action to `DO NOTHING`.
+// Supported only by SQLite and PostgreSQL.
+func (u *JobRunUpsertBulk) DoNothing() *JobRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.DoNothing())
+	return u
+}
+
+// Update allows overriding fields `UPDATE` values. See the JobRunCreateBulk.OnConflict
+// documentation for more info.
+func (u *JobRunUpsertBulk) Update(set func(*JobRunUpsert)) *JobRunUpsertBulk {
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(update *sql.UpdateSet) {
+		set(&JobRunUpsert{UpdateSet: update})
+	}))
+	return u
+}
+
+// SetJobName sets the "job_name" field.
+func (u *JobRunUpsertBulk) SetJobName(v string) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetJobName(v)
+	})
+}
+
+// UpdateJobName sets the "job_name" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateJobName() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateJobName()
+	})
+}
+
+// SetQueuedAt sets the "queued_at" field.
+func (u *JobRunUpsertBulk) SetQueuedAt(v time.Time) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetQueuedAt(v)
+	})
+}
+
+// UpdateQueuedAt sets the "queued_at" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateQueuedAt() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateQueuedAt()
+	})
+}
+
+// SetStartedAt sets the "started_at" field.
+func (u *JobRunUpsertBulk) SetStartedAt(v time.Time) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetStartedAt(v)
+	})
+}
+
+// UpdateStartedAt sets the "started_at" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateStartedAt() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateStartedAt()
+	})
+}
+
+// ClearStartedAt clears the value of the "started_at" field.
+func (u *JobRunUpsertBulk) ClearStartedAt() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.ClearStartedAt()
+	})
+}
+
+// SetEndedAt sets the "ended_at" field.
+func (u *JobRunUpsertBulk) SetEndedAt(v time.Time) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetEndedAt(v)
+	})
+}
+
+// UpdateEndedAt sets the "ended_at" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateEndedAt() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateEndedAt()
+	})
+}
+
+// ClearEndedAt clears the value of the "ended_at" field.
+func (u *JobRunUpsertBulk) ClearEndedAt() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.ClearEndedAt()
+	})
+}
+
+// SetStatus sets the "status" field.
+func (u *JobRunUpsertBulk) SetStatus(v string) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetStatus(v)
+	})
+}
+
+// UpdateStatus sets the "status" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateStatus() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateStatus()
+	})
+}
+
+// SetError sets the "error" field.
+func (u *JobRunUpsertBulk) SetError(v string) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetError(v)
+	})
+}
+
+// UpdateError sets the "error" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateError() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateError()
+	})
+}
+
+// SetTrigger sets the "trigger" field.
+func (u *JobRunUpsertBulk) SetTrigger(v string) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetTrigger(v)
+	})
+}
+
+// UpdateTrigger sets the "trigger" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateTrigger() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateTrigger()
+	})
+}
+
+// SetArgs sets the "args" field.
+func (u *JobRunUpsertBulk) SetArgs(v string) *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.SetArgs(v)
+	})
+}
+
+// UpdateArgs sets the "args" field to the value that was provided on create.
+func (u *JobRunUpsertBulk) UpdateArgs() *JobRunUpsertBulk {
+	return u.Update(func(s *JobRunUpsert) {
+		s.UpdateArgs()
+	})
+}
+
+// Exec executes the query.
+func (u *JobRunUpsertBulk) Exec(ctx context.Context) error {
+	if u.create.err != nil {
+		return u.create.err
+	}
+	for i, b := range u.create.builders {
+		if len(b.conflict) != 0 {
+			return fmt.Errorf("ent: OnConflict was set for builder %d. Set it on the JobRunCreateBulk instead", i)
+		}
+	}
+	if len(u.create.conflict) == 0 {
+		return errors.New("ent: missing options for JobRunCreateBulk.OnConflict")
+	}
+	return u.create.Exec(ctx)
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (u *JobRunUpsertBulk) ExecX(ctx context.Context) {
+	if err := u.create.Exec(ctx); err != nil {
 		panic(err)
 	}
 }
