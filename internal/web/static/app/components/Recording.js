@@ -1180,12 +1180,12 @@ function renderHero(loaded) {
     m('div', {
       class: 'hero-content text-neutral-content w-full p-6 sm:p-8',
     }, m('div', {
-      class: 'flex flex-col sm:flex-row gap-6 w-full max-w-6xl',
+      class: 'flex flex-col sm:flex-row sm:items-center gap-6 w-full max-w-6xl',
     }, [
       m('img', {
         src: posterURL,
         alt: showName + ' poster',
-        class: 'rounded-box w-48 sm:w-56 self-start shadow-xl',
+        class: 'rounded-box w-48 sm:w-56 shadow-xl',
         loading: 'lazy',
       }),
       m('div', { class: 'flex-1 space-y-3 min-w-0' }, [
