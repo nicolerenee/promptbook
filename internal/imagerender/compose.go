@@ -133,7 +133,7 @@ func loadFace(weight string, sizePx int) font.Face {
 // (see charBudgetSize) capped by the slot height, so dates always
 // render at the same scale across recordings regardless of length.
 // Returns a *image.RGBA so callers can hand it straight to jpeg.Encode.
-func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.RGBA {
+func compose(src image.Image, rows []string, style Style) *image.RGBA {
 	bounds := src.Bounds()
 	dst := image.NewRGBA(bounds)
 	draw.Draw(dst, bounds, src, bounds.Min, draw.Src)

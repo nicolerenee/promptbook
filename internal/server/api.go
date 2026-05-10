@@ -125,6 +125,11 @@ func (s *Server) routes() {
 	api.GET("/recordings/:id/poster-options", s.handleListRecordingPosterOptions)
 	api.GET("/recordings/:id/fanart-options", s.handleListRecordingFanartOptions)
 	api.GET("/actors/:id/headshot-options", s.handleListActorHeadshotOptions)
+	// Poster preview: composites the recording's overlay band over an
+	// upstream URL the user has staged in the picker. Lets the SPA
+	// show "what will this look like?" before the user clicks Save.
+	// Allowlisted to the same upstream hosts as the proxy.
+	api.GET("/recordings/:id/poster-preview", s.handleRecordingPosterPreview)
 	// Upstream image proxy. The picker thumbnails route through here
 	// because Safari aborts cross-origin <img> loads from localhost to
 	// stagemedia.me even with no-referrer. Allowlisted to StageMedia

@@ -140,7 +140,10 @@ export function renderImageErrorToast({ error, onDismiss }) {
 
 // renderUpstreamPicker is the shared picker tab body used by both
 // Recording.js (poster + fanart) and Show.js (banner). It renders:
-//   1. The current local image (the chosen slot under v2).
+//   1. The current local image (the chosen slot under v2). When the
+//      caller passes previewURL alongside, a "Preview" tile sits
+//      next to it showing what the staged selection will look like
+//      after the overlay band is composited (poster row only).
 //   2. A live-fetched strip of upstream thumbnails. Click one to
 //      stage it (a primary-color ring marks the selection); the
 //      parent's footer "Save" button is responsible for committing
@@ -168,6 +171,11 @@ export function renderImageErrorToast({ error, onDismiss }) {
 //   staged        — URL string of the currently staged selection, or
 //                   null/'' when nothing is staged. Matched against
 //                   each option's URL to draw the ring highlight.
+//   previewURL    — optional /api/v1/recordings/:id/poster-preview URL
+//                   that the parent has built from the staged option.
+//                   Renders a "Preview" tile next to "Current" so the
+//                   user sees the burned-in result before committing.
+//                   Pass null/'' to suppress (e.g. fanart picker).
 //   onPick(url)   — fired when the user clicks an upstream thumbnail.
 //                   Parent stages the URL; modal footer's Save commits.
 //   onUpload(file)— fired when the user picks a file via Upload.
@@ -179,7 +187,7 @@ export function renderImageErrorToast({ error, onDismiss }) {
 export function renderUpstreamPicker(attrs) {
   const {
     currentURL, currentLabel, currentAlt,
-    aspect, options, loading, error, busy, loadGen, staged,
+    aspect, options, loading, error, busy, loadGen, staged, previewURL,
     onPick, onUpload, onRefetch, uploadLabel,
   } = attrs;
 
@@ -187,36 +195,66 @@ export function renderUpstreamPicker(attrs) {
   const thumbClass = aspect === 'fanart' || aspect === 'backdrop'
     ? 'aspect-video w-48'
     : 'aspect-[2/3] w-32';
-  const currentClass = aspect === 'fanart' || aspect === 'backdrop'
-    ? 'aspect-video w-full max-w-2xl'
-    : 'aspect-[2/3] w-48';
+  // The Current tile shrinks when a Preview tile is also rendered so
+  // both fit comfortably in the modal width on the poster row.
+  const showPreview = !!previewURL;
+  const currentClass = showPreview
+    ? (aspect === 'fanart' || aspect === 'backdrop'
+        ? 'aspect-video w-full max-w-md'
+        : 'aspect-[2/3] w-40')
+    : (aspect === 'fanart' || aspect === 'backdrop'
+        ? 'aspect-video w-full max-w-2xl'
+        : 'aspect-[2/3] w-48');
 
   return m('section', { class: 'space-y-4' }, [
-    // Current local image — single slot under v2.
+    // Current + (optional) Preview, laid out side-by-side.
     m('div', { class: 'space-y-2' }, [
       m('h3', { class: 'text-sm font-semibold' }, currentLabel),
-      currentURL
-        ? m('div', { class: 'flex flex-col gap-1' }, [
-            m('figure', {
-              class: 'relative rounded overflow-hidden bg-base-200 ' + currentClass,
-            }, [
-              m('img', {
-                src: currentURL,
-                alt: currentAlt || '',
-                class: 'w-full h-full object-cover',
-                loading: 'lazy',
-                onload: captureDims,
-              }),
-              m('span', {
-                class: 'absolute top-2 left-2 badge badge-primary badge-sm',
-              }, 'Current'),
-            ]),
-            dimsLabel(currentURL),
-          ])
-        : m('div', {
-            class: 'rounded bg-base-200 flex items-center justify-center ' +
-                   'text-base-content/40 text-sm font-mono ' + currentClass,
-          }, 'No image on disk yet'),
+      m('div', { class: 'flex flex-row flex-wrap gap-4 items-start' }, [
+        currentURL
+          ? m('div', { class: 'flex flex-col gap-1' }, [
+              m('figure', {
+                class: 'relative rounded overflow-hidden bg-base-200 ' + currentClass,
+              }, [
+                m('img', {
+                  src: currentURL,
+                  alt: currentAlt || '',
+                  class: 'w-full h-full object-cover',
+                  loading: 'lazy',
+                  onload: captureDims,
+                }),
+                m('span', {
+                  class: 'absolute top-2 left-2 badge badge-primary badge-sm',
+                }, 'Current'),
+              ]),
+              dimsLabel(currentURL),
+            ])
+          : m('div', {
+              class: 'rounded bg-base-200 flex items-center justify-center ' +
+                     'text-base-content/40 text-sm font-mono ' + currentClass,
+            }, 'No image on disk yet'),
+        showPreview
+          ? m('div', { class: 'flex flex-col gap-1' }, [
+              m('figure', {
+                class: 'relative rounded overflow-hidden bg-base-200 ' +
+                       'border-2 border-primary ring-2 ring-primary ' +
+                       'ring-offset-2 ring-offset-base-100 ' + currentClass,
+              }, [
+                m('img', {
+                  src: previewURL,
+                  alt: 'preview with overlay',
+                  class: 'w-full h-full object-cover',
+                  loading: 'lazy',
+                  onload: captureDims,
+                }),
+                m('span', {
+                  class: 'absolute top-2 left-2 badge badge-primary badge-sm',
+                }, 'Preview'),
+              ]),
+              dimsLabel(previewURL),
+            ])
+          : null,
+      ]),
     ]),
 
     // Upstream options strip.

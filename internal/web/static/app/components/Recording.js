@@ -824,6 +824,18 @@ function renderPickerTab(loaded, kind) {
   const errorByKind = state.recording.pickerOptionsError || {};
   const genByKind = state.recording.pickerOptionsGen || {};
   const stagedByKind = state.recording.pickerStaged || {};
+  const stagedURL = stagedByKind[kind] || null;
+
+  // Preview tile only on the poster row — fanart isn't burned-in,
+  // so the staged thumbnail IS the preview already. The server
+  // composites the overlay over the staged URL via
+  // /poster-preview?url= and streams the result; the browser caches
+  // it for the lifetime of the staged URL.
+  let previewURL = null;
+  if (kind === 'poster' && stagedURL) {
+    previewURL = '/api/v1/recordings/' + encodeURIComponent(id)
+      + '/poster-preview?url=' + encodeURIComponent(stagedURL);
+  }
 
   return renderUpstreamPicker({
     currentURL: withImageVersion(localURL),
@@ -835,7 +847,8 @@ function renderPickerTab(loaded, kind) {
     error: errorByKind[kind] || null,
     busy: !!state.recording.imageBusy,
     loadGen: genByKind[kind] || 0,
-    staged: stagedByKind[kind] || null,
+    staged: stagedURL,
+    previewURL,
     onPick: (url) => stagePickerChoice(kind, url),
     onUpload: (file) => runUpload(uploadPath, id, file),
     onRefetch: () => loadOptions(id, kind),

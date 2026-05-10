@@ -94,14 +94,77 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 		return nil
 	}
 
+	rows, style, err := r.overlayInputs(ctx, recordingID, choice)
+	if err != nil {
+		return err
+	}
+
+	src, err := decodeJPEG(srcPath)
+	if err != nil {
+		return fmt.Errorf("imagerender: decode %s: %w", srcPath, err)
+	}
+
+	dst := compose(src, rows, style)
+
+	if writeErr := writeJPEGAtomic(destPath, dst); writeErr != nil {
+		return fmt.Errorf("imagerender: write %s: %w", destPath, writeErr)
+	}
+	r.Logger.Debug().
+		Int64("recording_id", recordingID).
+		Str("dest", destPath).
+		Msg("imagerender: poster.jpg written")
+	return nil
+}
+
+// Preview composites the recording's overlay band onto src and
+// returns the result, without writing to disk. Used by the picker
+// to show a "what will this look like?" tile next to the upstream
+// thumbnail before the user commits the selection. Returns src
+// unchanged when the recording has the burn-in opt-out flag set.
+//
+// Errors fail loudly (unlike Regenerate, which is best-effort) so
+// the calling handler can surface the underlying failure to the
+// user instead of silently rendering an empty preview.
+func (r *Renderer) Preview(
+	ctx context.Context, recordingID int64, src image.Image,
+) (image.Image, error) {
+	if r == nil {
+		return src, nil
+	}
+	choice, err := storage.GetImageChoice(ctx, r.DB, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("imagerender preview: load image choice for %d: %w",
+			recordingID, err)
+	}
+	if choice.OverlayDisabled {
+		// User turned the band off — preview is the raw image.
+		return src, nil
+	}
+	rows, style, err := r.overlayInputs(ctx, recordingID, choice)
+	if err != nil {
+		return nil, err
+	}
+	return compose(src, rows, style), nil
+}
+
+// overlayInputs resolves the rows + style the renderer should use
+// for the recording's burned-in band. Shared by Regenerate (writes
+// poster.jpg to disk) and Preview (renders an in-memory image for
+// the picker). The choice arg is passed in rather than re-loaded so
+// callers that already have it (Regenerate does) can avoid a
+// duplicate query.
+func (r *Renderer) overlayInputs(
+	ctx context.Context, recordingID int64, choice storage.ImageChoice,
+) ([]string, Style, error) {
 	loaded, err := storage.LoadRecording(ctx, r.DB, recordingID)
 	if err != nil && !errors.Is(err, storage.ErrRecordingNotFound) {
-		return fmt.Errorf("imagerender: load recording %d: %w", recordingID, err)
+		return nil, Style{}, fmt.Errorf(
+			"imagerender: load recording %d: %w", recordingID, err)
 	}
 	// Auto path emits the three rows directly so we don't round-trip
-	// through a "\n"-joined string. The override path still parses the
-	// user-typed string (single textarea on the SPA) into 3 slots via
-	// splitOverlay; positions still map line-by-line.
+	// through a "\n"-joined string. The override path still parses
+	// the user-typed string into 3 slots via splitOverlay; positions
+	// still map line-by-line.
 	rows := autoOverlayRows(loaded)
 	if choice.OverlayTextOverride != nil {
 		rows = splitOverlay(*choice.OverlayTextOverride)
@@ -119,22 +182,7 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 			style = merged
 		}
 	}
-
-	src, err := decodeJPEG(srcPath)
-	if err != nil {
-		return fmt.Errorf("imagerender: decode %s: %w", srcPath, err)
-	}
-
-	dst := r.compose(src, rows, style)
-
-	if writeErr := writeJPEGAtomic(destPath, dst); writeErr != nil {
-		return fmt.Errorf("imagerender: write %s: %w", destPath, writeErr)
-	}
-	r.Logger.Debug().
-		Int64("recording_id", recordingID).
-		Str("dest", destPath).
-		Msg("imagerender: poster.jpg written")
-	return nil
+	return rows, style, nil
 }
 
 // autoOverlayRows returns the three default rows burned into the
