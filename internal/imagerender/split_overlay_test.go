@@ -104,11 +104,28 @@ func TestTruncateToCharLimit(t *testing.T) {
 			in: "FIRST US NATIONAL TOUR (NON-EQUITY)", max: 25,
 			want: "FIRST US NATIONAL TOUR…"},
 		{name: "trailing dash + space trimmed before ellipsis",
-			in: "THE LONGEST TOUR NAME EVER -EVER", max: 25,
+			// "THE LONGEST TOUR NAME - EXTRA" — runes 23-24 are "- "
+			// so the cut produces "THE LONGEST TOUR NAME - " and the
+			// trim chases both the space and the orphan dash off
+			// before the ellipsis is added.
+			in:   "THE LONGEST TOUR NAME - EXTRA",
+			max:  25,
+			want: "THE LONGEST TOUR NAME…"},
+		{name: "long input with no trim chars at the cut keeps last rune",
+			// 24th rune is V (in "EVER"), no trim chars at the
+			// suffix, so the cut text is preserved verbatim with the
+			// ellipsis appended directly.
+			in:   "THE LONGEST TOUR NAME EVER -EVER",
+			max:  25,
 			want: "THE LONGEST TOUR NAME EV…"},
 		{name: "trailing comma + space trimmed",
-			in: "BROADWAY AT THE PALACE THEATRE, NY", max: 25,
-			want: "BROADWAY AT THE PALACE T…"},
+			// "BROADWAY AT THE PALACE, BIG NAME" — runes 23-24 are
+			// ", " so the cut at keep=24 produces "BROADWAY AT THE
+			// PALACE, " and the trim chases both the trailing space
+			// and the orphan comma off before the ellipsis is added.
+			in:   "BROADWAY AT THE PALACE, BIG NAME",
+			max:  25,
+			want: "BROADWAY AT THE PALACE…"},
 		{name: "orphan opening quote at the cut point trimmed",
 			// The 24th rune is the opening quote; truncation drops it
 			// before adding the ellipsis so we don't render `... "…`.
