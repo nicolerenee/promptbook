@@ -213,7 +213,7 @@ function ConfidenceBadge(conf) {
 function SuggestedMatchCell(item) {
   const rec = item.suggested_recording;
   if (!rec) {
-    return m('span', { class: 'opacity-60 italic' }, '— pick a recording —');
+    return m('span', { class: 'opacity-60' }, 'Not matched');
   }
   const subtitleParts = [];
   const date = smartDate(rec.date_full, rec.date_month_known, rec.date_day_known);
@@ -249,12 +249,12 @@ function Row(item) {
     m('td', { class: 'font-mono text-sm whitespace-nowrap' },
       relativeTime(item.discovered_at)),
     m('td', ConfidenceBadge(item.suggested_confidence)),
+    m('td', SuggestedMatchCell(item)),
     m('td',
       m('span', {
         class: 'font-mono text-sm block truncate max-w-[480px]',
         title: item.file_path || '',
       }, item.file_path || '')),
-    m('td', SuggestedMatchCell(item)),
     m('td', { class: 'font-mono text-sm whitespace-nowrap' },
       humanSize(item.file_size_bytes)),
   ]);
@@ -321,8 +321,8 @@ const Queue = {
             m('th', { style: 'width:36px' }),
             m('th', 'Discovered'),
             m('th', 'Confidence'),
-            m('th', 'File'),
             m('th', 'Suggested match'),
+            m('th', 'File'),
             m('th', 'Size'),
           ])),
           m('tbody', items.length === 0
