@@ -1264,12 +1264,13 @@ func (r *Resolver) importQueueEntry(
 			Kind:    storage.HistoryKindManualImport,
 			Summary: fmt.Sprintf("Imported queued file %s", entry.FilePath),
 			Details: map[string]any{
-				"queue_id":  input.QueueID,
+				"queue_id": input.QueueID,
+				//nolint:goconst // map keys for a single audit event payload; constants would obscure the schema.
 				"source":    entry.FilePath,
 				"encora_id": recordingID,
-				//nolint:goconst // map keys for a single audit event payload; constants would obscure the schema.
+				//nolint:goconst // see "source".
 				"dest": out.Dest,
-				//nolint:goconst // see "dest".
+				//nolint:goconst // see "source".
 				"action": item.Action,
 			},
 		}
@@ -1701,6 +1702,11 @@ func (r *Resolver) regenerateRecordingNFO(
 		return nil, errNFORefreshNotConfigured
 	}
 	if err := r.nfoRefresh.RewriteForRecording(ctx, recordingID); err != nil {
+		// Surface the failure on the payload rather than as a GraphQL
+		// error so the SPA can render an inline message; the resolver
+		// itself succeeded (it ran the rewrite), the rewrite is the
+		// thing that returned the error.
+		//nolint:nilerr // intentional: error surfaces on the payload.
 		return &RegenerateNFOResult{Ok: false, Error: err.Error()}, nil
 	}
 	return &RegenerateNFOResult{Ok: true}, nil

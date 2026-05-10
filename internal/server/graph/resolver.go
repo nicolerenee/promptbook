@@ -15,6 +15,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/probe"
 )
 
@@ -69,25 +70,31 @@ func (p LibraryPlan) Configured() bool {
 // returns a "ingest not configured" error so the rest of the read
 // surface stays alive. libraryPlan may be the zero value — when not
 // Configured() the previewQueueImport resolver returns a "library
-// not configured" error.
+// not configured" error. nfoRefresh may be nil — when nil the
+// regenerateRecordingNFO mutation + the apply-rename's post-move
+// rewrite return a typed error so the rest of the schema stays
+// usable; in production it's wired whenever the image cache is.
 type Resolver struct {
 	client       *ent.Client
 	imageCache   *imagecache.Cache
 	ingestEngine IngestRunner
 	libraryPlan  LibraryPlan
+	nfoRefresh   *nforefresh.Service
 	logger       zerolog.Logger
 }
 
 // NewSchema builds an executable GraphQL schema rooted at the supplied
-// ent client + image cache + ingest runner + library plan + logger.
-// The image cache and ingest runner are both optional; pass nil when
-// the surface is not configured at the server layer. libraryPlan may
-// be the zero value when no library.root / templates are configured.
+// ent client + image cache + ingest runner + library plan + nfo
+// refresh service + logger. The image cache, ingest runner, and nfo
+// refresh service are all optional; pass nil when the surface is not
+// configured at the server layer. libraryPlan may be the zero value
+// when no library.root / templates are configured.
 func NewSchema(
 	client *ent.Client,
 	cache *imagecache.Cache,
 	ingestEngine IngestRunner,
 	libraryPlan LibraryPlan,
+	nfoRefresh *nforefresh.Service,
 	logger zerolog.Logger,
 ) graphql.ExecutableSchema {
 	return NewExecutableSchema(Config{
@@ -96,6 +103,7 @@ func NewSchema(
 			imageCache:   cache,
 			ingestEngine: ingestEngine,
 			libraryPlan:  libraryPlan,
+			nfoRefresh:   nfoRefresh,
 			logger:       logger,
 		},
 	})

@@ -15,6 +15,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
 )
 
@@ -35,22 +36,26 @@ const websocketKeepAlive = 10 * time.Second
 
 // newGraphQLHandler builds a configured gqlgen server backed by the
 // supplied ent client + image cache + ingest runner + library plan +
-// logger. Mirrors gqlgen's deprecated NewDefaultServer (transports +
-// introspection + APQ + LRU query cache) but pinned to the constants
-// defined above. cache may be nil — the enrichment resolvers
-// nil-check before reading. ingestEngine may be nil — the
-// importQueueEntry mutation returns an "ingest not configured" error
-// in that case so the rest of the schema stays usable. libraryPlan
-// may be the zero value — the previewQueueImport query returns a
-// "library not configured" error in that mode.
+// nfo refresh service + logger. Mirrors gqlgen's deprecated
+// NewDefaultServer (transports + introspection + APQ + LRU query
+// cache) but pinned to the constants defined above. cache may be
+// nil — the enrichment resolvers nil-check before reading.
+// ingestEngine may be nil — the importQueueEntry mutation returns an
+// "ingest not configured" error in that case so the rest of the
+// schema stays usable. libraryPlan may be the zero value — the
+// previewQueueImport / previewRecordingRename / applyRecordingRename
+// resolvers return a "library not configured" error in that mode.
+// nfoRefresh may be nil — the regenerateRecordingNFO mutation
+// returns a typed error in that case.
 func newGraphQLHandler(
 	client *ent.Client,
 	cache *imagecache.Cache,
 	ingestEngine graph.IngestRunner,
 	libraryPlan graph.LibraryPlan,
+	nfoRefresh *nforefresh.Service,
 	logger zerolog.Logger,
 ) *handler.Server {
-	srv := handler.New(graph.NewSchema(client, cache, ingestEngine, libraryPlan, logger))
+	srv := handler.New(graph.NewSchema(client, cache, ingestEngine, libraryPlan, nfoRefresh, logger))
 	srv.AddTransport(transport.Websocket{KeepAlivePingInterval: websocketKeepAlive})
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
@@ -79,7 +84,8 @@ func newGraphQLHandler(
 // same surfaces the legacy REST handlers used to.
 func (s *Server) registerGraphQL() {
 	gql := newGraphQLHandler(
-		s.db, s.imageCache, s.ingestEngine, s.libraryPlan(), s.logger,
+		s.db, s.imageCache, s.ingestEngine, s.libraryPlan(),
+		s.nfoRefresh, s.logger,
 	)
 	s.echo.POST("/graphql", echo.WrapHandler(gql))
 	s.echo.GET("/graphql", echo.WrapHandler(gql))

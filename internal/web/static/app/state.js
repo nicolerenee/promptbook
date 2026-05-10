@@ -110,6 +110,26 @@ export const state = {
     // by renderImageInfoToast. Cleared by an explicit dismiss or a
     // 5s setTimeout fired alongside the message.
     imageInfo: null,
+    // Rename / NFO regen operator surfaces. renameOpen drives the
+    // <dialog>-based rename preview/apply modal; renamePreview holds
+    // the per-version preview rows (null while loading or unfetched);
+    // renameApplying is true while the apply mutation is in flight;
+    // renameResult holds the per-version outcomes after apply lands so
+    // the modal can switch from the preview view to the result view.
+    // regeneratingNFO disables the "Regenerate NFO" button while the
+    // mutation flies; regenerateNFOMessage carries the inline
+    // confirmation / error text the toast renders alongside the
+    // existing image toasts.
+    renameOpen: false,
+    renamePreview: null,
+    renamePreviewLoading: false,
+    renamePreviewError: null,
+    renameApplying: false,
+    renameResult: null,
+    renameApplyError: null,
+    regeneratingNFO: false,
+    regenerateNFOMessage: null,
+    regenerateNFOError: null,
   },
   // show is the /shows/:id detail page view-model. detail holds the
   // ShowDetailResponse payload (lower-case JSON keys per the

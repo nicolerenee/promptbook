@@ -2,17 +2,28 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nicolerenee/promptbook/internal/config"
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
+	"github.com/nicolerenee/promptbook/internal/probe"
+	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -796,4 +807,266 @@ func TestGraphQLImportQueueEntryExplicitID(t *testing.T) {
 	require.Len(t, stub.calls, 1)
 	assert.Equal(t, 9999, stub.calls[0].Opts.FlagEncoraID,
 		"explicit recordingID must override the suggested id")
+}
+
+// stubProber returns the supplied MediaInfo verbatim from every Probe
+// call. Used by the recording-rename tests so the resolver runs
+// without an ffprobe binary on PATH.
+type stubProber struct{ info probe.MediaInfo }
+
+func (s stubProber) Probe(_ context.Context, _ string) (probe.MediaInfo, error) {
+	return s.info, nil
+}
+
+// recordingRenameTestServer wires a server with the library config +
+// templates the rename resolvers need + a stub probe + a hand-built
+// nfo refresh service that points at a temp image cache. Returns the
+// server, the ent client, the library root path, and a callable that
+// sounds the apply path's NFO rewrite (used by the apply test to
+// assert the post-move rewrite fires).
+func recordingRenameTestServer(t *testing.T) (*server.Server, *ent.Client, string) {
+	t.Helper()
+	libRoot := t.TempDir()
+	imageRoot := t.TempDir()
+	sqlDB, db, err := storage.OpenEnt(t.Context(), filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	cache := imagecache.New(imageRoot, nil, zerolog.New(io.Discard))
+	logger := zerolog.New(io.Discard)
+	refresh := nforefresh.New(db, cache, "", logger)
+
+	srv, err := server.New(server.Options{
+		DB:         db,
+		Logger:     logger,
+		Prober:     stubProber{},
+		NFORefresh: refresh,
+		ImageCache: cache,
+		Config: config.Config{
+			Library: config.LibraryConfig{
+				Root:           libRoot,
+				FolderTemplate: config.DefaultFolderTemplate,
+				FileTemplate:   config.DefaultFileTemplate,
+			},
+		},
+	})
+	require.NoError(t, err)
+	return srv, db, libRoot
+}
+
+// renameRecordingFixture is the minimal Recording row + raw_json blob
+// the rename tests need. Mirrors seedRecordingForRender's shape but
+// pinned to a recording id the apply test can re-load through the
+// LoadRecording / LoadVersions path. metadata.show_id keeps the
+// resolved-cast helpers happy.
+const renameRecordingFixture = `{` +
+	`"id":90004242,"show":"Greenwich Beacon","tour":"Broadway",` +
+	`"date":{"full_date":"2017-04-21","month_known":true,"day_known":true,"time":"evening"},` +
+	`"master":"X","metadata":{"show_id":7}` +
+	`}`
+
+func seedRenameRecording(ctx context.Context, t *testing.T, db *ent.Client) {
+	t.Helper()
+	require.NoError(t, db.Show.Create().SetID(7).SetName("Greenwich Beacon").Exec(ctx))
+	require.NoError(t, db.Recording.Create().
+		SetID(90004242).SetShowID(7).SetTour("Broadway").
+		SetDateFull("2017-04-21").SetDateMonthKnown(true).SetDateDayKnown(true).
+		SetMaster("X").
+		SetRawJSON(renameRecordingFixture).
+		Exec(ctx))
+}
+
+// TestGraphQLPreviewRecordingRenameNoVersions covers the empty-list
+// branch: a recording with no on-disk versions returns an empty
+// preview list rather than an error.
+func TestGraphQLPreviewRecordingRenameNoVersions(t *testing.T) {
+	t.Parallel()
+	srv, db, _ := recordingRenameTestServer(t)
+	seedRenameRecording(t.Context(), t, db)
+
+	query := `query Q($id: ID!) {
+		previewRecordingRename(recordingID: $id) {
+			versionID
+			source
+			destination
+			willMove
+			error
+		}
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), query, map[string]any{
+		"id": "recording-90004242",
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			PreviewRecordingRename []struct {
+				VersionID   string `json:"versionID"`
+				Source      string `json:"source"`
+				Destination string `json:"destination"`
+				WillMove    bool   `json:"willMove"`
+				Error       string `json:"error"`
+			} `json:"previewRecordingRename"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.Empty(t, resp.Data.PreviewRecordingRename,
+		"recording with no versions must return an empty preview list")
+}
+
+// TestGraphQLPreviewRecordingRenameOneVersion drives the happy path:
+// one version with a non-canonical source path produces one preview
+// row whose destination is rendered through the configured templates
+// and whose willMove flag is true.
+func TestGraphQLPreviewRecordingRenameOneVersion(t *testing.T) {
+	t.Parallel()
+	srv, db, libRoot := recordingRenameTestServer(t)
+	seedRenameRecording(t.Context(), t, db)
+
+	srcPath := filepath.Join(t.TempDir(), "old-name.mkv")
+	require.NoError(t, os.WriteFile(srcPath, []byte("test"), 0o600))
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID: 90004242,
+		FilePath:    srcPath,
+	}))
+
+	query := `query Q($id: ID!) {
+		previewRecordingRename(recordingID: $id) {
+			versionID
+			source
+			destination
+			willMove
+			error
+		}
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), query, map[string]any{
+		"id": "recording-90004242",
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			PreviewRecordingRename []struct {
+				VersionID   string `json:"versionID"`
+				Source      string `json:"source"`
+				Destination string `json:"destination"`
+				WillMove    bool   `json:"willMove"`
+				Error       string `json:"error"`
+			} `json:"previewRecordingRename"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Data.PreviewRecordingRename, 1)
+	row := resp.Data.PreviewRecordingRename[0]
+	assert.Empty(t, row.Error)
+	assert.Equal(t, srcPath, row.Source)
+	assert.True(t, row.WillMove)
+	assert.True(t, strings.HasPrefix(row.VersionID, "version-"),
+		"versionID must carry the version- prefix: %s", row.VersionID)
+	assert.True(t, strings.HasPrefix(row.Destination, libRoot),
+		"destination %q must live under library root %q", row.Destination, libRoot)
+	assert.Contains(t, row.Destination, "encora-90004242",
+		"destination must include the encora id from the default template")
+}
+
+// TestGraphQLApplyRecordingRename drives the full apply path: the
+// resolver moves the source file to its canonical destination,
+// updates the recording_versions row's file_path, and returns
+// moved=true. The on-disk move is asserted by stat-ing both paths
+// after the mutation returns.
+func TestGraphQLApplyRecordingRename(t *testing.T) {
+	t.Parallel()
+	srv, db, libRoot := recordingRenameTestServer(t)
+	seedRenameRecording(t.Context(), t, db)
+
+	srcDir := t.TempDir()
+	srcPath := filepath.Join(srcDir, "old-name.mkv")
+	require.NoError(t, os.WriteFile(srcPath, []byte("test-bytes"), 0o600))
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID: 90004242,
+		FilePath:    srcPath,
+	}))
+
+	mutation := `mutation M($id: ID!) {
+		applyRecordingRename(recordingID: $id) {
+			versionID
+			source
+			destination
+			moved
+			error
+		}
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"id": "recording-90004242",
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			ApplyRecordingRename []struct {
+				VersionID   string `json:"versionID"`
+				Source      string `json:"source"`
+				Destination string `json:"destination"`
+				Moved       bool   `json:"moved"`
+				Error       string `json:"error"`
+			} `json:"applyRecordingRename"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Data.ApplyRecordingRename, 1)
+	row := resp.Data.ApplyRecordingRename[0]
+	assert.Empty(t, row.Error)
+	assert.True(t, row.Moved)
+	assert.Equal(t, srcPath, row.Source)
+	assert.True(t, strings.HasPrefix(row.Destination, libRoot),
+		"destination %q must live under library root %q", row.Destination, libRoot)
+
+	// Source must be gone, destination must exist.
+	_, srcStatErr := os.Stat(srcPath)
+	assert.True(t, os.IsNotExist(srcStatErr),
+		"source must no longer exist after apply: %v", srcStatErr)
+	_, destStatErr := os.Stat(row.Destination)
+	require.NoError(t, destStatErr, "destination must exist after apply")
+
+	// Version row must point at the new path.
+	versions, err := storage.ListVersions(t.Context(), db, 90004242)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	assert.Equal(t, row.Destination, versions[0].FilePath,
+		"recording_versions row must update to the new file_path")
+}
+
+// TestGraphQLRegenerateRecordingNFO covers the thin wrapper around
+// nforefresh.Service.RewriteForRecording: a recording with no version
+// rows still resolves to ok=true (the service's no-version-row case is
+// a successful no-op).
+func TestGraphQLRegenerateRecordingNFO(t *testing.T) {
+	t.Parallel()
+	srv, db, _ := recordingRenameTestServer(t)
+	seedRenameRecording(t.Context(), t, db)
+
+	mutation := `mutation M($id: ID!) {
+		regenerateRecordingNFO(recordingID: $id) { ok error }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"id": "recording-90004242",
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			RegenerateRecordingNFO struct {
+				OK    bool   `json:"ok"`
+				Error string `json:"error"`
+			} `json:"regenerateRecordingNFO"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.True(t, resp.Data.RegenerateRecordingNFO.OK,
+		"regenerateRecordingNFO with no version row must report ok=true")
+	assert.Empty(t, resp.Data.RegenerateRecordingNFO.Error)
 }

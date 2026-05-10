@@ -114,6 +114,10 @@ type Server struct {
 	// nil when image caching is disabled — there's no NFO to refresh
 	// in that mode either way.
 	nfoRefresh *nforefresh.Service
+	// prober overrides the rename-Plan path's media probe. nil falls
+	// back to probe.FFProbe at libraryPlan() time, which is the
+	// production wiring; tests inject a stub.
+	prober probe.Prober
 	// sleeper is the function the apply batch driver uses to honor a
 	// 429's Retry-After before issuing the next request. Defaults to
 	// time.Sleep; tests inject a recorder to assert the call without
@@ -200,6 +204,19 @@ type Options struct {
 	// rather than partially mutate state. Production wiring
 	// constructs it from the same imagecache.Cache; tests pass nil.
 	ImageRenderer *imagerender.Renderer
+	// Prober is an optional override for the rename Plan path's media
+	// probe. nil falls back to probe.FFProbe with the configured
+	// FFProbePath, which is the production wiring. Tests inject a
+	// stub satisfying probe.Prober so the per-recording rename
+	// preview / apply paths run without an ffprobe binary on PATH.
+	Prober probe.Prober
+	// NFORefresh is an optional override for the nfo refresh service
+	// the regenerateRecordingNFO mutation + the apply-rename's
+	// post-move rewrite drive. nil falls back to constructing one
+	// from ImageCache + Config.Server.PublicURL when ImageCache is
+	// configured; tests pass a hand-built service so the cascade can
+	// be exercised without a full image cache.
+	NFORefresh *nforefresh.Service
 }
 
 // New constructs a server with all routes registered and templates
@@ -246,6 +263,7 @@ func New(opts Options) (*Server, error) {
 		imageCache:        opts.ImageCache,
 		imageRenderer:     opts.ImageRenderer,
 		jobRunner:         opts.JobRunner,
+		prober:            opts.Prober,
 		sleeper:           sleeper,
 		version:           version,
 		config:            opts.Config,
@@ -254,8 +272,13 @@ func New(opts Options) (*Server, error) {
 	// Construct the NFO-refresh service when an image cache is
 	// configured. Without a cache there are no image-change events to
 	// react to, so the service stays nil and every fan-out trigger is
-	// a no-op via its own nil-check.
-	if opts.ImageCache != nil && !opts.ImageCache.Disabled() {
+	// a no-op via its own nil-check. An explicit Options.NFORefresh
+	// override (used by tests + future custom wiring) wins over the
+	// auto-construction path.
+	switch {
+	case opts.NFORefresh != nil:
+		srv.nfoRefresh = opts.NFORefresh
+	case opts.ImageCache != nil && !opts.ImageCache.Disabled():
 		srv.nfoRefresh = nforefresh.New(
 			opts.DB, opts.ImageCache, opts.Config.Server.PublicURL, opts.Logger,
 		)
@@ -304,6 +327,17 @@ func (s *Server) ImageRenderer() *imagerender.Renderer { return s.imageRenderer 
 // renders. Defaults to "dev" when no Options.Version was configured.
 func (s *Server) Version() string { return s.version }
 
+// proberOrFallback returns the configured prober override, or a fresh
+// probe.FFProbe with the configured ffprobePath when no override is
+// supplied. Pulled out so libraryPlan() stays a one-liner construction
+// and tests can inject a stub via Options.Prober.
+func (s *Server) proberOrFallback() probe.Prober {
+	if s.prober != nil {
+		return s.prober
+	}
+	return probe.FFProbe{Path: s.config.Library.FFProbePath}
+}
+
 // libraryPlan projects the loaded library config into the
 // graph.LibraryPlan shape the previewQueueImport resolver needs. The
 // fallthrough zero value (root="" or empty templates) marks the plan
@@ -316,7 +350,7 @@ func (s *Server) libraryPlan() graph.LibraryPlan {
 		Root:           s.config.Library.Root,
 		FolderTemplate: s.config.Library.FolderTemplate,
 		FileTemplate:   s.config.Library.FileTemplate,
-		Prober:         probe.FFProbe{Path: s.config.Library.FFProbePath},
+		Prober:         s.proberOrFallback(),
 	}
 }
 

@@ -76,6 +76,11 @@ const (
 	// at the scanner's best-guess recording. Null when the scanner had
 	// no candidate; non-null values marshal as "recording-N".
 	fkFieldSuggestedRecordingID = "suggestedRecordingID"
+	// fkFieldVersionID identifies the recording_versions row reference
+	// surfaced on the rename-preview / rename-result rows. The prefix
+	// stays "version-N" so the SPA can pin per-row state by id without
+	// needing to swap to a synthetic key.
+	fkFieldVersionID = "versionID"
 )
 
 // objectName* — GraphQL Object names that show up in two or more
@@ -186,6 +191,10 @@ var foreignKeyFieldPrefix = map[string]string{
 	// import-mutation input's recordingID slot is already covered by
 	// fkFieldRecordingID above.
 	fkFieldSuggestedRecordingID: prefixRecording,
+	// RenamePreviewItem.versionID + RenameResultItem.versionID both
+	// reference recording_versions rows; "version-N" mirrors the
+	// canonical RecordingVersion node prefix.
+	fkFieldVersionID: prefixRecordingVersion,
 }
 
 // validPrefixes is the set of prefixes Unmarshal accepts when the
