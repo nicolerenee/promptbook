@@ -40,6 +40,8 @@ type RecordingVersion struct {
 	MediaInfoJSON string `json:"media_info_json,omitempty"`
 	// SourceFolder holds the value of the "source_folder" field.
 	SourceFolder string `json:"source_folder,omitempty"`
+	// PartIndex holds the value of the "part_index" field.
+	PartIndex int `json:"part_index,omitempty"`
 	// AddedAt holds the value of the "added_at" field.
 	AddedAt time.Time `json:"added_at,omitempty"`
 	// LastSeenAt holds the value of the "last_seen_at" field.
@@ -77,7 +79,7 @@ func (*RecordingVersion) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case recordingversion.FieldID, recordingversion.FieldRecordingID, recordingversion.FieldFileSizeBytes:
+		case recordingversion.FieldID, recordingversion.FieldRecordingID, recordingversion.FieldFileSizeBytes, recordingversion.FieldPartIndex:
 			values[i] = new(sql.NullInt64)
 		case recordingversion.FieldFilePath, recordingversion.FieldContainer, recordingversion.FieldQuality, recordingversion.FieldVideoCodec, recordingversion.FieldAudioCodec, recordingversion.FieldFormatLabel, recordingversion.FieldNotes, recordingversion.FieldMediaInfoJSON, recordingversion.FieldSourceFolder:
 			values[i] = new(sql.NullString)
@@ -170,6 +172,12 @@ func (_m *RecordingVersion) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SourceFolder = value.String
 			}
+		case recordingversion.FieldPartIndex:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field part_index", values[i])
+			} else if value.Valid {
+				_m.PartIndex = int(value.Int64)
+			}
 		case recordingversion.FieldAddedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field added_at", values[i])
@@ -255,6 +263,9 @@ func (_m *RecordingVersion) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("source_folder=")
 	builder.WriteString(_m.SourceFolder)
+	builder.WriteString(", ")
+	builder.WriteString("part_index=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PartIndex))
 	builder.WriteString(", ")
 	builder.WriteString("added_at=")
 	builder.WriteString(_m.AddedAt.Format(time.ANSIC))

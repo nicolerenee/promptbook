@@ -18,6 +18,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
 	"github.com/nicolerenee/promptbook/internal/ent/character"
 	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
 	"github.com/nicolerenee/promptbook/internal/ent/jobrun"
 	"github.com/nicolerenee/promptbook/internal/ent/jobstate"
@@ -43,6 +44,8 @@ type Client struct {
 	Character *CharacterClient
 	// CollectionEntry is the client for interacting with the CollectionEntry builders.
 	CollectionEntry *CollectionEntryClient
+	// ExtraEntry is the client for interacting with the ExtraEntry builders.
+	ExtraEntry *ExtraEntryClient
 	// HistoryEvent is the client for interacting with the HistoryEvent builders.
 	HistoryEvent *HistoryEventClient
 	// JobRun is the client for interacting with the JobRun builders.
@@ -83,6 +86,7 @@ func (c *Client) init() {
 	c.CastEntry = NewCastEntryClient(c.config)
 	c.Character = NewCharacterClient(c.config)
 	c.CollectionEntry = NewCollectionEntryClient(c.config)
+	c.ExtraEntry = NewExtraEntryClient(c.config)
 	c.HistoryEvent = NewHistoryEventClient(c.config)
 	c.JobRun = NewJobRunClient(c.config)
 	c.JobState = NewJobStateClient(c.config)
@@ -190,6 +194,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		CastEntry:            NewCastEntryClient(cfg),
 		Character:            NewCharacterClient(cfg),
 		CollectionEntry:      NewCollectionEntryClient(cfg),
+		ExtraEntry:           NewExtraEntryClient(cfg),
 		HistoryEvent:         NewHistoryEventClient(cfg),
 		JobRun:               NewJobRunClient(cfg),
 		JobState:             NewJobStateClient(cfg),
@@ -224,6 +229,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		CastEntry:            NewCastEntryClient(cfg),
 		Character:            NewCharacterClient(cfg),
 		CollectionEntry:      NewCollectionEntryClient(cfg),
+		ExtraEntry:           NewExtraEntryClient(cfg),
 		HistoryEvent:         NewHistoryEventClient(cfg),
 		JobRun:               NewJobRunClient(cfg),
 		JobState:             NewJobStateClient(cfg),
@@ -265,8 +271,8 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.CastEntry, c.Character, c.CollectionEntry, c.HistoryEvent, c.JobRun,
-		c.JobState, c.ManualImportQueue, c.Performer, c.Profile, c.Recording,
+		c.CastEntry, c.Character, c.CollectionEntry, c.ExtraEntry, c.HistoryEvent,
+		c.JobRun, c.JobState, c.ManualImportQueue, c.Performer, c.Profile, c.Recording,
 		c.RecordingImageChoice, c.RecordingVersion, c.Show, c.SyncRun, c.WantsEntry,
 	} {
 		n.Use(hooks...)
@@ -277,8 +283,8 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.CastEntry, c.Character, c.CollectionEntry, c.HistoryEvent, c.JobRun,
-		c.JobState, c.ManualImportQueue, c.Performer, c.Profile, c.Recording,
+		c.CastEntry, c.Character, c.CollectionEntry, c.ExtraEntry, c.HistoryEvent,
+		c.JobRun, c.JobState, c.ManualImportQueue, c.Performer, c.Profile, c.Recording,
 		c.RecordingImageChoice, c.RecordingVersion, c.Show, c.SyncRun, c.WantsEntry,
 	} {
 		n.Intercept(interceptors...)
@@ -294,6 +300,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Character.mutate(ctx, m)
 	case *CollectionEntryMutation:
 		return c.CollectionEntry.mutate(ctx, m)
+	case *ExtraEntryMutation:
+		return c.ExtraEntry.mutate(ctx, m)
 	case *HistoryEventMutation:
 		return c.HistoryEvent.mutate(ctx, m)
 	case *JobRunMutation:
@@ -735,6 +743,155 @@ func (c *CollectionEntryClient) mutate(ctx context.Context, m *CollectionEntryMu
 		return (&CollectionEntryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown CollectionEntry mutation op: %q", m.Op())
+	}
+}
+
+// ExtraEntryClient is a client for the ExtraEntry schema.
+type ExtraEntryClient struct {
+	config
+}
+
+// NewExtraEntryClient returns a client for the ExtraEntry from the given config.
+func NewExtraEntryClient(c config) *ExtraEntryClient {
+	return &ExtraEntryClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `extraentry.Hooks(f(g(h())))`.
+func (c *ExtraEntryClient) Use(hooks ...Hook) {
+	c.hooks.ExtraEntry = append(c.hooks.ExtraEntry, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `extraentry.Intercept(f(g(h())))`.
+func (c *ExtraEntryClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ExtraEntry = append(c.inters.ExtraEntry, interceptors...)
+}
+
+// Create returns a builder for creating a ExtraEntry entity.
+func (c *ExtraEntryClient) Create() *ExtraEntryCreate {
+	mutation := newExtraEntryMutation(c.config, OpCreate)
+	return &ExtraEntryCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ExtraEntry entities.
+func (c *ExtraEntryClient) CreateBulk(builders ...*ExtraEntryCreate) *ExtraEntryCreateBulk {
+	return &ExtraEntryCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ExtraEntryClient) MapCreateBulk(slice any, setFunc func(*ExtraEntryCreate, int)) *ExtraEntryCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ExtraEntryCreateBulk{err: fmt.Errorf("calling to ExtraEntryClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ExtraEntryCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ExtraEntryCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ExtraEntry.
+func (c *ExtraEntryClient) Update() *ExtraEntryUpdate {
+	mutation := newExtraEntryMutation(c.config, OpUpdate)
+	return &ExtraEntryUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ExtraEntryClient) UpdateOne(_m *ExtraEntry) *ExtraEntryUpdateOne {
+	mutation := newExtraEntryMutation(c.config, OpUpdateOne, withExtraEntry(_m))
+	return &ExtraEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ExtraEntryClient) UpdateOneID(id int64) *ExtraEntryUpdateOne {
+	mutation := newExtraEntryMutation(c.config, OpUpdateOne, withExtraEntryID(id))
+	return &ExtraEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ExtraEntry.
+func (c *ExtraEntryClient) Delete() *ExtraEntryDelete {
+	mutation := newExtraEntryMutation(c.config, OpDelete)
+	return &ExtraEntryDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ExtraEntryClient) DeleteOne(_m *ExtraEntry) *ExtraEntryDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ExtraEntryClient) DeleteOneID(id int64) *ExtraEntryDeleteOne {
+	builder := c.Delete().Where(extraentry.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ExtraEntryDeleteOne{builder}
+}
+
+// Query returns a query builder for ExtraEntry.
+func (c *ExtraEntryClient) Query() *ExtraEntryQuery {
+	return &ExtraEntryQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeExtraEntry},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ExtraEntry entity by its id.
+func (c *ExtraEntryClient) Get(ctx context.Context, id int64) (*ExtraEntry, error) {
+	return c.Query().Where(extraentry.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ExtraEntryClient) GetX(ctx context.Context, id int64) *ExtraEntry {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRecording queries the recording edge of a ExtraEntry.
+func (c *ExtraEntryClient) QueryRecording(_m *ExtraEntry) *RecordingQuery {
+	query := (&RecordingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(extraentry.Table, extraentry.FieldID, id),
+			sqlgraph.To(recording.Table, recording.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, extraentry.RecordingTable, extraentry.RecordingColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ExtraEntryClient) Hooks() []Hook {
+	return c.hooks.ExtraEntry
+}
+
+// Interceptors returns the client interceptors.
+func (c *ExtraEntryClient) Interceptors() []Interceptor {
+	return c.inters.ExtraEntry
+}
+
+func (c *ExtraEntryClient) mutate(ctx context.Context, m *ExtraEntryMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ExtraEntryCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ExtraEntryUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ExtraEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ExtraEntryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ExtraEntry mutation op: %q", m.Op())
 	}
 }
 
@@ -1692,6 +1849,22 @@ func (c *RecordingClient) QueryVersions(_m *Recording) *RecordingVersionQuery {
 	return query
 }
 
+// QueryExtras queries the extras edge of a Recording.
+func (c *RecordingClient) QueryExtras(_m *Recording) *ExtraEntryQuery {
+	query := (&ExtraEntryClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(recording.Table, recording.FieldID, id),
+			sqlgraph.To(extraentry.Table, extraentry.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, recording.ExtrasTable, recording.ExtrasColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *RecordingClient) Hooks() []Hook {
 	return c.hooks.Recording
@@ -2417,13 +2590,14 @@ func (c *WantsEntryClient) mutate(ctx context.Context, m *WantsEntryMutation) (V
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CastEntry, Character, CollectionEntry, HistoryEvent, JobRun, JobState,
-		ManualImportQueue, Performer, Profile, Recording, RecordingImageChoice,
-		RecordingVersion, Show, SyncRun, WantsEntry []ent.Hook
+		CastEntry, Character, CollectionEntry, ExtraEntry, HistoryEvent, JobRun,
+		JobState, ManualImportQueue, Performer, Profile, Recording,
+		RecordingImageChoice, RecordingVersion, Show, SyncRun, WantsEntry []ent.Hook
 	}
 	inters struct {
-		CastEntry, Character, CollectionEntry, HistoryEvent, JobRun, JobState,
-		ManualImportQueue, Performer, Profile, Recording, RecordingImageChoice,
-		RecordingVersion, Show, SyncRun, WantsEntry []ent.Interceptor
+		CastEntry, Character, CollectionEntry, ExtraEntry, HistoryEvent, JobRun,
+		JobState, ManualImportQueue, Performer, Profile, Recording,
+		RecordingImageChoice, RecordingVersion, Show, SyncRun,
+		WantsEntry []ent.Interceptor
 	}
 )

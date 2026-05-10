@@ -88,12 +88,16 @@ const (
 	EdgeCastEntries = "cast_entries"
 	// EdgeVersions holds the string denoting the versions edge name in mutations.
 	EdgeVersions = "versions"
+	// EdgeExtras holds the string denoting the extras edge name in mutations.
+	EdgeExtras = "extras"
 	// ShowFieldID holds the string denoting the ID field of the Show.
 	ShowFieldID = "show_id"
 	// CastEntryFieldID holds the string denoting the ID field of the CastEntry.
 	CastEntryFieldID = "id"
 	// RecordingVersionFieldID holds the string denoting the ID field of the RecordingVersion.
 	RecordingVersionFieldID = "id"
+	// ExtraEntryFieldID holds the string denoting the ID field of the ExtraEntry.
+	ExtraEntryFieldID = "id"
 	// Table holds the table name of the recording in the database.
 	Table = "recordings"
 	// ShowTable is the table that holds the show relation/edge.
@@ -117,6 +121,13 @@ const (
 	VersionsInverseTable = "recording_versions"
 	// VersionsColumn is the table column denoting the versions relation/edge.
 	VersionsColumn = "recording_id"
+	// ExtrasTable is the table that holds the extras relation/edge.
+	ExtrasTable = "recording_extras"
+	// ExtrasInverseTable is the table name for the ExtraEntry entity.
+	// It exists in this package in order to avoid circular dependency with the "extraentry" package.
+	ExtrasInverseTable = "recording_extras"
+	// ExtrasColumn is the table column denoting the extras relation/edge.
+	ExtrasColumn = "recording_id"
 )
 
 // Columns holds all SQL columns for recording fields.
@@ -439,6 +450,20 @@ func ByVersions(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newVersionsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByExtrasCount orders the results by extras count.
+func ByExtrasCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newExtrasStep(), opts...)
+	}
+}
+
+// ByExtras orders the results by extras terms.
+func ByExtras(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newExtrasStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newShowStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -458,5 +483,12 @@ func newVersionsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(VersionsInverseTable, RecordingVersionFieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, VersionsTable, VersionsColumn),
+	)
+}
+func newExtrasStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ExtrasInverseTable, ExtraEntryFieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ExtrasTable, ExtrasColumn),
 	)
 }

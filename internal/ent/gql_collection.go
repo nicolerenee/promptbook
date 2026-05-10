@@ -886,6 +886,11 @@ func (_q *RecordingVersionQuery) collectField(ctx context.Context, oneNode bool,
 				selectedFields = append(selectedFields, recordingversion.FieldSourceFolder)
 				fieldSeen[recordingversion.FieldSourceFolder] = struct{}{}
 			}
+		case "partIndex":
+			if _, ok := fieldSeen[recordingversion.FieldPartIndex]; !ok {
+				selectedFields = append(selectedFields, recordingversion.FieldPartIndex)
+				fieldSeen[recordingversion.FieldPartIndex] = struct{}{}
+			}
 		case "addedAt":
 			if _, ok := fieldSeen[recordingversion.FieldAddedAt]; !ok {
 				selectedFields = append(selectedFields, recordingversion.FieldAddedAt)

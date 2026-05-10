@@ -567,7 +567,7 @@ func (_m *RecordingVersion) Node(ctx context.Context) (node *Node, err error) {
 	node = &Node{
 		ID:     _m.ID,
 		Type:   "RecordingVersion",
-		Fields: make([]*Field, 13),
+		Fields: make([]*Field, 14),
 		Edges:  make([]*Edge, 1),
 	}
 	var buf []byte
@@ -659,10 +659,18 @@ func (_m *RecordingVersion) Node(ctx context.Context) (node *Node, err error) {
 		Name:  "source_folder",
 		Value: string(buf),
 	}
-	if buf, err = json.Marshal(_m.AddedAt); err != nil {
+	if buf, err = json.Marshal(_m.PartIndex); err != nil {
 		return nil, err
 	}
 	node.Fields[11] = &Field{
+		Type:  "int",
+		Name:  "part_index",
+		Value: string(buf),
+	}
+	if buf, err = json.Marshal(_m.AddedAt); err != nil {
+		return nil, err
+	}
+	node.Fields[12] = &Field{
 		Type:  "time.Time",
 		Name:  "added_at",
 		Value: string(buf),
@@ -670,7 +678,7 @@ func (_m *RecordingVersion) Node(ctx context.Context) (node *Node, err error) {
 	if buf, err = json.Marshal(_m.LastSeenAt); err != nil {
 		return nil, err
 	}
-	node.Fields[12] = &Field{
+	node.Fields[13] = &Field{
 		Type:  "time.Time",
 		Name:  "last_seen_at",
 		Value: string(buf),

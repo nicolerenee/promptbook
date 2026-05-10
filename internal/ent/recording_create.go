@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
 	"github.com/nicolerenee/promptbook/internal/ent/show"
@@ -526,6 +527,21 @@ func (_c *RecordingCreate) AddVersions(v ...*RecordingVersion) *RecordingCreate 
 	return _c.AddVersionIDs(ids...)
 }
 
+// AddExtraIDs adds the "extras" edge to the ExtraEntry entity by IDs.
+func (_c *RecordingCreate) AddExtraIDs(ids ...int64) *RecordingCreate {
+	_c.mutation.AddExtraIDs(ids...)
+	return _c
+}
+
+// AddExtras adds the "extras" edges to the ExtraEntry entity.
+func (_c *RecordingCreate) AddExtras(v ...*ExtraEntry) *RecordingCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddExtraIDs(ids...)
+}
+
 // Mutation returns the RecordingMutation object of the builder.
 func (_c *RecordingCreate) Mutation() *RecordingMutation {
 	return _c.mutation
@@ -977,6 +993,22 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ExtrasIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

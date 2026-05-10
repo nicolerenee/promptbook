@@ -3022,6 +3022,16 @@ type RecordingVersionWhereInput struct {
 	SourceFolderEqualFold    *string  `json:"sourceFolderEqualFold,omitempty"`
 	SourceFolderContainsFold *string  `json:"sourceFolderContainsFold,omitempty"`
 
+	// "part_index" field predicates.
+	PartIndex      *int  `json:"partIndex,omitempty"`
+	PartIndexNEQ   *int  `json:"partIndexNEQ,omitempty"`
+	PartIndexIn    []int `json:"partIndexIn,omitempty"`
+	PartIndexNotIn []int `json:"partIndexNotIn,omitempty"`
+	PartIndexGT    *int  `json:"partIndexGT,omitempty"`
+	PartIndexGTE   *int  `json:"partIndexGTE,omitempty"`
+	PartIndexLT    *int  `json:"partIndexLT,omitempty"`
+	PartIndexLTE   *int  `json:"partIndexLTE,omitempty"`
+
 	// "added_at" field predicates.
 	AddedAt      *time.Time  `json:"addedAt,omitempty"`
 	AddedAtNEQ   *time.Time  `json:"addedAtNEQ,omitempty"`
@@ -3528,6 +3538,30 @@ func (i *RecordingVersionWhereInput) P() (predicate.RecordingVersion, error) {
 	}
 	if i.SourceFolderContainsFold != nil {
 		predicates = append(predicates, recordingversion.SourceFolderContainsFold(*i.SourceFolderContainsFold))
+	}
+	if i.PartIndex != nil {
+		predicates = append(predicates, recordingversion.PartIndexEQ(*i.PartIndex))
+	}
+	if i.PartIndexNEQ != nil {
+		predicates = append(predicates, recordingversion.PartIndexNEQ(*i.PartIndexNEQ))
+	}
+	if len(i.PartIndexIn) > 0 {
+		predicates = append(predicates, recordingversion.PartIndexIn(i.PartIndexIn...))
+	}
+	if len(i.PartIndexNotIn) > 0 {
+		predicates = append(predicates, recordingversion.PartIndexNotIn(i.PartIndexNotIn...))
+	}
+	if i.PartIndexGT != nil {
+		predicates = append(predicates, recordingversion.PartIndexGT(*i.PartIndexGT))
+	}
+	if i.PartIndexGTE != nil {
+		predicates = append(predicates, recordingversion.PartIndexGTE(*i.PartIndexGTE))
+	}
+	if i.PartIndexLT != nil {
+		predicates = append(predicates, recordingversion.PartIndexLT(*i.PartIndexLT))
+	}
+	if i.PartIndexLTE != nil {
+		predicates = append(predicates, recordingversion.PartIndexLTE(*i.PartIndexLTE))
 	}
 	if i.AddedAt != nil {
 		predicates = append(predicates, recordingversion.AddedAtEQ(*i.AddedAt))

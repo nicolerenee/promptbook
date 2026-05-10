@@ -918,6 +918,7 @@ type RecordingVersion implements Node {
   notes: String!
   mediaInfoJSON: String!
   sourceFolder: String!
+  partIndex: Int!
   addedAt: Time!
   lastSeenAt: Time!
   recording: Recording!
@@ -1133,6 +1134,17 @@ input RecordingVersionWhereInput {
   sourceFolderHasSuffix: String
   sourceFolderEqualFold: String
   sourceFolderContainsFold: String
+  """
+  part_index field predicates
+  """
+  partIndex: Int
+  partIndexNEQ: Int
+  partIndexIn: [Int!]
+  partIndexNotIn: [Int!]
+  partIndexGT: Int
+  partIndexGTE: Int
+  partIndexLT: Int
+  partIndexLTE: Int
   """
   added_at field predicates
   """

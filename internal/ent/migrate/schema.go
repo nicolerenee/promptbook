@@ -81,6 +81,42 @@ var (
 		Columns:    CollectionColumns,
 		PrimaryKey: []*schema.Column{CollectionColumns[0]},
 	}
+	// RecordingExtrasColumns holds the columns for the "recording_extras" table.
+	RecordingExtrasColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "file_path", Type: field.TypeString, Size: 2147483647},
+		{Name: "kind", Type: field.TypeString, Size: 2147483647},
+		{Name: "label", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "file_size_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "added_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP", SchemaType: map[string]string{"sqlite3": "datetime"}},
+		{Name: "recording_id", Type: field.TypeInt64},
+	}
+	// RecordingExtrasTable holds the schema information for the "recording_extras" table.
+	RecordingExtrasTable = &schema.Table{
+		Name:       "recording_extras",
+		Columns:    RecordingExtrasColumns,
+		PrimaryKey: []*schema.Column{RecordingExtrasColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "recording_extras_recordings_extras",
+				Columns:    []*schema.Column{RecordingExtrasColumns[6]},
+				RefColumns: []*schema.Column{RecordingsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "extraentry_recording_id",
+				Unique:  false,
+				Columns: []*schema.Column{RecordingExtrasColumns[6]},
+			},
+			{
+				Name:    "extraentry_recording_id_file_path",
+				Unique:  true,
+				Columns: []*schema.Column{RecordingExtrasColumns[6], RecordingExtrasColumns[1]},
+			},
+		},
+	}
 	// HistoryColumns holds the columns for the "history" table.
 	HistoryColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -316,6 +352,7 @@ var (
 		{Name: "notes", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "media_info_json", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "source_folder", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "part_index", Type: field.TypeInt, Default: 0},
 		{Name: "added_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP", SchemaType: map[string]string{"sqlite3": "datetime"}},
 		{Name: "last_seen_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP", SchemaType: map[string]string{"sqlite3": "datetime"}},
 		{Name: "recording_id", Type: field.TypeInt64},
@@ -328,7 +365,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "recording_versions_recordings_versions",
-				Columns:    []*schema.Column{RecordingVersionsColumns[13]},
+				Columns:    []*schema.Column{RecordingVersionsColumns[14]},
 				RefColumns: []*schema.Column{RecordingsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -337,12 +374,12 @@ var (
 			{
 				Name:    "recordingversion_recording_id",
 				Unique:  false,
-				Columns: []*schema.Column{RecordingVersionsColumns[13]},
+				Columns: []*schema.Column{RecordingVersionsColumns[14]},
 			},
 			{
 				Name:    "recordingversion_recording_id_file_path",
 				Unique:  true,
-				Columns: []*schema.Column{RecordingVersionsColumns[13], RecordingVersionsColumns[1]},
+				Columns: []*schema.Column{RecordingVersionsColumns[14], RecordingVersionsColumns[1]},
 			},
 		},
 	}
@@ -399,6 +436,7 @@ var (
 		CastEntriesTable,
 		CharactersTable,
 		CollectionTable,
+		RecordingExtrasTable,
 		HistoryTable,
 		JobRunsTable,
 		JobStateTable,
@@ -424,6 +462,10 @@ func init() {
 	}
 	CollectionTable.Annotation = &entsql.Annotation{
 		Table: "collection",
+	}
+	RecordingExtrasTable.ForeignKeys[0].RefTable = RecordingsTable
+	RecordingExtrasTable.Annotation = &entsql.Annotation{
+		Table: "recording_extras",
 	}
 	HistoryTable.Annotation = &entsql.Annotation{
 		Table: "history",

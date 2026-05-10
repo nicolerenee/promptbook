@@ -1764,6 +1764,29 @@ func HasVersionsWith(preds ...predicate.RecordingVersion) predicate.Recording {
 	})
 }
 
+// HasExtras applies the HasEdge predicate on the "extras" edge.
+func HasExtras() predicate.Recording {
+	return predicate.Recording(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ExtrasTable, ExtrasColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasExtrasWith applies the HasEdge predicate on the "extras" edge with a given conditions (other predicates).
+func HasExtrasWith(preds ...predicate.ExtraEntry) predicate.Recording {
+	return predicate.Recording(func(s *sql.Selector) {
+		step := newExtrasStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.Recording) predicate.Recording {
 	return predicate.Recording(sql.AndPredicates(predicates...))

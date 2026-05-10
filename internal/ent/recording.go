@@ -100,14 +100,17 @@ type RecordingEdges struct {
 	CastEntries []*CastEntry `json:"cast_entries,omitempty"`
 	// Versions holds the value of the versions edge.
 	Versions []*RecordingVersion `json:"versions,omitempty"`
+	// Extras holds the value of the extras edge.
+	Extras []*ExtraEntry `json:"extras,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 	// totalCount holds the count of the edges above.
 	totalCount [3]map[string]int
 
 	namedCastEntries map[string][]*CastEntry
 	namedVersions    map[string][]*RecordingVersion
+	namedExtras      map[string][]*ExtraEntry
 }
 
 // ShowOrErr returns the Show value or an error if the edge
@@ -137,6 +140,15 @@ func (e RecordingEdges) VersionsOrErr() ([]*RecordingVersion, error) {
 		return e.Versions, nil
 	}
 	return nil, &NotLoadedError{edge: "versions"}
+}
+
+// ExtrasOrErr returns the Extras value or an error if the edge
+// was not loaded in eager-loading.
+func (e RecordingEdges) ExtrasOrErr() ([]*ExtraEntry, error) {
+	if e.loadedTypes[3] {
+		return e.Extras, nil
+	}
+	return nil, &NotLoadedError{edge: "extras"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -409,6 +421,11 @@ func (_m *Recording) QueryVersions() *RecordingVersionQuery {
 	return NewRecordingClient(_m.config).QueryVersions(_m)
 }
 
+// QueryExtras queries the "extras" edge of the Recording entity.
+func (_m *Recording) QueryExtras() *ExtraEntryQuery {
+	return NewRecordingClient(_m.config).QueryExtras(_m)
+}
+
 // Update returns a builder for updating this Recording.
 // Note that you need to call Recording.Unwrap() before calling this method if this Recording
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -590,6 +607,30 @@ func (_m *Recording) appendNamedVersions(name string, edges ...*RecordingVersion
 		_m.Edges.namedVersions[name] = []*RecordingVersion{}
 	} else {
 		_m.Edges.namedVersions[name] = append(_m.Edges.namedVersions[name], edges...)
+	}
+}
+
+// NamedExtras returns the Extras named value or an error if the edge was not
+// loaded in eager-loading with this name.
+func (_m *Recording) NamedExtras(name string) ([]*ExtraEntry, error) {
+	if _m.Edges.namedExtras == nil {
+		return nil, &NotLoadedError{edge: name}
+	}
+	nodes, ok := _m.Edges.namedExtras[name]
+	if !ok {
+		return nil, &NotLoadedError{edge: name}
+	}
+	return nodes, nil
+}
+
+func (_m *Recording) appendNamedExtras(name string, edges ...*ExtraEntry) {
+	if _m.Edges.namedExtras == nil {
+		_m.Edges.namedExtras = make(map[string][]*ExtraEntry)
+	}
+	if len(edges) == 0 {
+		_m.Edges.namedExtras[name] = []*ExtraEntry{}
+	} else {
+		_m.Edges.namedExtras[name] = append(_m.Edges.namedExtras[name], edges...)
 	}
 }
 

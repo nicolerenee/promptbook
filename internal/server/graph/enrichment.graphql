@@ -135,22 +135,34 @@ extend type Recording {
   extras: [RecordingExtra!]!
 }
 
-# RecordingExtra is one row in the Recording.extras list — a sibling
-# file (or folder) that lived next to the main recording file at
-# ingest time. The SPA renders top-level files as plain rows and
-# top-level folders as collapsible <details> nodes, walking the flat
-# list once to build the tree.
+# RecordingExtra is one row in the Recording.extras list — a non-main
+# file moved into a Jellyfin-shaped subfolder of the recording's
+# canonical folder at ingest time. Phase 1 reads the rows from the
+# `recording_extras` table; legacy folder-walking at read time is
+# replaced. New `kind` + `label` fields surface the typed metadata
+# the modal collected; pre-table imports return empty `kind`/`label`
+# strings.
 type RecordingExtra {
-  # Path relative to the source folder root, with forward slashes.
-  # e.g. "audio/01 - Wedding Song.mp3" or "photo1.jpg".
+  # Canonical absolute path of the moved file under the recording's
+  # folder, e.g. "/library/.../featurettes/bows.mp4".
   path: String!
-  # Display name (last path segment) for the SPA's tree renderer.
+  # Display name (file basename) for the SPA's tree renderer.
   name: String!
-  # File size in bytes; 0 for directories.
+  # File size in bytes; 0 when the on-disk size wasn't captured.
   sizeBytes: Int!
-  # True for directories. Children are flat under the parent path —
-  # the SPA renders the tree with a single walk.
+  # Always false in phase 1 — directories aren't first-class extras
+  # rows; per-file rows are walked into the canonical layout at
+  # ingest time. Kept on the type for SPA backward compatibility.
   isDir: Boolean!
+  # Kind is the Jellyfin-style label for the extra: featurette,
+  # scene, behindthescenes, interview, trailer, deletedscenes,
+  # other, audio, or photo. Empty string for legacy rows that
+  # pre-date the typed table.
+  kind: String!
+  # Optional user-supplied display label (e.g. "Bows — Baker /
+  # Marinerage"). Empty when no label was set; the SPA falls back to
+  # the file name.
+  label: String!
 }
 
 # Show field extensions. localBannerURL + recordingCount + stateCounts

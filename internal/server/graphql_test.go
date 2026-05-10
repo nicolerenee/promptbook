@@ -1075,36 +1075,33 @@ func TestGraphQLRecordingExtrasEmpty(t *testing.T) {
 		"loose-file recording must resolve extras to []")
 }
 
-// TestGraphQLRecordingExtrasFolderUnit walks a real on-disk folder to
-// validate the directory enumeration: the version row carries a
-// non-empty source_folder, the resolver lists every sibling file and
-// folder, skips the main file + dot-files, and returns a flat list
-// suitable for the SPA's tree renderer.
-func TestGraphQLRecordingExtrasFolderUnit(t *testing.T) {
+// TestRecordingExtrasFromTable pins the phase-1 swap of
+// Recording.extras from the legacy source-folder walk to the typed
+// recording_extras table. Two seeded rows surface with their kind +
+// label populated; ordering follows file_path lexicographically.
+func TestRecordingExtrasFromTable(t *testing.T) {
 	t.Parallel()
 	srv, db, _ := recordingRenameTestServer(t)
 	seedRenameRecording(t.Context(), t, db)
 
-	src := t.TempDir()
-	mainPath := filepath.Join(src, "main.mkv")
-	require.NoError(t, os.WriteFile(mainPath, []byte("video-bytes"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(src, "photo1.jpg"),
-		[]byte("photo"), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(src, ".DS_Store"),
-		[]byte("hidden"), 0o600))
-	audioDir := filepath.Join(src, "audio")
-	require.NoError(t, os.Mkdir(audioDir, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(audioDir, "01 - song.mp3"),
-		[]byte("audio"), 0o600))
-
-	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
-		RecordingID:  90004242,
-		FilePath:     mainPath,
-		SourceFolder: src,
-	}))
+	_, err := storage.UpsertExtra(t.Context(), db, storage.RecordingExtra{
+		RecordingID:   90004242,
+		FilePath:      "/library/Greenwich Beacon/featurettes/bows.mp4",
+		Kind:          "featurette",
+		Label:         "Bows — Baker / Marinerage",
+		FileSizeBytes: 412 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	_, err = storage.UpsertExtra(t.Context(), db, storage.RecordingExtra{
+		RecordingID:   90004242,
+		FilePath:      "/library/Greenwich Beacon/audio/01 - track.mp3",
+		Kind:          "audio",
+		FileSizeBytes: 5 * 1024 * 1024,
+	})
+	require.NoError(t, err)
 
 	query := `query Q($id: ID!) {
-		recording(id: $id) { extras { path name sizeBytes isDir } }
+		recording(id: $id) { extras { path name sizeBytes isDir kind label } }
 	}`
 	body, rr := graphqlPostVars(t, srv.Handler(), query, map[string]any{
 		"id": "recording-90004242",
@@ -1120,26 +1117,27 @@ func TestGraphQLRecordingExtrasFolderUnit(t *testing.T) {
 					Name      string `json:"name"`
 					SizeBytes int    `json:"sizeBytes"`
 					IsDir     bool   `json:"isDir"`
+					Kind      string `json:"kind"`
+					Label     string `json:"label"`
 				} `json:"extras"`
 			} `json:"recording"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Data.Recording.Extras, 2)
 
-	paths := make(map[string]bool)
-	for _, e := range resp.Data.Recording.Extras {
-		paths[e.Path] = e.IsDir
-	}
-	// Sibling photo + audio dir + the audio file under it surface;
-	// main.mkv + .DS_Store do not.
-	assert.Contains(t, paths, "photo1.jpg")
-	assert.Contains(t, paths, "audio")
-	assert.True(t, paths["audio"], "audio entry must report isDir=true")
-	assert.Contains(t, paths, "audio/01 - song.mp3")
-	assert.NotContains(t, paths, "main.mkv",
-		"the main version file must not surface as an extra")
-	assert.NotContains(t, paths, ".DS_Store",
-		"hidden dot-files must not surface as extras")
+	// Ordered by file_path → audio/... before featurettes/...
+	first := resp.Data.Recording.Extras[0]
+	assert.Equal(t, "/library/Greenwich Beacon/audio/01 - track.mp3", first.Path)
+	assert.Equal(t, "01 - track.mp3", first.Name)
+	assert.Equal(t, "audio", first.Kind)
+	assert.Empty(t, first.Label)
+	assert.False(t, first.IsDir, "phase 1 extras are always file rows")
+
+	second := resp.Data.Recording.Extras[1]
+	assert.Equal(t, "/library/Greenwich Beacon/featurettes/bows.mp4", second.Path)
+	assert.Equal(t, "featurette", second.Kind)
+	assert.Equal(t, "Bows — Baker / Marinerage", second.Label)
 }
 
 // TestGraphQLRegenerateRecordingNFO covers the thin wrapper around

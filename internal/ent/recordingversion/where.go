@@ -110,6 +110,11 @@ func SourceFolder(v string) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldEQ(FieldSourceFolder, v))
 }
 
+// PartIndex applies equality check predicate on the "part_index" field. It's identical to PartIndexEQ.
+func PartIndex(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEQ(FieldPartIndex, v))
+}
+
 // AddedAt applies equality check predicate on the "added_at" field. It's identical to AddedAtEQ.
 func AddedAt(v time.Time) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldEQ(FieldAddedAt, v))
@@ -763,6 +768,46 @@ func SourceFolderEqualFold(v string) predicate.RecordingVersion {
 // SourceFolderContainsFold applies the ContainsFold predicate on the "source_folder" field.
 func SourceFolderContainsFold(v string) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldContainsFold(FieldSourceFolder, v))
+}
+
+// PartIndexEQ applies the EQ predicate on the "part_index" field.
+func PartIndexEQ(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEQ(FieldPartIndex, v))
+}
+
+// PartIndexNEQ applies the NEQ predicate on the "part_index" field.
+func PartIndexNEQ(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldNEQ(FieldPartIndex, v))
+}
+
+// PartIndexIn applies the In predicate on the "part_index" field.
+func PartIndexIn(vs ...int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldIn(FieldPartIndex, vs...))
+}
+
+// PartIndexNotIn applies the NotIn predicate on the "part_index" field.
+func PartIndexNotIn(vs ...int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldNotIn(FieldPartIndex, vs...))
+}
+
+// PartIndexGT applies the GT predicate on the "part_index" field.
+func PartIndexGT(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldGT(FieldPartIndex, v))
+}
+
+// PartIndexGTE applies the GTE predicate on the "part_index" field.
+func PartIndexGTE(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldGTE(FieldPartIndex, v))
+}
+
+// PartIndexLT applies the LT predicate on the "part_index" field.
+func PartIndexLT(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldLT(FieldPartIndex, v))
+}
+
+// PartIndexLTE applies the LTE predicate on the "part_index" field.
+func PartIndexLTE(v int) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldLTE(FieldPartIndex, v))
 }
 
 // AddedAtEQ applies the EQ predicate on the "added_at" field.

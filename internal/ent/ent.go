@@ -15,6 +15,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
 	"github.com/nicolerenee/promptbook/internal/ent/character"
 	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
 	"github.com/nicolerenee/promptbook/internal/ent/jobrun"
 	"github.com/nicolerenee/promptbook/internal/ent/jobstate"
@@ -90,6 +91,7 @@ func checkColumn(t, c string) error {
 			castentry.Table:            castentry.ValidColumn,
 			character.Table:            character.ValidColumn,
 			collectionentry.Table:      collectionentry.ValidColumn,
+			extraentry.Table:           extraentry.ValidColumn,
 			historyevent.Table:         historyevent.ValidColumn,
 			jobrun.Table:               jobrun.ValidColumn,
 			jobstate.Table:             jobstate.ValidColumn,
