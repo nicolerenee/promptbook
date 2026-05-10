@@ -7,14 +7,17 @@
   <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css">
   <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
   <!-- highlight.js powers the recording detail page's NFO XML viewer.
-       The "common" build registers the popular languages (XML
-       included) automatically when the script loads, so the recording
-       page's NFO row can call hljs.highlight(content, {language: 'xml'})
-       without a follow-up registerLanguage call. atom-one-dark matches
-       the DaisyUI "night" theme; light themes still read cleanly since
-       we only colour tag/attr names, not full-line backgrounds. -->
-  <link href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/atom-one-dark.min.css" rel="stylesheet" type="text/css">
-  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/common.min.js"></script>
+       @highlightjs/cdn-assets ships browser-ready bundles (the npm
+       highlight.js package itself ships CommonJS files that call
+       require() and explode in a browser context). highlight.min.js
+       includes the popular languages (XML / HTML among them), so the
+       recording page's NFO row can call hljs.highlightElement against
+       the rendered <code class="language-xml"> with no follow-up
+       registerLanguage call. atom-one-dark matches the DaisyUI
+       "night" theme; light themes still read cleanly since we only
+       colour tag / attr names, not full-line backgrounds. -->
+  <link href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/atom-one-dark.min.css" rel="stylesheet" type="text/css">
+  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <script type="module" src="/static/app/main.js" defer></script>
   <style>
