@@ -493,10 +493,33 @@ type ImportPreview {
 # different-content file at the destination. Required when the
 # preview's destExists is true and isDuplicate is false; otherwise
 # the mutation rejects the request rather than silently overwriting.
+# fileAssignments routes per-source files in a folder-as-unit drop to
+# their roles. When nil/empty, ingest falls back to the legacy
+# single-file flow (FilePath = main, no extras processed) so callers
+# that don't yet know about multipart/extras keep their behaviour.
+# Each assignment's sourcePath should be a path inside the queue row's
+# classification (Parts ∪ Extras); the ingest engine validates the
+# kind tokens and rejects invalid shapes server-side.
 input ImportQueueEntryInput {
   queueID: ID!
   recordingID: ID
   overwrite: Boolean
+  fileAssignments: [FileAssignmentInput!]
+}
+
+# FileAssignmentInput routes one source path to a role for the
+# importQueueEntry mutation. Kind tokens mirror ingest.AssignmentKind*:
+# "main" / "part-1" / "part-2" / "extra-featurette" /
+# "extra-behindthescenes" / "extra-audio" / "extra-photo" /
+# "extra-other" / "skip" — the canonical wire-format strings the
+# multi-file ingest engine speaks.
+input FileAssignmentInput {
+  sourcePath: String!
+  kind: String!
+  # label is the optional user-supplied display label, only used for
+  # extras (featurette / behindthescenes / etc.). Empty for main /
+  # part-N / skip rows.
+  label: String
 }
 
 # ImportQueueEntryPayload mirrors the legacy REST importQueueResponse.

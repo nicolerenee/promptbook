@@ -18,6 +18,12 @@ type BannerLayout struct {
 	ImageRegion string `json:"imageRegion"`
 }
 
+type FileAssignmentInput struct {
+	SourcePath string  `json:"sourcePath"`
+	Kind       string  `json:"kind"`
+	Label      *string `json:"label,omitempty"`
+}
+
 type ImportPreview struct {
 	DestFolder   string `json:"destFolder"`
 	DestFile     string `json:"destFile"`
@@ -27,9 +33,10 @@ type ImportPreview struct {
 }
 
 type ImportQueueEntryInput struct {
-	QueueID     int64  `json:"queueID"`
-	RecordingID *int64 `json:"recordingID,omitempty"`
-	Overwrite   *bool  `json:"overwrite,omitempty"`
+	QueueID         int64                  `json:"queueID"`
+	RecordingID     *int64                 `json:"recordingID,omitempty"`
+	Overwrite       *bool                  `json:"overwrite,omitempty"`
+	FileAssignments []*FileAssignmentInput `json:"fileAssignments,omitempty"`
 }
 
 type ImportQueueEntryPayload struct {

@@ -1287,6 +1287,34 @@ func decodeQueueClassification(raw string) *QueueClassification {
 	return out
 }
 
+// importFileAssignmentsFromInput translates the GraphQL
+// FileAssignmentInput slice into the ingest.FileAssignment shape the
+// engine consumes. Returns nil when the input is empty so the engine
+// stays in legacy single-file mode for callers that don't yet drive
+// the modal picker. Skips nil input entries defensively (gqlgen
+// doesn't actually emit them, but the contract here is "keep
+// trustworthy assignments only").
+func importFileAssignmentsFromInput(in []*FileAssignmentInput) []ingest.FileAssignment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ingest.FileAssignment, 0, len(in))
+	for _, fa := range in {
+		if fa == nil {
+			continue
+		}
+		assignment := ingest.FileAssignment{
+			SourcePath: fa.SourcePath,
+			Kind:       fa.Kind,
+		}
+		if fa.Label != nil {
+			assignment.Label = *fa.Label
+		}
+		out = append(out, assignment)
+	}
+	return out
+}
+
 // importQueueEntry is the resolver body for the importQueueEntry
 // mutation. Mirrors the legacy REST handleImportQueue: loads the
 // queue row, resolves the target recording id (explicit override or
@@ -1344,6 +1372,11 @@ func (r *Resolver) importQueueEntry(
 	if entry.ExtrasCount > 0 {
 		opts.SourceFolder = filepath.Dir(entry.FilePath)
 	}
+	// FileAssignments, when supplied by the modal's multi-file picker,
+	// switches the engine into multi-file mode (multipart parts +
+	// typed extras). Empty / nil leaves opts.FileAssignments at zero
+	// so the legacy single-file flow runs unchanged.
+	opts.FileAssignments = importFileAssignmentsFromInput(input.FileAssignments)
 	res, err := r.ingestEngine.Ingest(ctx, entry.FilePath, opts)
 	if err != nil {
 		return nil, fmt.Errorf("graphql: ingest queue entry %d: %w", input.QueueID, err)
