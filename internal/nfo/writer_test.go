@@ -152,7 +152,6 @@ func TestNFO_WithPublicURL(t *testing.T) {
 	t.Parallel()
 
 	rec := loadMarigold(t)
-	folder := t.TempDir()
 
 	// Trailing-slash on the public URL should be stripped so the
 	// resulting URLs don't have "//images" — verify with both shapes.
@@ -166,6 +165,9 @@ func TestNFO_WithPublicURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			// Each parallel subtest gets its own folder so the two
+			// goroutines don't race on writing the same movie.nfo.
+			folder := t.TempDir()
 
 			written, err := nfo.WriteRecordingFile(
 				t.Context(), folder, rec,
