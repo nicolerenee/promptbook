@@ -100,7 +100,7 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	}
 	autoText := autoOverlayText(loaded)
 	overlayText := choice.ResolveOverlayText(autoText)
-	title, subtitle := splitOverlay(overlayText)
+	rows := splitOverlay(overlayText)
 
 	style := DefaultStyle
 	if choice.OverlayStyleJSON != nil && *choice.OverlayStyleJSON != "" {
@@ -120,7 +120,7 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 		return fmt.Errorf("imagerender: decode %s: %w", srcPath, err)
 	}
 
-	dst := r.compose(src, title, subtitle, style)
+	dst := r.compose(src, rows, style)
 
 	if writeErr := writeJPEGAtomic(destPath, dst); writeErr != nil {
 		return fmt.Errorf("imagerender: write %s: %w", destPath, writeErr)
@@ -137,37 +137,33 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 //
 // Layout (per the brand spec):
 //
-//	Line 1 (large): "Tour - Date"
-//	Line 2 (smaller): "Venue, City"
+//	Line 1 (top, smaller):  date
+//	Line 2 (middle, larger): tour
+//	Line 3 (bottom, smaller): "Venue, City"
 //
-// Empty fields collapse cleanly — a recording without a tour falls
-// back to just the date on line 1, etc. If both halves of the title
-// are empty (no tour AND no date) the show name is used so the band
-// never renders blank. Returns "" only when loaded is nil.
+// Empty fields collapse cleanly. If every line is empty (the recording
+// has no metadata at all) the show name takes line 2 as a last-resort
+// fallback so the band never renders blank.
 func autoOverlayText(loaded *storage.LoadedRecording) string {
 	if loaded == nil {
 		return ""
 	}
 	r := loaded.Recording
-	tour := strings.TrimSpace(r.Tour)
 	date := smartDate(r.Date)
-	title := joinSep(tour, date, " - ")
-	if title == "" {
-		title = strings.TrimSpace(r.Show)
-	}
+	tour := strings.TrimSpace(r.Tour)
 	venue := strings.TrimSpace(r.Metadata.Venue)
 	city := strings.TrimSpace(r.Metadata.City)
-	subtitle := joinSep(venue, city, ", ")
-	switch {
-	case title == "" && subtitle == "":
-		return ""
-	case title == "":
-		return subtitle
-	case subtitle == "":
-		return title
-	default:
-		return title + "\n" + subtitle
+	location := joinSep(venue, city, ", ")
+	if date == "" && tour == "" && location == "" {
+		// Nothing identifying — fall back to the show name on the
+		// middle row so the band has at least one readable line.
+		tour = strings.TrimSpace(r.Show)
 	}
+	// Always emit three "\n"-separated rows (some may be empty);
+	// splitOverlay preserves position so an empty row stays empty
+	// rather than collapsing the layout. compose filters empties at
+	// draw time.
+	return date + "\n" + tour + "\n" + location
 }
 
 // joinSep returns "a<sep>b" when both parts are non-empty, the
@@ -187,23 +183,37 @@ func joinSep(a, b, sep string) string {
 	}
 }
 
-// splitOverlay turns one overlay-text blob into a (title, subtitle)
-// pair. An explicit newline wins; otherwise the first " · " separator
-// splits the line into a title (everything before) and subtitle
-// (everything after). When neither delimiter is present the whole
-// string becomes the title and the subtitle is empty.
-func splitOverlay(text string) (string, string) {
-	text = strings.TrimSpace(text)
+// splitOverlay returns the three rows the renderer expects: date,
+// tour, location. An overlay-text blob with three "\n"-separated
+// segments hits the happy path. Two segments are interpreted as
+// tour + location (the "no date known" case). One segment lands on
+// the middle row alone. Trailing or leading empty rows preserve their
+// position so the user's chosen layout doesn't get reshuffled.
+func splitOverlay(text string) []string {
+	out := []string{"", "", ""}
+	text = strings.TrimRight(text, "\n")
 	if text == "" {
-		return "", ""
+		return out
 	}
-	if before, after, found := strings.Cut(text, "\n"); found {
-		return strings.TrimSpace(before), strings.TrimSpace(after)
+	parts := strings.Split(text, "\n")
+	const (
+		idxEyebrow   = 0
+		idxTitle     = 1
+		idxCaption   = 2
+		twoLineParts = 2
+	)
+	switch len(parts) {
+	case 1:
+		out[idxTitle] = strings.TrimSpace(parts[0])
+	case twoLineParts:
+		out[idxTitle] = strings.TrimSpace(parts[0])
+		out[idxCaption] = strings.TrimSpace(parts[1])
+	default:
+		out[idxEyebrow] = strings.TrimSpace(parts[0])
+		out[idxTitle] = strings.TrimSpace(parts[1])
+		out[idxCaption] = strings.TrimSpace(parts[2])
 	}
-	if before, after, found := strings.Cut(text, " · "); found {
-		return strings.TrimSpace(before), strings.TrimSpace(after)
-	}
-	return text, ""
+	return out
 }
 
 // smartDate mirrors the rename engine + nfo writer's {Date} token.

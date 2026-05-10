@@ -390,9 +390,14 @@ function yearSpan(first, last) {
 // PosterCard renders one recording-grid cell. local_poster_url is
 // ALWAYS the canonical /images/... path when image caching is on —
 // the server falls through to the SVG placeholder generator on cache
-// miss, so the browser always gets a valid image. We only render a
-// caching-disabled placeholder when the URL is truly empty.
-// The status badge is corner-pinned via DaisyUI `indicator`.
+// miss, so the browser always gets a valid image.
+//
+// The status badge uses DaisyUI's `indicator` pattern: the badge is
+// translated outside the indicator's content box, so the CARD itself
+// must NOT have overflow-hidden — that was the previous bug,
+// clipping the badge. Rounded corners on the image come from the
+// inner image-clip div (`overflow-hidden rounded-t-box`), which only
+// clips the image, not the indicator's outflow.
 function PosterCard(it) {
   const meta = STATUS_META[it.status] || STATUS_META.orphan;
   const poster = it.local_poster_url || '';
@@ -407,7 +412,7 @@ function PosterCard(it) {
     class: 'aspect-[2/3] w-full object-cover',
   });
   return m('div', {
-    class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow overflow-hidden',
+    class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',
     onclick,
     role: 'button',
     tabindex: 0,
@@ -417,9 +422,11 @@ function PosterCard(it) {
   }, [
     m('div', { class: 'indicator w-full' }, [
       m('span', {
-        class: 'indicator-item indicator-top indicator-end badge badge-sm ' + meta.badge,
+        class: 'indicator-item badge badge-sm ' + meta.badge,
       }, meta.label),
-      poster ? image : placeholder,
+      m('div', { class: 'overflow-hidden rounded-t-box w-full' },
+        poster ? image : placeholder,
+      ),
     ]),
     m('div', { class: 'card-body p-2 gap-0.5' }, [
       m('div', { class: 'text-sm font-medium truncate', title: it.show || '' },
@@ -447,7 +454,7 @@ function ShowCard(show) {
     class: 'aspect-[2/3] w-full object-cover',
   });
   return m('div', {
-    class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow overflow-hidden',
+    class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',
     onclick,
     role: 'button',
     tabindex: 0,
@@ -455,7 +462,9 @@ function ShowCard(show) {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onclick(); }
     },
   }, [
-    poster ? image : placeholder,
+    m('div', { class: 'overflow-hidden rounded-t-box w-full' },
+      poster ? image : placeholder,
+    ),
     m('div', { class: 'card-body p-2 gap-1' }, [
       m('div', { class: 'text-sm font-medium truncate', title: show.name || '' },
         show.name || '—'),

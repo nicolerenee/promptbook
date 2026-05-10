@@ -66,7 +66,7 @@ const ellipsis = "…"
 // loadFont parses one of the embedded TTFs and caches the result.
 func loadFont(weight string) (*opentype.Font, error) {
 	switch weight {
-	case "regular":
+	case WeightRegular:
 		parsedRegularOnce.Do(func() {
 			parsedRegular, errParseRegular = opentype.Parse(dejaVuSerifRegularBytes)
 		})
@@ -119,58 +119,74 @@ func loadFace(weight string, sizePx int) font.Face {
 	return face
 }
 
-// compose builds the burned-in image. Returns a *image.RGBA so callers
+// compose builds the burned-in image. rows is the per-line text in
+// top-to-bottom order: [date, tour, location]. Empty rows collapse —
+// the rendered band only shows non-empty lines, evenly distributed
+// over the band's vertical space. Returns a *image.RGBA so callers
 // can hand it straight to jpeg.Encode.
-func (r *Renderer) compose(src image.Image, title, subtitle string, style Style) *image.RGBA {
+func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.RGBA {
 	bounds := src.Bounds()
 	dst := image.NewRGBA(bounds)
 	draw.Draw(dst, bounds, src, bounds.Min, draw.Src)
 
-	if title == "" && subtitle == "" {
-		// No overlay text at all — the user explicitly cleared both
-		// override and the recording is missing metadata. Return the
-		// raw image; rendered.jpg will be a faithful copy.
-		return dst
+	// Build the visible-row list. Each row's font size is fixed by its
+	// position in the input slice (date small, tour large, location
+	// small) — that hierarchy is part of the playbill aesthetic. Row
+	// at index 1 (tour) is the headline; the others are eyebrows.
+	type rowDraw struct {
+		text string
+		face font.Face
 	}
-
+	resolved := resolveStyle(style, image.Rect(0, 0, bounds.Dx(),
+		max(int(float64(bounds.Dy())*style.BandHeightFraction), 1)))
 	bandH := max(int(float64(bounds.Dy())*style.BandHeightFraction), 1)
 	bandRect := image.Rect(bounds.Min.X, bounds.Max.Y-bandH, bounds.Max.X, bounds.Max.Y)
-	draw.Draw(dst, bandRect, &image.Uniform{C: style.BandColor}, image.Point{}, draw.Over)
-
-	// Uppercase the title; that's the playbill aesthetic. Subtitle stays
-	// as-is so " · " separators look natural.
-	titleUpper := strings.ToUpper(title)
-	subtitleUpper := strings.ToUpper(subtitle)
-
-	// Resolve sizes + padding relative to the BAND when the user hasn't
-	// pinned absolute pixel values. StageMedia posters arrive at ~230x345
-	// and Encora screen-grabs at ~1280x720; a fixed 48 px title was sized
-	// for the latter and overflowed posters by 3x. Fractional defaults
-	// scale cleanly across both ends.
-	resolved := resolveStyle(style, bandRect)
 	maxTextWidth := bandRect.Dx() - hPadFactor*resolved.PadX
 	if maxTextWidth < 1 {
 		maxTextWidth = bandRect.Dx()
 	}
+	rowSizes := []float64{resolved.EyebrowSizePx, resolved.TitleSizePx, resolved.CaptionSizePx}
+	rowWeights := []string{style.Eyebrow.Weight, style.Title.Weight, style.Caption.Weight}
+	visible := make([]rowDraw, 0, len(rows))
+	for i, raw := range rows {
+		text := strings.TrimSpace(raw)
+		if text == "" {
+			continue
+		}
+		text = strings.ToUpper(text)
+		spec := FontSpec{SizePx: rowSizes[i], Weight: rowWeights[i]}
+		face := pickFittingFace(text, spec, maxTextWidth)
+		visible = append(visible, rowDraw{
+			text: truncateToFit(face, text, maxTextWidth),
+			face: face,
+		})
+	}
+	if len(visible) == 0 {
+		// All rows empty — return the raw image unchanged. The user
+		// explicitly cleared their overlay or the recording lacks
+		// every piece of identifying metadata.
+		return dst
+	}
 
-	titleSpec := FontSpec{SizePx: resolved.TitleSizePx, Weight: style.Title.Weight}
-	titleFace := pickFittingFace(titleUpper, titleSpec, maxTextWidth)
-	titleDraw := truncateToFit(titleFace, titleUpper, maxTextWidth)
+	// Paint the band only when there's something to draw on it.
+	draw.Draw(dst, bandRect, &image.Uniform{C: style.BandColor}, image.Point{}, draw.Over)
 
-	subtitleSpec := FontSpec{SizePx: resolved.SubtitleSizePx, Weight: style.Subtitle.Weight}
-	subtitleFace := pickFittingFace(subtitleUpper, subtitleSpec, maxTextWidth)
-	subtitleDraw := truncateToFit(subtitleFace, subtitleUpper, maxTextWidth)
-
-	// Layout: title centered on the upper third of the band, subtitle on
-	// the lower third. When subtitle is empty, the title takes the
-	// vertical center.
-	drawCenteredText(dst, titleDraw, titleFace, style.TextColor, bandRect, subtitleUpper != "", true)
-	if subtitleUpper != "" {
-		drawCenteredText(dst, subtitleDraw, subtitleFace, style.TextColor, bandRect, true, false)
+	// Distribute rows evenly: each row's center sits at (i + 0.5)/n
+	// of the band's height. With one row that's center; with three
+	// it's the 1/6, 3/6, 5/6 marks.
+	for i, row := range visible {
+		fraction := (float64(i) + halfRow) / float64(len(visible))
+		baselineY := bandRect.Min.Y + int(float64(bandRect.Dy())*fraction)
+		drawCenteredAtBaseline(dst, row.text, row.face, style.TextColor, bandRect, baselineY)
 	}
 
 	return dst
 }
+
+// halfRow shifts each row's anchor from its top edge to its center
+// when distributing N rows over the band. Pulled out as a const so
+// mnd lint stays satisfied.
+const halfRow = 0.5
 
 // hPadFactor is multiplied by Style.PadX to compute the total
 // horizontal padding (left + right) reserved inside the band. Pulled
@@ -187,13 +203,14 @@ const hPadFactor = 2
 // zero (the default) so the user can still pin an absolute value via
 // the per-recording overlay_style_json blob if they want.
 const (
-	// Starting font sizes as fractions of band height. The shrink-
-	// to-fit pass tightens further when content overflows. Title at
-	// 0.42 means a ~14%-of-image band gets a font ≈ 6% of the image
-	// height — looks proportionate at both 230x345 posters and
-	// 1920x1080 fanart. Subtitle stays under the title.
-	titleSizeBandFraction    = 0.42
-	subtitleSizeBandFraction = 0.24
+	// Per-row font heights as fractions of the band height. Three
+	// rows centered at 1/6, 3/6, 5/6 of the band each have ~1/3 of
+	// the band's vertical space; font sizes leave breathing room
+	// vertically. Title (the headline) is largest; eyebrow + caption
+	// are smaller secondary lines.
+	eyebrowSizeBandFraction = 0.22
+	titleSizeBandFraction   = 0.34
+	captionSizeBandFraction = 0.22
 	// 9% per side = 18% total horizontal margin. The previous 7% still
 	// read as edge-to-edge once a long date or venue used the interior
 	// width fully — leaving real visual breathing room around even
@@ -206,36 +223,52 @@ const (
 // resolved bundles the post-fraction-resolution sizes the compose
 // function works in.
 type resolvedStyle struct {
-	PadX           int
-	TitleSizePx    float64
-	SubtitleSizePx float64
+	PadX          int
+	EyebrowSizePx float64
+	TitleSizePx   float64
+	CaptionSizePx float64
 }
 
 // resolveStyle fills in font sizes + padding from band dimensions
 // when the user-supplied (or default-baked) absolute values are
 // zero. Caller-supplied positive values pass through verbatim so an
 // explicit `size_px` override still wins.
+//
+// Legacy `Subtitle` is honored as an alias for Caption when set —
+// keeps older overlay_style_json blobs working without forcing
+// migration. Eyebrow has no legacy alias since it didn't exist before.
 func resolveStyle(style Style, bandRect image.Rectangle) resolvedStyle {
+	captionPx := style.Caption.SizePx
+	if captionPx <= 0 {
+		captionPx = style.Subtitle.SizePx
+	}
 	out := resolvedStyle{
-		PadX:           style.PadX,
-		TitleSizePx:    style.Title.SizePx,
-		SubtitleSizePx: style.Subtitle.SizePx,
+		PadX:          style.PadX,
+		EyebrowSizePx: style.Eyebrow.SizePx,
+		TitleSizePx:   style.Title.SizePx,
+		CaptionSizePx: captionPx,
 	}
 	bandH := bandRect.Dy()
+	if out.EyebrowSizePx <= 0 {
+		out.EyebrowSizePx = float64(bandH) * eyebrowSizeBandFraction
+	}
 	if out.TitleSizePx <= 0 {
 		out.TitleSizePx = float64(bandH) * titleSizeBandFraction
 	}
-	if out.SubtitleSizePx <= 0 {
-		out.SubtitleSizePx = float64(bandH) * subtitleSizeBandFraction
+	if out.CaptionSizePx <= 0 {
+		out.CaptionSizePx = float64(bandH) * captionSizeBandFraction
 	}
 	if out.PadX <= 0 {
 		out.PadX = int(float64(bandRect.Dx()) * padXImageFraction)
 	}
+	if out.EyebrowSizePx < minFontSizePx {
+		out.EyebrowSizePx = minFontSizePx
+	}
 	if out.TitleSizePx < minFontSizePx {
 		out.TitleSizePx = minFontSizePx
 	}
-	if out.SubtitleSizePx < minFontSizePx {
-		out.SubtitleSizePx = minFontSizePx
+	if out.CaptionSizePx < minFontSizePx {
+		out.CaptionSizePx = minFontSizePx
 	}
 	if out.PadX < minPadXPx {
 		out.PadX = minPadXPx
@@ -302,19 +335,20 @@ func truncateToFit(f font.Face, text string, maxWidth int) string {
 	return ellipsis
 }
 
-// drawCenteredText renders s horizontally centered inside band, with
-// the vertical placement chosen by the topHalf flag — true puts the
-// baseline above the band's vertical center (title row), false puts it
-// below (subtitle row). When hasSubtitle is false the title falls back
-// to the band's vertical center.
-func drawCenteredText(
+// drawCenteredAtBaseline renders s horizontally centered inside band
+// with its baseline at the supplied Y coordinate. The band's vertical
+// distribution math (which row goes where) lives in compose.go's row
+// loop — this function just paints one row.
+//
+// Defensive guards reposition the baseline if the requested Y would
+// push the rendered text off the band's top or bottom edge.
+func drawCenteredAtBaseline(
 	dst draw.Image,
 	s string,
 	face font.Face,
 	col color.Color,
 	band image.Rectangle,
-	hasSubtitle bool,
-	topHalf bool,
+	baselineY int,
 ) {
 	if s == "" {
 		return
@@ -330,24 +364,11 @@ func drawCenteredText(
 	metrics := face.Metrics()
 	ascent := metrics.Ascent.Round()
 	descent := metrics.Descent.Round()
+	// Center the visual line on the supplied baseline by shifting it
+	// down by half the (ascent-descent) — the supplied baselineY is
+	// the row's CENTER, not its true baseline.
+	baselineY += (ascent - descent) / centerDivisor
 
-	var baselineY int
-	switch {
-	case !hasSubtitle:
-		// Single-line: center the line vertically inside the band.
-		bandCenter := band.Min.Y + band.Dy()/centerDivisor
-		baselineY = bandCenter + (ascent-descent)/centerDivisor
-	case topHalf:
-		// Two-line, upper row: baseline at ~38 % down the band so the
-		// title sits visually above center.
-		baselineY = band.Min.Y + band.Dy()*twoLineTopNum/twoLineTopDen
-	default:
-		// Two-line, lower row: baseline at ~78 % down the band so the
-		// subtitle clears the title comfortably.
-		baselineY = band.Min.Y + band.Dy()*twoLineBotNum/twoLineBotDen
-	}
-	// Defensive guards so a shrunken band doesn't push the baseline off
-	// the destination image.
 	if baselineY-ascent < band.Min.Y {
 		baselineY = band.Min.Y + ascent
 	}
@@ -359,15 +380,6 @@ func drawCenteredText(
 	d.DrawString(s)
 }
 
-// Layout fractions for the two-line band. Encoded as integer
-// numerators/denominators so mnd lint stays happy.
-const (
-	twoLineTopNum = 38
-	twoLineTopDen = 100
-	twoLineBotNum = 78
-	twoLineBotDen = 100
-	// centerDivisor is the integer 2 used in (a+b)/2 averages and
-	// width/2 centering math. Pulled out so mnd lint doesn't flag the
-	// arithmetic.
-	centerDivisor = 2
-)
+// centerDivisor is the integer 2 used in (a+b)/2 averages and width/2
+// centering math. Pulled out so mnd lint doesn't flag the arithmetic.
+const centerDivisor = 2

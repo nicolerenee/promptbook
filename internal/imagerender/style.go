@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+// Font weight identifiers. Used by FontSpec.Weight; the renderer
+// maps "regular" to the regular-weight DejaVu Serif TTF and anything
+// else (including "bold" or "") to the bold variant.
+const (
+	WeightRegular = "regular"
+	WeightBold    = "bold"
+)
+
 // FontSpec is the per-text-row font configuration the renderer uses.
 // SizePx is the pixel height of an em-square. Weight is informational
 // today (the embedded font ships in a single weight) and reserved for
@@ -37,8 +45,19 @@ type Style struct {
 	// PadX is the horizontal padding inside the band, in source-image
 	// pixels. The title shrinks to fit before this padding is breached.
 	PadX int `json:"pad_x"`
-	// Title and Subtitle carry the per-row font configuration.
+	// Eyebrow / Title / Caption configure the three rows the band can
+	// render, top to bottom. By design Title (the middle row) is the
+	// largest — it carries the headline (the recording's tour). The
+	// Eyebrow row above sits the date in smaller type, the Caption
+	// below sits the venue + city.
+	//
+	// Subtitle is preserved as an alias for Caption so older
+	// overlay_style_json blobs that pinned a "subtitle" size_px keep
+	// working — mergeStyle copies subtitle's value into Caption when
+	// only the legacy field is set.
+	Eyebrow  FontSpec `json:"eyebrow"`
 	Title    FontSpec `json:"title"`
+	Caption  FontSpec `json:"caption"`
 	Subtitle FontSpec `json:"subtitle"`
 }
 
@@ -51,10 +70,16 @@ type Style struct {
 // positive integer pin an absolute pixel size for users who want to
 // tune the look manually.
 const (
-	defaultBandHeightFraction = 0.14
+	// Bumped from 0.14 to 0.18 to fit three rows of text comfortably.
+	// At 0.18 a 345 px poster gives a 62 px band — three rows centered
+	// at 1/6, 3/6, 5/6 each get ~20 px of vertical space which lands
+	// the headline at ~16 px font (still readable when the displayed
+	// thumbnail is 200 px wide).
+	defaultBandHeightFraction = 0.18
 	defaultPadX               = 0
+	defaultEyebrowSizePx      = 0
 	defaultTitleSizePx        = 0
-	defaultSubtitleSizePx     = 0
+	defaultCaptionSizePx      = 0
 
 	// Brand palette. Band is the muted playbill blue (#4577A0); text is
 	// deep navy (#13284A). Solid alpha so the band reads as a real plate
@@ -82,8 +107,9 @@ var DefaultStyle = Style{
 	BandColor:          color.NRGBA{R: defaultBandR, G: defaultBandG, B: defaultBandB, A: defaultBandA},
 	TextColor:          color.NRGBA{R: defaultTextR, G: defaultTextG, B: defaultTextB, A: defaultTextA},
 	PadX:               defaultPadX,
-	Title:              FontSpec{SizePx: defaultTitleSizePx, Weight: "bold"},
-	Subtitle:           FontSpec{SizePx: defaultSubtitleSizePx, Weight: "regular"},
+	Eyebrow:            FontSpec{SizePx: defaultEyebrowSizePx, Weight: WeightRegular},
+	Title:              FontSpec{SizePx: defaultTitleSizePx, Weight: WeightBold},
+	Caption:            FontSpec{SizePx: defaultCaptionSizePx, Weight: WeightRegular},
 }
 
 // styleOverlay is the wire shape mergeStyle accepts. Every field is
