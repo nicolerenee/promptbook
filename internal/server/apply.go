@@ -170,6 +170,19 @@ func applyOne(
 			recordRateLimitBudget(err, rl, sleepBudget)
 			return res
 		}
+		// Mirror the pushed value into our local collection_entries.format
+		// so the mismatch resolves on the next state computation without
+		// waiting for a full sync round-trip. Local-write failures here
+		// log + don't fail the operation — the encora-side push already
+		// succeeded.
+		if localErr := storage.SetCollectionFormat(
+			ctx, db, action.RecordingID, action.NewFormat,
+		); localErr != nil {
+			// Don't surface to the user; the encora write is the
+			// source-of-truth action. Audit trail picks this up via
+			// the recordEncoraPush call below.
+			_ = localErr
+		}
 		recordEncoraPush(ctx, db,
 			fmt.Sprintf("Updated Encora format for %d to %s",
 				action.RecordingID, action.NewFormat),

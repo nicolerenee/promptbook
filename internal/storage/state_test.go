@@ -159,9 +159,15 @@ func TestLoadStateSynced(t *testing.T) {
 
 	ctx, db := openTestDB(t)
 	const showID, recordingID int64 = 100, 1000
+	// Encora format is the legacy-fallback compose output, matching
+	// what ComputeFormatString produces for a version with no
+	// MediaInfoJSON and no FileSizeBytes (the seedVersion helper's
+	// shape). Equality of the two produces Synced; the actual string
+	// content isn't load-bearing here.
+	const fallback = "MKV - ? / ? - ? - 0 B"
 	seedShow(ctx, t, db, showID, "Marigold")
 	seedRecording(ctx, t, db, recordingID, showID)
-	seedCollection(ctx, t, db, recordingID, "MKV 1080p")
+	seedCollection(ctx, t, db, recordingID, fallback)
 	seedVersion(ctx, t, db, recordingID, "/store/marigold.mkv", "MKV 1080p")
 
 	got, err := storage.LoadState(ctx, db, recordingID)
@@ -170,8 +176,8 @@ func TestLoadStateSynced(t *testing.T) {
 	assert.True(t, got.InCollection)
 	assert.False(t, got.InWants)
 	assert.Equal(t, 1, got.FileCount)
-	assert.Equal(t, "MKV 1080p", got.EncoraFormat)
-	assert.Equal(t, "MKV 1080p", got.LocalFormat)
+	assert.Equal(t, fallback, got.EncoraFormat)
+	assert.Equal(t, fallback, got.LocalFormat)
 }
 
 func TestLoadStateFormatMismatch(t *testing.T) {
@@ -189,7 +195,11 @@ func TestLoadStateFormatMismatch(t *testing.T) {
 	assert.Equal(t, storage.StatusFormatMismatch, got.Status)
 	assert.True(t, got.InCollection)
 	assert.Equal(t, "MKV 1080p", got.EncoraFormat)
-	assert.Equal(t, "MKV 720p", got.LocalFormat)
+	// LocalFormat is whatever the new compose path produces for the
+	// seeded version — we only need it to differ from EncoraFormat
+	// to exercise the FormatMismatch branch.
+	assert.Equal(t, "MKV - ? / ? - ? - 0 B", got.LocalFormat)
+	assert.NotEqual(t, got.EncoraFormat, got.LocalFormat)
 }
 
 func TestLoadStateMissing(t *testing.T) {
@@ -245,7 +255,10 @@ func TestLoadStateOrphan(t *testing.T) {
 	assert.False(t, got.InWants)
 	assert.Equal(t, 1, got.FileCount)
 	assert.Empty(t, got.EncoraFormat)
-	assert.Equal(t, "MKV 1080p", got.LocalFormat)
+	// Legacy-fallback compose output for a seedVersion with no
+	// MediaInfoJSON / size — exercises the orphan path's local-format
+	// surfacing without asserting on the format string's content.
+	assert.Equal(t, "MKV - ? / ? - ? - 0 B", got.LocalFormat)
 }
 
 func TestListStatesFilterByStatus(t *testing.T) {
@@ -253,16 +266,23 @@ func TestListStatesFilterByStatus(t *testing.T) {
 
 	ctx, db := openTestDB(t)
 
-	// Synced: collection row + file with matching format.
+	// Synced: collection row + file with matching format. Both sides
+	// share the legacy-fallback compose output ("MKV - ? / ? - ? - 0 B")
+	// so the equality check in ComputeStatus passes — exercising the
+	// status-machine alone, not the format-string content.
+	const fallbackMKV = "MKV - ? / ? - ? - 0 B"
 	seedShow(ctx, t, db, 200, "Synced Show")
 	seedRecording(ctx, t, db, 2000, 200)
-	seedCollection(ctx, t, db, 2000, "MKV 1080p")
+	seedCollection(ctx, t, db, 2000, fallbackMKV)
 	seedVersion(ctx, t, db, 2000, "/store/synced.mkv", "MKV 1080p")
 
 	// FormatMismatch: collection row + file with different format.
+	// Encora carries the new compose output but the legacy-fallback
+	// version reports a mismatching string, so ComputeStatus reports
+	// FormatMismatch.
 	seedShow(ctx, t, db, 201, "Mismatch Show")
 	seedRecording(ctx, t, db, 2001, 201)
-	seedCollection(ctx, t, db, 2001, "MKV 1080p")
+	seedCollection(ctx, t, db, 2001, "MP4 - x264 / AAC - 720p - 5.00 GB")
 	seedVersion(ctx, t, db, 2001, "/store/mismatch.mkv", "MKV 720p")
 
 	// Missing: collection row, no file.

@@ -255,6 +255,11 @@ func TestDeleteVersionsForRecording(t *testing.T) {
 func TestComputeFormatString(t *testing.T) {
 	t.Parallel()
 
+	const oneGiB = int64(1024 * 1024 * 1024)
+	mi1080 := `{"container":"MKV","videoCodec":"h264","width":1920,"height":1080,` +
+		`"audioStreams":[{"codec":"aac"}]}`
+	mi2160 := `{"container":"MKV","videoCodec":"hevc","width":3840,"height":2160,` +
+		`"audioStreams":[{"codec":"aac"}]}`
 	tests := []struct {
 		name     string
 		versions []storage.RecordingVersion
@@ -266,38 +271,41 @@ func TestComputeFormatString(t *testing.T) {
 			want:     "",
 		},
 		{
-			name: "single version",
+			name: "single version with mediainfo",
 			versions: []storage.RecordingVersion{
-				{FormatLabel: "MKV 1080p h264"},
+				{
+					FilePath:      "/x.mkv",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: mi1080,
+				},
 			},
-			want: "MKV 1080p h264",
+			want: "MKV - x264 / AAC - 1080p - 5.00 GB",
 		},
 		{
-			name: "three versions joined",
+			name: "two versions sorted best-first and bracketed",
 			versions: []storage.RecordingVersion{
-				{FormatLabel: "MKV 2160p hevc"},
-				{FormatLabel: "MKV 1080p h264"},
-				{FormatLabel: "MP4 720p h264"},
+				{
+					FilePath:      "/lo.mkv",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: mi1080,
+				},
+				{
+					FilePath:      "/hi.mkv",
+					FileSizeBytes: 40 * oneGiB,
+					MediaInfoJSON: mi2160,
+				},
 			},
-			want: "MKV 2160p hevc | MKV 1080p h264 | MP4 720p h264",
+			want: "[MKV - x265 / AAC - 2160p - 40.00 GB] [MKV - x264 / AAC - 1080p - 5.00 GB]",
 		},
 		{
-			name: "empty labels filtered out",
+			name: "legacy version without mediainfo renders ? placeholders",
 			versions: []storage.RecordingVersion{
-				{FormatLabel: "MKV 2160p"},
-				{FormatLabel: ""},
-				{FormatLabel: "MP4 720p"},
-				{FormatLabel: ""},
+				{
+					FilePath:      "/legacy.mkv",
+					FileSizeBytes: 4 * oneGiB,
+				},
 			},
-			want: "MKV 2160p | MP4 720p",
-		},
-		{
-			name: "all empty labels yields empty string",
-			versions: []storage.RecordingVersion{
-				{FormatLabel: ""},
-				{FormatLabel: ""},
-			},
-			want: "",
+			want: "MKV - ? / ? - ? - 4.00 GB",
 		},
 	}
 	for _, tt := range tests {

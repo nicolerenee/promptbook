@@ -2,25 +2,25 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
+	"path/filepath"
 	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
+	"github.com/nicolerenee/promptbook/internal/probe"
+	"github.com/nicolerenee/promptbook/internal/releaseformat"
 )
-
-// FormatSeparator is the delimiter joining per-version format labels into
-// the single Encora-style format string surfaced on a recording.
-const FormatSeparator = " | "
 
 // RecordingVersion represents a single physical file backing an Encora
 // recording. One recording can have multiple versions (e.g. a 2160p
-// master alongside a 1080p compressed copy); the per-version format
-// labels are joined with FormatSeparator to form the recording-level
-// format string.
+// master alongside a 1080p compressed copy); the recording-level
+// format string is rendered via releaseformat.Compose over those
+// versions (single-version → bare; multi-version → bracketed, best-
+// first by height).
 //
 // MediaInfoJSON is the JSON-encoded probe.MediaInfo blob captured at
 // ingest time. It powers the Sonarr/Radarr-style media-info card on
@@ -178,20 +178,35 @@ func DeleteVersionsForRecording(
 	return nil
 }
 
-// ComputeFormatString joins each version's FormatLabel with
-// FormatSeparator. Empty labels are skipped; if every version has an
-// empty label the result is the empty string. Caller is responsible for
-// passing versions in the desired order (typically the order returned by
-// ListVersions, i.e. largest file first).
+// ComputeFormatString returns the canonical release-format string for
+// a recording's versions — the same shape the SPA renders + the same
+// shape we push to encora's release_format field on a mismatch
+// resolution. Single version → bare "MP4 - x265 / AAC - 2160p - 8.57 GB";
+// multi-version → bracketed "[best] [next] …" sorted best-first.
+//
+// Each version's MediaInfo comes from the persisted media_info_json
+// blob (populated at ingest time via ffprobe). Legacy versions
+// without a blob render with "?" placeholders for the missing fields
+// — informative even on imports that pre-date the probe pipeline.
+//
+// Caller is responsible for passing versions in roughly desired
+// order; Compose stable-sorts on Height descending, so the input
+// order only matters for ties at the same height.
 func ComputeFormatString(versions []RecordingVersion) string {
-	labels := make([]string, 0, len(versions))
+	infos := make([]releaseformat.VersionInfo, 0, len(versions))
 	for _, v := range versions {
-		if v.FormatLabel == "" {
-			continue
+		var mi probe.MediaInfo
+		if v.MediaInfoJSON != "" {
+			// A malformed blob shouldn't crash the format helper —
+			// we fall through to the empty MediaInfo case which still
+			// produces a useful "{ext} - ? / ? - ? - {size}" line.
+			_ = json.Unmarshal([]byte(v.MediaInfoJSON), &mi)
 		}
-		labels = append(labels, v.FormatLabel)
+		ext := filepath.Ext(v.FilePath)
+		infos = append(infos,
+			releaseformat.FromVersionAndMediaInfo(mi, v.FileSizeBytes, ext))
 	}
-	return strings.Join(labels, FormatSeparator)
+	return releaseformat.Compose(infos)
 }
 
 // lastSeenOrNow returns the version's LastSeenAt timestamp, or the

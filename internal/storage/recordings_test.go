@@ -105,17 +105,28 @@ func TestLoadRecordingPopulatesVersions(t *testing.T) {
 	seedShow(ctx, t, db, showID, "Greenwich Beacon")
 	seedRecordingWithRawJSON(ctx, t, db, recordingID, showID, encora.Recording{ID: recordingID})
 
+	// Seed real MediaInfoJSON so the new release-format compose path
+	// has codec / quality / size data to render. Both versions are
+	// MKV with HEVC video; the 2160p row reports 1920x1080 — wait,
+	// 2160p — let the test data pin both heights so the multi-version
+	// bracketed render is deterministic.
+	mi2160 := `{"container":"MKV","videoCodec":"hevc","width":3840,"height":2160,` +
+		`"audioStreams":[{"codec":"aac"}]}`
+	mi1080 := `{"container":"MKV","videoCodec":"h264","width":1920,"height":1080,` +
+		`"audioStreams":[{"codec":"aac"}]}`
 	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
 		RecordingID:   recordingID,
 		FilePath:      "/store/greenwich-beacon/2160p.mkv",
 		FileSizeBytes: 40 * 1024 * 1024 * 1024,
 		FormatLabel:   "MKV 2160p hevc",
+		MediaInfoJSON: mi2160,
 	}))
 	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
 		RecordingID:   recordingID,
 		FilePath:      "/store/greenwich-beacon/1080p.mkv",
 		FileSizeBytes: 5 * 1024 * 1024 * 1024,
 		FormatLabel:   "MKV 1080p h264",
+		MediaInfoJSON: mi1080,
 	}))
 
 	loaded, err := storage.LoadRecording(ctx, db, recordingID)
@@ -123,7 +134,11 @@ func TestLoadRecordingPopulatesVersions(t *testing.T) {
 	require.NotNil(t, loaded.Versions)
 	assert.Len(t, loaded.Versions, 2)
 	assert.Equal(t, storage.ComputeFormatString(loaded.Versions), loaded.LocalFormatString)
-	assert.Equal(t, "MKV 2160p hevc"+storage.FormatSeparator+"MKV 1080p h264", loaded.LocalFormatString)
+	// Multi-version render: each version bracketed, sorted by height
+	// descending (2160p first), single-space separator.
+	assert.Equal(t,
+		"[MKV - x265 / AAC - 2160p - 40.00 GB] [MKV - x264 / AAC - 1080p - 5.00 GB]",
+		loaded.LocalFormatString)
 }
 
 func TestLoadRecordingPopulatesCast(t *testing.T) {

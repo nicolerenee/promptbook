@@ -508,9 +508,14 @@ func TestAPIMismatchesEnumerates(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	// synced: in collection + matching local format.
+	// synced: in collection with encoraFormat == ComputeFormatString
+	// of the seeded version. seedMismatchRecording's version has no
+	// MediaInfoJSON / FileSizeBytes, so the compose output is the
+	// legacy-fallback "{ext} - ? / ? - ? - 0 B" — make encoraFormat
+	// match exactly so this row stays out of the mismatch list.
+	const fallback = "MKV - ? / ? - ? - 0 B"
 	seedMismatchRecording(t, db, 9101, 91001, "SyncedShow",
-		true, false, true, "MKV 1080p", "MKV 1080p")
+		true, false, true, fallback, "MKV 1080p")
 	// orphan: file present, not in collection or wants.
 	seedMismatchRecording(t, db, 9102, 91002, "OrphanShow",
 		false, false, true, "", "MKV 720p")
@@ -744,10 +749,12 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 	srv, db, stub := applyTestServer(t)
 
 	// Seed a format mismatch: in collection with encoraFormat differing
-	// from the local file's FormatLabel. The validation pass also
-	// requires the submitted NewFormat to match the local oracle, so we
-	// make local FormatLabel == "MKV 1080p" (the value the test pushes)
-	// and Encora's recorded format something different.
+	// from what the new compose path produces for the seeded version.
+	// The seedMismatchRecording helper writes a RecordingVersion with
+	// only FormatLabel set, so the compose output is the legacy-
+	// fallback "{ext} - ? / ? - ? - 0 B" — that's what the validation
+	// oracle will compare NewFormat against.
+	const localCompose = "MKV - ? / ? - ? - 0 B"
 	seedMismatchRecording(t, db, 99002, 90100222, "FormatShow",
 		true, false, true, "MKV 720p", "MKV 1080p")
 
@@ -756,7 +763,7 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 			{
 				"type":         "format_mismatch",
 				"recording_id": 90100222,
-				"new_format":   "MKV 1080p",
+				"new_format":   localCompose,
 			},
 		},
 	})
@@ -772,7 +779,7 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 
 	require.Len(t, stub.formatCalls, 1, "UpdateCollectionFormat should fire once")
 	assert.Equal(t, int64(90100222), stub.formatCalls[0].ID)
-	assert.Equal(t, "MKV 1080p", stub.formatCalls[0].Format,
+	assert.Equal(t, localCompose, stub.formatCalls[0].Format,
 		"format string must be forwarded as-is to the encora client")
 
 	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
@@ -780,7 +787,17 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, events, 1)
-	assert.Contains(t, events[0].Summary, "MKV 1080p")
+	assert.Contains(t, events[0].Summary, localCompose)
+
+	// Local-mirror assertion: collection_entries.format should now
+	// match the pushed value so the next state computation reports
+	// Synced without waiting for a sync round-trip.
+	state, err := storage.LoadState(t.Context(), db, 90100222)
+	require.NoError(t, err)
+	assert.Equal(t, localCompose, state.EncoraFormat,
+		"local collection_entries.format must mirror the pushed value")
+	assert.Equal(t, storage.StatusSynced, state.Status,
+		"recording should now be Synced after the local mirror")
 }
 
 func TestAPIApplyMissingFileShortCircuits(t *testing.T) {

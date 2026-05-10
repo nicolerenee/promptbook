@@ -140,6 +140,33 @@ func fillResolvedCast(
 	return nil
 }
 
+// SetCollectionFormat updates collection_entries.format for the given
+// recording. Used after a successful "Update format on Encora" push so
+// the local mismatch resolves immediately without waiting for the
+// next full sync. Returns ErrCollectionEntryNotFound when the
+// recording isn't in the user's collection — defensive; the apply
+// handler should only invoke this on a confirmed collection-mismatch
+// row.
+func SetCollectionFormat(
+	ctx context.Context, client *ent.Client, recordingID int64, format string,
+) error {
+	n, err := client.CollectionEntry.Update().
+		Where(collectionentry.IDEQ(recordingID)).
+		SetFormat(format).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("update collection_entries.format for %d: %w", recordingID, err)
+	}
+	if n == 0 {
+		return ErrCollectionEntryNotFound
+	}
+	return nil
+}
+
+// ErrCollectionEntryNotFound is returned by SetCollectionFormat when
+// the recording id has no row in collection_entries.
+var ErrCollectionEntryNotFound = errors.New("storage: collection entry not found")
+
 func fillCollectionState(
 	ctx context.Context,
 	client *ent.Client,
