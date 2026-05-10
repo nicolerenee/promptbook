@@ -26,7 +26,6 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
 import state from '../state.js';
 import { smartDateWithVariant } from '../utils/format.js';
-import Pagination from './Pagination.js';
 
 // LS_VIEW is the localStorage key the recordings page uses to persist
 // the user's preferred layout across visits. The URL still wins when
@@ -113,8 +112,10 @@ function readURLParams() {
     r.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
   }
 
-  const page = parseInt(params.page, 10);
-  r.offset = (page > 1) ? (page - 1) * r.limit : 0;
+  // Pagination is gone from the UI — list pages always fetch the
+  // full catalog in one go now. offset stays at 0 forever; limit
+  // gets bumped to a catalog-sized number in loadRecordings.
+  r.offset = 0;
 }
 
 function pushURLParams() {
@@ -124,8 +125,6 @@ function pushURLParams() {
   if (r.view !== 'list') out.view = r.view;
   out.sort = r.sortKey;
   out.dir = r.sortDir;
-  const page = Math.floor(r.offset / r.limit) + 1;
-  if (page > 1) out.page = String(page);
   m.route.set('/', out, { replace: true });
 }
 
@@ -211,6 +210,13 @@ function mapRecordingItem(node) {
 // re-mount.
 const FRESHNESS_MS = 30_000;
 
+// CATALOG_LIMIT is the upper bound the SPA passes to the server's
+// recordingsList resolver. Visible pagination is gone — we always
+// fetch the entire catalog in a single round-trip. The server caps
+// at maxStateScan (100k) which sits well above any realistic
+// personal Broadway catalog.
+const CATALOG_LIMIT = 100_000;
+
 function loadRecordings() {
   const r = state.recordings;
   // Cached items + same query params + recent fetch → skip the
@@ -233,8 +239,12 @@ function loadRecordings() {
   }
   r.error = null;
   const variables = {
-    limit:  r.limit,
-    offset: r.offset,
+    // Single-fetch-everything: pagination is gone from the UI, so
+    // we ask the server for the full catalog. The server caps at
+    // maxStateScan (100k) which is well above any realistic
+    // catalog size.
+    limit:  CATALOG_LIMIT,
+    offset: 0,
     sort:   r.sortKey,
     dir:    r.sortDir,
     status: r.status || null,
@@ -262,7 +272,10 @@ function loadRecordings() {
 // the result set so the freshness check + the stale-response guard
 // can compare with === instead of structural equality.
 function queryKey(r) {
-  return [r.status || '', r.sortKey, r.sortDir, r.offset, r.limit].join('|');
+  // offset + limit aren't user-tunable anymore (single-fetch-
+  // everything), so the cache key only varies on the inputs the
+  // user can actually change.
+  return [r.status || '', r.sortKey, r.sortDir].join('|');
 }
 
 function setStatus(key) {
@@ -291,20 +304,6 @@ function setSort(key) {
   r.offset = 0;
   pushURLParams();
   loadRecordings();
-}
-
-function setOffset(newOffset) {
-  state.recordings.offset = newOffset;
-  pushURLParams();
-  loadRecordings();
-}
-
-function MetricTile(label, num, sub) {
-  return m('div', { class: 'stat' }, [
-    m('div', { class: 'stat-title' }, label),
-    m('div', { class: 'stat-value text-2xl' }, String(num)),
-    m('div', { class: 'stat-desc' }, sub),
-  ]);
 }
 
 function Tab(filter, active) {
@@ -495,20 +494,18 @@ const Recordings = {
   // diff lets us refetch only when the inputs that affect the result
   // set actually changed (view toggles within the same dataset don't
   // need a network round-trip). The URL is the source of truth for
-  // status/sort/dir/page; local state mirrors it.
+  // status/sort/dir; local state mirrors it.
   onupdate() {
     const r = state.recordings;
     const before = {
       status: r.status,
       sortKey: r.sortKey,
       sortDir: r.sortDir,
-      offset: r.offset,
     };
     readURLParams();
     if (before.status !== r.status ||
         before.sortKey !== r.sortKey ||
-        before.sortDir !== r.sortDir ||
-        before.offset !== r.offset) {
+        before.sortDir !== r.sortDir) {
       loadRecordings();
     }
   },
@@ -525,12 +522,9 @@ const Recordings = {
     }
 
     const total = r.total;
-    const offset = r.offset;
-    const start = total === 0 ? 0 : offset + 1;
-    const end = Math.min(offset + r.limit, total);
     const headerSub = total === 0
       ? 'No recordings loaded'
-      : 'Showing ' + start + '–' + end + ' of ' + total + ' recordings' +
+      : String(total) + ' recording' + (total === 1 ? '' : 's') +
         (r.status ? ' · status: ' + r.status : '');
 
     const body = r.view === 'grid'
@@ -551,24 +545,10 @@ const Recordings = {
         ]),
       ]),
 
-      m('div', { class: 'stats stats-vertical lg:stats-horizontal shadow w-full' }, [
-        MetricTile('Recordings', total, r.status ? 'matching ' + r.status : 'in catalog'),
-        MetricTile('Page size', r.limit, '50/page default'),
-        MetricTile('Page', Math.floor(offset / r.limit) + 1,
-          'of ' + Math.max(1, Math.ceil(total / r.limit))),
-      ]),
-
       m('div', { role: 'tablist', class: 'tabs tabs-box' },
         STATUS_FILTERS.map((f) => Tab(f, r.status))),
 
       body,
-
-      m(Pagination, {
-        offset,
-        limit: r.limit,
-        total,
-        setOffset,
-      }),
     ]);
   },
 };

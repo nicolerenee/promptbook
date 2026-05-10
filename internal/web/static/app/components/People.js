@@ -24,7 +24,6 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import Pagination from './Pagination.js';
 
 // PEOPLE_LIST_QUERY hits the peopleList custom resolver — the
 // in-scope (collection ∪ wants) by-performer aggregate. stateCounts
@@ -137,13 +136,17 @@ function readURLParams() {
     p.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
   }
 
-  const page = parseInt(params.page, 10);
-  p.offset = (page > 1) ? (page - 1) * p.limit : 0;
+  // Pagination is gone — single-fetch-everything for people.
+  p.offset = 0;
 }
+
+// CATALOG_LIMIT — see Recordings.js. Single-fetch-everything for the
+// people list page.
+const CATALOG_LIMIT = 100_000;
 
 // pushURLParams syncs state.people back to the browser URL so a reload
 // or share keeps the same filtered/sorted view. Empty values are
-// dropped; page=1 is dropped since it's the default.
+// dropped.
 function pushURLParams() {
   const p = state.people;
   const out = {};
@@ -152,20 +155,18 @@ function pushURLParams() {
     out.sort = p.sortKey;
     out.dir = p.sortDir;
   }
-  const page = Math.floor(p.offset / p.limit) + 1;
-  if (page > 1) out.page = String(page);
   m.route.set('/people', out, { replace: true });
 }
 
-// loadPeople fetches the active page from the server. Sort + offset
-// are URL-driven, so the URL is the single source of truth.
+// loadPeople fetches the entire performer list in one round-trip.
+// Visible pagination is gone; the SPA filters client-side.
 function loadPeople() {
   const p = state.people;
   p.loading = true;
   p.error = null;
   const variables = {
-    limit:  p.limit,
-    offset: p.offset,
+    limit:  CATALOG_LIMIT,
+    offset: 0,
     sort:   p.sortKey,
     dir:    p.sortDir,
   };
@@ -203,14 +204,6 @@ function setSort(key) {
     p.sortDir = key === 'count' ? 'desc' : 'asc';
   }
   p.offset = 0;
-  pushURLParams();
-  loadPeople();
-}
-
-// setOffset is the Pagination component's callback. Updates state +
-// URL + refetch.
-function setOffset(newOffset) {
-  state.people.offset = newOffset;
   pushURLParams();
   loadPeople();
 }
@@ -344,20 +337,19 @@ const People = {
       ]);
     }
 
-    // Search filters the CURRENT page only — see header comment.
+    // Search filters the full list client-side now that we fetch
+    // every performer in one round-trip.
     const filtered = filterItems(p.items, p.q);
     const total = p.total;
     const showing = filtered.length;
-    const start = total === 0 ? 0 : p.offset + 1;
-    const end = Math.min(p.offset + p.limit, total);
 
     let subText;
     if (p.q) {
-      subText = showing + ' on this page match "' + p.q + '" · ' +
-        total + ' performers in your library';
+      subText = showing + ' match "' + p.q + '" · ' +
+        total + ' performer' + (total === 1 ? '' : 's') + ' in your library';
     } else {
-      subText = 'Showing ' + start + '–' + end + ' of ' + total +
-        ' performer' + (total === 1 ? '' : 's') + ' in your library';
+      subText = total + ' performer' + (total === 1 ? '' : 's') +
+        ' in your library';
     }
 
     return m('div', { class: 'space-y-6' }, [
@@ -380,7 +372,7 @@ const People = {
           SearchIcon(),
           m('input', {
             type: 'search',
-            placeholder: 'Search performers (current page)',
+            placeholder: 'Search performers',
             value: p.q,
             oninput: (ev) => setQuery(ev.target.value),
           }),
@@ -399,20 +391,10 @@ const People = {
             ? m('tr', m('td', {
                 colspan: 4, class: 'text-center opacity-60 py-8',
               }, p.q
-                ? 'No performers on this page match this search.'
+                ? 'No performers match this search.'
                 : 'No performers in your library yet.'))
             : filtered.map(Row)),
         ])),
-
-      // Pagination strip — hidden when the entire library fits on
-      // one page. Search doesn't constrain the slice the server
-      // returned, so paging stays driven by total / limit / offset.
-      m(Pagination, {
-        offset: p.offset,
-        limit: p.limit,
-        total: p.total,
-        setOffset,
-      }),
     ]);
   },
 };

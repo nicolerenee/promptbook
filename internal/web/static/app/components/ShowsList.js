@@ -13,7 +13,6 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import Pagination from './Pagination.js';
 
 const LS_VIEW = 'pb.shows.view';
 
@@ -79,8 +78,8 @@ function readURLParams() {
     s.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
   }
 
-  const page = parseInt(params.page, 10);
-  s.offset = (page > 1) ? (page - 1) * s.limit : 0;
+  // Pagination is gone from the UI; offset stays at 0 forever.
+  s.offset = 0;
 }
 
 function pushURLParams() {
@@ -89,10 +88,12 @@ function pushURLParams() {
   if (s.view !== 'list') out.view = s.view;
   out.sort = s.sortKey;
   out.dir = s.sortDir;
-  const page = Math.floor(s.offset / s.limit) + 1;
-  if (page > 1) out.page = String(page);
   m.route.set('/shows', out, { replace: true });
 }
+
+// CATALOG_LIMIT — see Recordings.js. Single-fetch-everything for the
+// shows list page.
+const CATALOG_LIMIT = 100_000;
 
 // SHOWS_LIST_QUERY hits the showsList custom resolver — the offset-
 // paginated by-show aggregate that mirrors /api/v1/shows. The
@@ -171,8 +172,8 @@ function loadShows() {
   }
   s.error = null;
   const variables = {
-    limit:  s.limit,
-    offset: s.offset,
+    limit:  CATALOG_LIMIT,
+    offset: 0,
     sort:   s.sortKey,
     dir:    s.sortDir,
   };
@@ -193,7 +194,7 @@ function loadShows() {
 }
 
 function showsQueryKey(s) {
-  return [s.sortKey, s.sortDir, s.offset, s.limit].join('|');
+  return [s.sortKey, s.sortDir].join('|');
 }
 
 function setView(key) {
@@ -214,20 +215,6 @@ function setSort(key) {
   s.offset = 0;
   pushURLParams();
   loadShows();
-}
-
-function setOffset(newOffset) {
-  state.showsList.offset = newOffset;
-  pushURLParams();
-  loadShows();
-}
-
-function MetricTile(label, num, sub) {
-  return m('div', { class: 'stat' }, [
-    m('div', { class: 'stat-title' }, label),
-    m('div', { class: 'stat-value text-2xl' }, String(num)),
-    m('div', { class: 'stat-desc' }, sub),
-  ]);
 }
 
 function HeaderCell(col, sortKey, sortDir) {
@@ -426,12 +413,10 @@ const ShowsList = {
     const before = {
       sortKey: s.sortKey,
       sortDir: s.sortDir,
-      offset: s.offset,
     };
     readURLParams();
     if (before.sortKey !== s.sortKey ||
-        before.sortDir !== s.sortDir ||
-        before.offset !== s.offset) {
+        before.sortDir !== s.sortDir) {
       loadShows();
     }
   },
@@ -448,12 +433,9 @@ const ShowsList = {
     }
 
     const total = s.total;
-    const offset = s.offset;
-    const start = total === 0 ? 0 : offset + 1;
-    const end = Math.min(offset + s.limit, total);
     const headerSub = total === 0
       ? 'No shows loaded'
-      : 'Showing ' + start + '–' + end + ' of ' + total + ' shows';
+      : String(total) + ' show' + (total === 1 ? '' : 's') + ' in catalog';
 
     const body = s.view === 'grid'
       ? renderGrid(s.items)
@@ -470,21 +452,7 @@ const ShowsList = {
         ]),
       ]),
 
-      m('div', { class: 'stats stats-vertical lg:stats-horizontal shadow w-full' }, [
-        MetricTile('Shows', total, 'in catalog'),
-        MetricTile('Page size', s.limit, '50/page default'),
-        MetricTile('Page', Math.floor(offset / s.limit) + 1,
-          'of ' + Math.max(1, Math.ceil(total / s.limit))),
-      ]),
-
       body,
-
-      m(Pagination, {
-        offset,
-        limit: s.limit,
-        total,
-        setOffset,
-      }),
     ]);
   },
 };

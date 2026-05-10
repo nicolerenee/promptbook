@@ -320,10 +320,12 @@ func showYearSpan(
 const listLimitDefault = 50
 
 // maxStateScan caps how many states the recordings list materializes
-// before paginating in memory. Mirrors the REST constant of the same
-// name — bounded so the in-memory sort stays cheap regardless of
-// catalog size.
-const maxStateScan = 1024
+// before paginating in memory. The SPA's list pages drop visible
+// pagination and request the full catalog in a single fetch, so this
+// cap doubles as the practical upper bound on catalog size we'll
+// surface — 100k is comfortably above any realistic personal Broadway
+// catalog while still keeping the in-memory sort + filter bounded.
+const maxStateScan = 100_000
 
 // sortDir / sortKey constants — pulled out so the comparator-switch
 // + dir-normalization paths stop tripping the goconst lint with
