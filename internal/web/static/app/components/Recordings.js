@@ -372,14 +372,27 @@ function PosterCard(it) {
   const meta = STATUS_META[it.status] || STATUS_META.orphan;
   const poster = it.local_poster_url || '';
   const onclick = () => m.route.set('/recordings/' + it.id);
+  // Placeholder for the no-poster case stays minimal — the status
+  // badge moved to the card body's title row so the empty image
+  // slot doesn't need to carry the status label anymore.
   const placeholder = m('div', {
     class: 'aspect-[2/3] w-full bg-base-300 flex items-center justify-center text-xs opacity-60 px-2 text-center',
-  }, m('span', { class: 'badge ' + meta.badge }, meta.label));
+  }, m('span', it.show || '—'));
   const image = m('img', {
     src: poster,
     alt: it.show || '',
     loading: 'lazy',
     class: 'aspect-[2/3] w-full object-cover',
+  });
+  // Status dot — a tiny coloured circle next to the title that
+  // reuses the same badge-{variant} colour the row view uses. Plain
+  // text label would steal too much space at the typical card width;
+  // the dot communicates "synced / mismatch / missing" at a glance
+  // and the existing title-attr tooltip carries the long-form label.
+  const statusDot = m('span', {
+    class: 'badge badge-xs badge-square shrink-0 ' + meta.badge,
+    title: meta.label,
+    'aria-label': meta.label,
   });
   return m('div', {
     // See Row's `key` comment — same reasoning. The grid view's
@@ -395,17 +408,15 @@ function PosterCard(it) {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onclick(); }
     },
   }, [
-    m('div', { class: 'indicator w-full' }, [
-      m('span', {
-        class: 'indicator-item badge badge-sm ' + meta.badge,
-      }, meta.label),
-      m('div', { class: 'overflow-hidden rounded-t-box w-full' },
-        poster ? image : placeholder,
-      ),
-    ]),
+    m('div', { class: 'overflow-hidden rounded-t-box w-full' },
+      poster ? image : placeholder,
+    ),
     m('div', { class: 'card-body p-2 gap-0.5' }, [
-      m('div', { class: 'text-sm font-medium truncate', title: it.show || '' },
-        it.show || '—'),
+      m('div', { class: 'flex items-center gap-1.5 min-w-0' }, [
+        statusDot,
+        m('div', { class: 'text-sm font-medium truncate', title: it.show || '' },
+          it.show || '—'),
+      ]),
       m('div', { class: 'text-xs opacity-60 font-mono truncate' },
         (it.tour ? it.tour + ' · ' : '') +
         smartDateWithVariant(
