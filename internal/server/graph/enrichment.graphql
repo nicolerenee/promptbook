@@ -577,4 +577,21 @@ type Mutation {
   # wrapper around nforefresh.Service.RewriteForRecording — the
   # no-version-row case is a successful no-op (ok=true).
   regenerateRecordingNFO(recordingID: ID!): RegenerateNFOResult!
+
+  # setRecordingExternallyManaged flips the recording's
+  # externally_managed flag. Flipping ON drops the
+  # .promptbook-externally-managed sentinel in the recording's
+  # source folder (so a later scan recognizes it even if the
+  # external tool renames the parent folder) and deletes any
+  # existing movie.nfo at the version's directory; flipping OFF
+  # removes the sentinel. Files stay where they are in either
+  # direction — the user can hit "Preview rename" afterwards if
+  # they want promptbook to take ownership.
+  #
+  # Returns the refreshed Recording so the SPA's local state
+  # reflects the new flag without a follow-up query.
+  setRecordingExternallyManaged(
+    recordingID: ID!
+    externallyManaged: Boolean!
+  ): Recording!
 }

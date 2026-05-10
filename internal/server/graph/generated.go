@@ -132,9 +132,10 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		ApplyRecordingRename   func(childComplexity int, recordingID int64) int
-		ImportQueueEntry       func(childComplexity int, input ImportQueueEntryInput) int
-		RegenerateRecordingNfo func(childComplexity int, recordingID int64) int
+		ApplyRecordingRename          func(childComplexity int, recordingID int64) int
+		ImportQueueEntry              func(childComplexity int, input ImportQueueEntryInput) int
+		RegenerateRecordingNfo        func(childComplexity int, recordingID int64) int
+		SetRecordingExternallyManaged func(childComplexity int, recordingID int64, externallyManaged bool) int
 	}
 
 	PageInfo struct {
@@ -518,6 +519,7 @@ type MutationResolver interface {
 	ImportQueueEntry(ctx context.Context, input ImportQueueEntryInput) (*ImportQueueEntryPayload, error)
 	ApplyRecordingRename(ctx context.Context, recordingID int64) ([]*RenameResultItem, error)
 	RegenerateRecordingNfo(ctx context.Context, recordingID int64) (*RegenerateNFOResult, error)
+	SetRecordingExternallyManaged(ctx context.Context, recordingID int64, externallyManaged bool) (*ent.Recording, error)
 }
 type PerformerResolver interface {
 	LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error)
@@ -967,6 +969,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RegenerateRecordingNfo(childComplexity, args["recordingID"].(int64)), true
+	case "Mutation.setRecordingExternallyManaged":
+		if e.ComplexityRoot.Mutation.SetRecordingExternallyManaged == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setRecordingExternallyManaged_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetRecordingExternallyManaged(childComplexity, args["recordingID"].(int64), args["externallyManaged"].(bool)), true
 
 	case "PageInfo.endCursor":
 		if e.ComplexityRoot.PageInfo.EndCursor == nil {
@@ -3854,6 +3867,28 @@ func (ec *executionContext) field_Mutation_regenerateRecordingNFO_args(ctx conte
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_setRecordingExternallyManaged_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "externallyManaged",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["externallyManaged"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -6173,6 +6208,50 @@ func (ec *executionContext) fieldContext_Mutation_regenerateRecordingNFO(ctx con
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_regenerateRecordingNFO_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setRecordingExternallyManaged(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setRecordingExternallyManaged(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetRecordingExternallyManaged(ctx, fc.Args["recordingID"].(int64), fc.Args["externallyManaged"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ent.Recording) graphql.Marshaler {
+			return ec.marshalNRecording2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecording(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setRecordingExternallyManaged(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Recording(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setRecordingExternallyManaged_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -21741,6 +21820,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setRecordingExternallyManaged":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setRecordingExternallyManaged(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -26272,6 +26358,10 @@ func (ec *executionContext) marshalNQueueEntry2ᚖgithubᚗcomᚋnicolereneeᚋp
 		return graphql.Null
 	}
 	return ec._QueueEntry(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRecording2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecording(ctx context.Context, sel ast.SelectionSet, v ent.Recording) graphql.Marshaler {
+	return ec._Recording(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNRecording2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecording(ctx context.Context, sel ast.SelectionSet, v *ent.Recording) graphql.Marshaler {

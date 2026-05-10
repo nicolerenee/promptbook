@@ -2052,6 +2052,112 @@ func (r *Resolver) regenerateRecordingNFO(
 	return &RegenerateNFOResult{Ok: true}, nil
 }
 
+// setRecordingExternallyManaged is the resolver body for the
+// setRecordingExternallyManaged mutation. Flipping ON drops the
+// .promptbook-externally-managed sentinel in the recording's source
+// folder (the parent dir of the first version's file_path) and
+// deletes any existing movie.nfo at that folder; flipping OFF
+// removes the sentinel. Files stay in place in either direction —
+// the user can hit "Preview rename" afterwards if they want
+// promptbook to take ownership.
+//
+// The disk writes are best-effort: a missing source folder (no
+// version row, or the file is gone) just skips those steps and the
+// flag still flips. The mutation only fails when the DB write fails
+// or the recording id doesn't resolve.
+func (r *Resolver) setRecordingExternallyManaged(
+	ctx context.Context, recordingID int64, externallyManaged bool,
+) (*ent.Recording, error) {
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	dirs := uniqueVersionDirs(versions)
+	if externallyManaged {
+		r.flipExternallyManagedOn(dirs, recordingID)
+	} else {
+		r.flipExternallyManagedOff(dirs, recordingID)
+	}
+	if flagErr := storage.SetRecordingExternallyManaged(
+		ctx, r.client, recordingID, externallyManaged,
+	); flagErr != nil {
+		return nil, fmt.Errorf(
+			"graphql: set externally_managed for %d: %w", recordingID, flagErr)
+	}
+	row, getErr := r.client.Recording.Get(ctx, recordingID)
+	if getErr != nil {
+		return nil, fmt.Errorf(
+			"graphql: reload recording %d after toggle: %w", recordingID, getErr)
+	}
+	return row, nil
+}
+
+// uniqueVersionDirs returns the deduplicated set of parent
+// directories across the recording's versions. Multipart recordings
+// share one folder; loose-file legacy imports may sit in disparate
+// directories, in which case the toggle writes the sentinel to all
+// of them so a later scan recognizes any path-drift.
+func uniqueVersionDirs(versions []storage.RecordingVersion) []string {
+	seen := make(map[string]struct{}, len(versions))
+	out := make([]string, 0, len(versions))
+	for _, v := range versions {
+		dir := filepath.Dir(v.FilePath)
+		if dir == "" || dir == "." {
+			continue
+		}
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		out = append(out, dir)
+	}
+	return out
+}
+
+// flipExternallyManagedOn writes the sentinel + deletes any existing
+// movie.nfo in each of the recording's version directories.
+// Best-effort: every failure logs at warn and we continue, since the
+// flag flip in the DB is the load-bearing assertion.
+func (r *Resolver) flipExternallyManagedOn(dirs []string, recordingID int64) {
+	for _, dir := range dirs {
+		sentinel := filepath.Join(dir, ingest.ExternallyManagedSentinel)
+		if err := os.WriteFile(sentinel, nil, externallyManagedFilePerm); err != nil {
+			r.logger.Warn().Err(err).Str("path", sentinel).
+				Int64("recording_id", recordingID).
+				Msg("failed to write externally-managed sentinel during toggle")
+		}
+		nfoPath := filepath.Join(dir, "movie.nfo")
+		if err := os.Remove(nfoPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			r.logger.Warn().Err(err).Str("path", nfoPath).
+				Int64("recording_id", recordingID).
+				Msg("failed to remove movie.nfo during externally-managed toggle")
+		}
+	}
+}
+
+// flipExternallyManagedOff removes the sentinel from each version
+// directory. The file stays where it is — the user can hit
+// "Preview rename" afterwards to move it under canonical templates.
+func (r *Resolver) flipExternallyManagedOff(dirs []string, recordingID int64) {
+	for _, dir := range dirs {
+		sentinel := filepath.Join(dir, ingest.ExternallyManagedSentinel)
+		if err := os.Remove(sentinel); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			r.logger.Warn().Err(err).Str("path", sentinel).
+				Int64("recording_id", recordingID).
+				Msg("failed to remove externally-managed sentinel during toggle")
+		}
+	}
+}
+
+// externallyManagedFilePerm matches the ingest engine's sidecar
+// permission so the sentinel stays world-readable across consumers
+// (Jellyfin / Plex containers running as different uids).
+const externallyManagedFilePerm = 0o644
+
 // encoraRecordingValue aliases encora.Recording so the per-version
 // helpers can carry the value type without each call site importing
 // the encora package directly. Pulled into a named type so the

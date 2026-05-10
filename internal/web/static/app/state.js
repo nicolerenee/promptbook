@@ -130,6 +130,12 @@ export const state = {
     regeneratingNFO: false,
     regenerateNFOMessage: null,
     regenerateNFOError: null,
+    // externallyManagedBusy disables the More-menu's externally-
+    // managed toggle while the setRecordingExternallyManaged mutation
+    // is in flight so a double-click can't fire two concurrent
+    // toggles. Failures surface on state.recording.dangerError to
+    // reuse the existing alert pattern.
+    externallyManagedBusy: false,
     // expandedVersions tracks which Files-section Versions table rows
     // are showing their inline Media Info expansion. Keyed by the
     // row's index in the versions array. Reset on every recording

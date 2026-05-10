@@ -38,6 +38,17 @@ func (r *mutationResolver) RegenerateRecordingNfo(ctx context.Context, recording
 	return r.Resolver.regenerateRecordingNFO(ctx, recordingID)
 }
 
+// SetRecordingExternallyManaged is the resolver for the
+// setRecordingExternallyManaged field. Pass-through to the
+// resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *mutationResolver) SetRecordingExternallyManaged(
+	ctx context.Context, recordingID int64, externallyManaged bool,
+) (*ent.Recording, error) {
+	return r.Resolver.setRecordingExternallyManaged(ctx, recordingID, externallyManaged)
+}
+
 // LocalHeadshotURL is the resolver for the localHeadshotURL field.
 func (r *performerResolver) LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error) {
 	if r.imageCache == nil || r.imageCache.Disabled() {

@@ -191,3 +191,81 @@ func TestGraphQLImportQueueEntryExternallyManaged(t *testing.T) {
 	_, err = storage.LoadQueueEntry(t.Context(), db, queueID)
 	require.ErrorIs(t, err, storage.ErrQueueEntryNotFound)
 }
+
+// TestGraphQLSetRecordingExternallyManagedToggle exercises the
+// setRecordingExternallyManaged mutation: flipping ON drops the
+// sentinel + deletes any existing movie.nfo in the version's source
+// folder; flipping OFF removes the sentinel. Files stay in place
+// either way.
+func TestGraphQLSetRecordingExternallyManagedToggle(t *testing.T) {
+	t.Parallel()
+
+	sqlDB, db, err := storage.OpenEnt(t.Context(),
+		filepath.Join(t.TempDir(), "promptbook.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	const recordingID = int64(90100222)
+	seedExternallyManagedRecording(t.Context(), t, db, recordingID)
+
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "greenwich-beacon.mkv")
+	require.NoError(t, os.WriteFile(src, []byte("video bytes"), 0o600))
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID: recordingID,
+		FilePath:    src,
+	}))
+
+	nfoPath := filepath.Join(srcDir, "movie.nfo")
+	require.NoError(t, os.WriteFile(nfoPath, []byte("<movie/>"), 0o600))
+
+	srv, err := server.New(server.Options{DB: db})
+	require.NoError(t, err)
+
+	mutation := `mutation T($id: ID!, $value: Boolean!) {
+		setRecordingExternallyManaged(recordingID: $id, externallyManaged: $value) {
+			id
+			externallyManaged
+		}
+	}`
+
+	// Flip ON.
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"id":    "recording-" + strconv.FormatInt(recordingID, 10),
+		"value": true,
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	// Recording flag flipped + sentinel exists + movie.nfo gone.
+	loaded, err := storage.LoadRecording(t.Context(), db, recordingID)
+	require.NoError(t, err)
+	assert.True(t, loaded.ExternallyManaged)
+	_, err = os.Stat(filepath.Join(srcDir, ingest.ExternallyManagedSentinel))
+	require.NoError(t, err, "sentinel must land in version source folder")
+	_, err = os.Stat(nfoPath)
+	require.True(t, os.IsNotExist(err),
+		"existing movie.nfo must be deleted on flip-on")
+
+	// Source file still exists.
+	_, err = os.Stat(src)
+	require.NoError(t, err, "source file must stay in place")
+
+	// Flip OFF.
+	body, rr = graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"id":    "recording-" + strconv.FormatInt(recordingID, 10),
+		"value": false,
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	loaded, err = storage.LoadRecording(t.Context(), db, recordingID)
+	require.NoError(t, err)
+	assert.False(t, loaded.ExternallyManaged)
+	_, err = os.Stat(filepath.Join(srcDir, ingest.ExternallyManagedSentinel))
+	require.True(t, os.IsNotExist(err),
+		"sentinel must be removed on flip-off")
+	// Source file still exists.
+	_, err = os.Stat(src)
+	require.NoError(t, err, "source file must stay in place after flip-off")
+}

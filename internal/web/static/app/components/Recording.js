@@ -17,8 +17,9 @@
 //
 // Status taxonomy (lowercase, identical to Library.js):
 //   synced / format_mismatch / missing / wanted / orphan
-// Status is derived client-side via statusForRecording(), mirroring the
-// legacy helper which mirrors storage.ResolveStatus.
+// Status comes from the server's Recording.status GraphQL field (same
+// storage.ComputeStatus result the list page uses) so the badge here
+// always agrees with the list-page badge.
 //
 // NFT callout copy is verbatim from the legacy recording.js — the user
 // explicitly corrected these strings earlier. Keep the wording.
@@ -60,22 +61,6 @@ const STATUS_META = {
   wanted:          { label: 'Wanted',          badge: 'badge-info' },
   orphan:          { label: 'Orphan',          badge: 'badge-neutral' },
 };
-
-// statusForRecording mirrors storage.ResolveStatus on the data we have.
-// Returns the lowercase API token used by STATUS_META for badge lookup.
-function statusForRecording(loaded) {
-  const versions = (loaded && loaded.Versions) || [];
-  const hasFile = versions.length > 0;
-  if (loaded.InCollection) {
-    if (!hasFile) return 'missing';
-    const local = loaded.LocalFormatString || '';
-    const encora = loaded.Format || '';
-    if (local && encora && local !== encora) return 'format_mismatch';
-    return 'synced';
-  }
-  if (loaded.InWants) return 'wanted';
-  return 'orphan';
-}
 
 // dangerActionFor picks the single destructive action that makes
 // sense for the recording's current Encora state, mirroring the legacy
@@ -185,6 +170,7 @@ const RECORDING_DETAIL_QUERY = `
       nfoModifiedAt
       overlayDisabled
       overlayTextOverride
+      externallyManaged
       bannerLayout {
         position
         imageRegion
@@ -329,6 +315,7 @@ function shapeRecordingDetail(node) {
   };
   return {
     Recording:             rec,
+    Status:                node.status || '',
     InCollection:          !!node.inCollection,
     InWants:               !!node.inWants,
     Format:                node.encoraFormat || '',
@@ -349,6 +336,7 @@ function shapeRecordingDetail(node) {
     local_fanart_url:      node.localFanartURL || '',
     overlay_disabled:      !!node.overlayDisabled,
     overlay_text_override: node.overlayTextOverride == null ? null : node.overlayTextOverride,
+    externally_managed:    !!node.externallyManaged,
     banner_layout: {
       position:     (node.bannerLayout && node.bannerLayout.position) || '',
       image_region: (node.bannerLayout && node.bannerLayout.imageRegion) || '',
@@ -573,6 +561,51 @@ const REGENERATE_NFO_MUTATION = `
     }
   }
 `;
+
+// SET_EXTERNALLY_MANAGED_MUTATION flips the recording's
+// externally_managed flag on the server. The resolver writes / removes
+// the .promptbook-externally-managed sentinel + deletes any existing
+// movie.nfo on flip-on; flip-off just removes the sentinel. Files
+// stay in place either way.
+const SET_EXTERNALLY_MANAGED_MUTATION = `
+  mutation SetExternallyManaged($id: ID!, $value: Boolean!) {
+    setRecordingExternallyManaged(recordingID: $id, externallyManaged: $value) {
+      id
+      externallyManaged
+    }
+  }
+`;
+
+// runSetExternallyManaged fires the toggle mutation and re-loads the
+// recording so the badge / button visibility reflect the new state.
+// state.recording.externallyManagedBusy disables the menu entry while
+// the mutation is in flight; failures land on dangerError so the same
+// inline alert pattern surfaces them.
+function runSetExternallyManaged(id, value) {
+  if (state.recording.externallyManagedBusy) return;
+  state.recording.externallyManagedBusy = true;
+  state.recording.dangerError = '';
+  m.redraw();
+
+  graphql.query(SET_EXTERNALLY_MANAGED_MUTATION, {
+    id:    'recording-' + id,
+    value: !!value,
+  })
+    .then(() => {
+      state.recording.externallyManagedBusy = false;
+      // Re-fetch so the badge + button visibility + STATUS (the
+      // server-derived status field doesn't change on flag flip, but
+      // re-fetching keeps the SPA payload coherent if anything else
+      // changed in the meantime).
+      loadRecording(id);
+    })
+    .catch((err) => {
+      state.recording.externallyManagedBusy = false;
+      state.recording.dangerError =
+        'Failed to update externally-managed: ' + errorMessage(err);
+      m.redraw();
+    });
+}
 
 // runRegenerateNFO fires the regenerateRecordingNFO mutation and parks
 // the outcome on state.recording. Success → a confirmation toast that
@@ -1049,13 +1082,18 @@ function renderActionsCluster(loaded) {
     },
   }, [photoIcon(), m('span', 'Edit images')]);
 
-  // Build the More-menu items. Rename + NFO + History are always
-  // present; the danger-zone entry is state-driven through
-  // dangerActionFor — destructive actions render with error styling,
-  // the constructive "Add to wants" branch with primary styling, and
-  // a null action drops the row entirely.
-  const menuItems = [
-    m('li', m('a', {
+  // Build the More-menu items. Rename + Regenerate NFO are gated on
+  // !externally_managed — those buttons would write to disk under
+  // promptbook's canonical layout, which is exactly what externally-
+  // managed mode opts out of. Externally-managed gets the toggle
+  // entry instead so the user can flip the flag back off when they
+  // want promptbook to take ownership again. History stays available
+  // either way.
+  const externallyManaged = !!loaded.externally_managed;
+  const externallyManagedBusy = !!state.recording.externallyManagedBusy;
+  const menuItems = [];
+  if (!externallyManaged) {
+    menuItems.push(m('li', m('a', {
       onclick: (ev) => {
         ev.preventDefault();
         // Rename modal owns both the preview render + the apply
@@ -1068,8 +1106,8 @@ function renderActionsCluster(loaded) {
         state.recording.renameApplyError = null;
         loadRenamePreview(id);
       },
-    }, [pencilSquareIcon(), m('span', 'Rename')])),
-    m('li', { class: regenBusy ? 'disabled' : '' }, m('a', {
+    }, [pencilSquareIcon(), m('span', 'Rename')])));
+    menuItems.push(m('li', { class: regenBusy ? 'disabled' : '' }, m('a', {
       onclick: (ev) => {
         ev.preventDefault();
         if (regenBusy) return;
@@ -1080,14 +1118,32 @@ function renderActionsCluster(loaded) {
         ? m('span', { class: 'loading loading-spinner loading-xs' })
         : documentArrowPathIcon(),
       m('span', regenBusy ? 'Regenerating…' : 'Regenerate NFO'),
-    ])),
-    m('li', m('a', {
+    ])));
+  }
+  menuItems.push(m('li',
+    { class: externallyManagedBusy ? 'disabled' : '' },
+    m('a', {
       onclick: (ev) => {
         ev.preventDefault();
-        m.route.set('/history', { recording_id: String(id) });
+        if (externallyManagedBusy) return;
+        runSetExternallyManaged(id, !externallyManaged);
       },
-    }, [clockIcon(), m('span', 'History')])),
-  ];
+    }, [
+      externallyManagedBusy
+        ? m('span', { class: 'loading loading-spinner loading-xs' })
+        : externalLinkIcon(),
+      m('span', externallyManagedBusy
+        ? 'Updating…'
+        : (externallyManaged
+          ? 'Mark as managed by promptbook'
+          : 'Mark as externally managed')),
+    ])));
+  menuItems.push(m('li', m('a', {
+    onclick: (ev) => {
+      ev.preventDefault();
+      m.route.set('/history', { recording_id: String(id) });
+    },
+  }, [clockIcon(), m('span', 'History')])));
   if (action) {
     const isDestructive = !!action.destructive;
     menuItems.push(m('li',
@@ -1214,12 +1270,24 @@ function renderHeader(loaded) {
   // the user's relationship to the recording. The "facts about the
   // recording itself" badges (master, owners count, wanters count,
   // external links) live in the subtitle row up top instead.
-  const status = statusForRecording(loaded);
+  const status = (loaded.Status || '').toLowerCase();
   const statusMeta = STATUS_META[status] || STATUS_META.orphan;
   const owners = (meta.owners_count != null) ? Number(meta.owners_count) : 0;
   const wanters = (meta.wanters_count != null) ? Number(meta.wanters_count) : 0;
   const badgeRow = [
     m('span', { class: 'badge ' + statusMeta.badge }, statusMeta.label),
+    // External badge surfaces externally-managed recordings (Radarr /
+    // Plex owns the files on disk; promptbook is catalog-only). Sits
+    // next to the status badge so the user knows the rename / NFO
+    // buttons are intentionally hidden.
+    loaded.externally_managed
+      ? m('span', {
+          class: 'badge badge-info',
+          title: 'Files are managed by an external tool (Radarr / ' +
+                 'Plex / Jellyfin). promptbook will not move them or ' +
+                 'write movie.nfo.',
+        }, 'External')
+      : null,
     giftingBadge(meta.gifting_status || ''),
     tradingBadge(loaded),
   ];
@@ -2568,6 +2636,7 @@ const Recording = {
     state.recording.regeneratingNFO = false;
     state.recording.regenerateNFOMessage = null;
     state.recording.regenerateNFOError = null;
+    state.recording.externallyManagedBusy = false;
     state.recording.pickerStaged = {};
     // Phase 2 disclosures: per-version Media Info expansion + the
     // NFO row's Show/Hide toggle. Reset on every recording switch so
@@ -2610,6 +2679,7 @@ const Recording = {
       state.recording.regeneratingNFO = false;
       state.recording.regenerateNFOMessage = null;
       state.recording.regenerateNFOError = null;
+      state.recording.externallyManagedBusy = false;
       state.recording.expandedVersions = {};
       state.recording.nfoExpanded = false;
       loadRecording(id);
