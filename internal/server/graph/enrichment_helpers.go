@@ -26,7 +26,6 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/probe"
-	"github.com/nicolerenee/promptbook/internal/releaseformat"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -76,10 +75,16 @@ func (r *Resolver) recordingExtras(
 // recordingMediaInfo is the resolver body for Recording.mediaInfo. It
 // reads the latest recording_versions row (largest file first, the
 // same order ListVersions returns) and decodes its media_info_json
-// blob into the GraphQL MediaInfo shape. Returns nil — i.e. the
-// GraphQL field renders as null — when there is no version, the blob
-// is empty (legacy import before the field existed), or the JSON is
-// unparseable. The detail page hides the media-info card on null.
+// blob into the GraphQL MediaInfo shape. For multipart recordings
+// the durationSeconds field is the SUM across every part — the user
+// sees "the runtime of the show" rather than "the runtime of one
+// act." Other fields read from the lead part since codec / quality
+// agree across parts of one capture.
+//
+// Returns nil — i.e. the GraphQL field renders as null — when there
+// is no version, the blob is empty (legacy import before the field
+// existed), or the JSON is unparseable. The detail page hides the
+// media-info card on null.
 func (r *Resolver) recordingMediaInfo(
 	ctx context.Context, recordingID int64,
 ) (*MediaInfo, error) {
@@ -101,16 +106,33 @@ func (r *Resolver) recordingMediaInfo(
 		// it; in the meantime the SPA hides the card.
 		return nil, nil //nolint:nilnil // null when blob is unparseable.
 	}
+	// Multipart sum: every additional part's duration adds onto the
+	// lead part's. Codec / resolution / audio shape stay identical
+	// across parts so we don't need to merge anything else. Parts
+	// with empty / unparseable blobs contribute zero — same fallback
+	// as the lead-part nil branch above.
+	for i := 1; i < len(versions); i++ {
+		next := strings.TrimSpace(versions[i].MediaInfoJSON)
+		if next == "" || next == "null" || next == "{}" {
+			continue
+		}
+		decoded, decodedOK := decodeMediaInfoBlob(next)
+		if !decodedOK {
+			continue
+		}
+		info.DurationSeconds += decoded.DurationSeconds
+	}
 	return mediaInfoToGraphQL(info, versions[0].Container), nil
 }
 
 // recordingLocalReleaseFormat is the resolver body for
-// Recording.localReleaseFormat. Walks every recording_versions row,
-// projects each onto a releaseformat.VersionInfo via the persisted
-// MediaInfo blob (with the version row's Container as the legacy
-// fallback), and returns releaseformat.Compose's output. Empty
-// string when the recording has no versions — caller's "no files
-// registered" branch.
+// Recording.localReleaseFormat. Delegates to
+// storage.ComputeFormatString so multipart-merge + same-format
+// grouping happens in one place — that helper produces a single
+// "MP4 - x264 + AAC - 1080p - 8.70 GB - 2 files" line for two-act
+// captures rather than two near-identical bracket groups, and
+// surfaces truly different masters / qualities as separate
+// bracketed entries.
 func (r *Resolver) recordingLocalReleaseFormat(
 	ctx context.Context, recordingID int64,
 ) (string, error) {
@@ -119,34 +141,7 @@ func (r *Resolver) recordingLocalReleaseFormat(
 		return "", fmt.Errorf(
 			"graphql: list versions for recording %d: %w", recordingID, err)
 	}
-	if len(versions) == 0 {
-		return "", nil
-	}
-	infos := make([]releaseformat.VersionInfo, 0, len(versions))
-	for _, v := range versions {
-		var mi probe.MediaInfo
-		blob := strings.TrimSpace(v.MediaInfoJSON)
-		if blob != "" && blob != "null" && blob != "{}" {
-			// Decode failures are non-fatal — fall through to the
-			// legacy "no MediaInfo" path so the slot still renders
-			// "{ext} - ? / ? - ? - {size}" cleanly.
-			if decoded, ok := decodeMediaInfoBlob(blob); ok {
-				mi = decoded
-			}
-		}
-		// fallbackExt drives the Container slot when the MediaInfo
-		// blob is empty. ListVersions always populates Container off
-		// the persisted typed column, so this is a stable fallback
-		// even when the blob predates the probe capture.
-		fallbackExt := v.Container
-		if fallbackExt == "" {
-			fallbackExt = filepath.Ext(v.FilePath)
-		}
-		infos = append(infos, releaseformat.FromVersionAndMediaInfo(
-			mi, v.FileSizeBytes, fallbackExt,
-		))
-	}
-	return releaseformat.Compose(infos), nil
+	return storage.ComputeFormatString(versions), nil
 }
 
 // decodeMediaInfoBlob unmarshals the persisted JSON blob into the

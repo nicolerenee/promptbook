@@ -365,6 +365,55 @@ func TestComputeFormatString(t *testing.T) {
 			},
 			want: "MKV - ? + ? - ? - 4.00 GB",
 		},
+		{
+			// Multipart act-1 / act-2 of a single capture — same
+			// container/codec/quality. The two parts merge into a
+			// single line with the sizes summed + a "2 files"
+			// suffix. Mirrors the user-facing example from the
+			// design doc.
+			name: "multipart parts share format and merge",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/greenwich-beacon-part-1.mp4",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     1,
+				},
+				{
+					FilePath:      "/greenwich-beacon-part-2.mp4",
+					FileSizeBytes: 3 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     2,
+				},
+			},
+			want: "MP4 - x264 + AAC - 1080p - 8.00 GB - 2 files",
+		},
+		{
+			// Different formats DON'T merge — two distinct masters
+			// of the same recording stay bracketed best-first even
+			// when one of them happens to be multipart.
+			name: "distinct formats stay bracketed even with parts",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/hd-part-1.mp4",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     1,
+				},
+				{
+					FilePath:      "/hd-part-2.mp4",
+					FileSizeBytes: 3 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     2,
+				},
+				{
+					FilePath:      "/4k.mkv",
+					FileSizeBytes: 20 * oneGiB,
+					MediaInfoJSON: mi2160,
+				},
+			},
+			want: "[MKV - x265 + AAC - 2160p - 20.00 GB] [MP4 - x264 + AAC - 1080p - 8.00 GB - 2 files]",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -62,8 +62,17 @@ type VersionInfo struct {
 	// and sorts last.
 	Height int
 	// SizeBytes is the file size on disk. Rendered through formatSize
-	// to match the SPA's humanSize convention.
+	// to match the SPA's humanSize convention. For multipart entries
+	// (PartCount > 1) this is the SUM of all parts' sizes.
 	SizeBytes int64
+	// PartCount is how many files this entry represents. 1 for a
+	// single-file version (the default); >1 for multipart recordings
+	// where each part shares the same format and got merged into a
+	// single VersionInfo by the caller. The renderer appends
+	// " - N files" when PartCount > 1 so the user sees the total
+	// size + the part count without two near-identical bracket
+	// groups.
+	PartCount int
 }
 
 // FromVersionAndMediaInfo is the canonical constructor used by every
@@ -127,6 +136,9 @@ func Compose(versions []VersionInfo) string {
 // renderVersion emits the bare "{Container} - {VideoCodec} +
 // {AudioCodec} - {Quality} - {Size}" string for a single version.
 // Empty slots render as "?" rather than collapsing the structure.
+// When PartCount > 1 a trailing " - {N} files" hint is appended so
+// multipart recordings show the total size + part count without
+// two near-identical bracket groups.
 //
 // The codec separator is "+" instead of "/" because the same string
 // is pushed to encora's /api/collection/{id}/format/{format} endpoint
@@ -150,8 +162,12 @@ func renderVersion(v VersionInfo) string {
 	if quality == "" {
 		quality = missingPlaceholder
 	}
-	return fmt.Sprintf("%s - %s + %s - %s - %s",
+	out := fmt.Sprintf("%s - %s + %s - %s - %s",
 		container, videoCodec, audioCodec, quality, formatSize(v.SizeBytes))
+	if v.PartCount > 1 {
+		out += fmt.Sprintf(" - %d files", v.PartCount)
+	}
+	return out
 }
 
 // formatVideoCodec maps the raw ffprobe codec_name onto the

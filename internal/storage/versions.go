@@ -195,16 +195,37 @@ func DeleteVersionsForRecording(
 // resolution. Single version → bare "MP4 - x265 + AAC - 2160p - 8.57 GB";
 // multi-version → bracketed "[best] [next] …" sorted best-first.
 //
+// Multipart parts that share format (Container / VideoCodec /
+// AudioCodec / Height) collapse into one VersionInfo with the sizes
+// summed and PartCount set — the renderer adds " - N files" so the
+// user sees a single line like "MP4 - x264 + AAC - 1080p - 8.70 GB
+// - 2 files" rather than two near-identical bracket groups for the
+// two halves of a single act-1/act-2 capture.
+//
 // Each version's MediaInfo comes from the persisted media_info_json
 // blob (populated at ingest time via ffprobe). Legacy versions
 // without a blob render with "?" placeholders for the missing fields
 // — informative even on imports that pre-date the probe pipeline.
-//
-// Caller is responsible for passing versions in roughly desired
-// order; Compose stable-sorts on Height descending, so the input
-// order only matters for ties at the same height.
 func ComputeFormatString(versions []RecordingVersion) string {
-	infos := make([]releaseformat.VersionInfo, 0, len(versions))
+	// Group by format-equivalence: parts of the same multipart
+	// recording (same container/codec/quality) merge; truly
+	// different versions (different masters / qualities) stay
+	// separate. Order of first-occurrence is preserved so the
+	// result remains stable across runs.
+	type groupKey struct {
+		Container, VideoCodec, AudioCodec string
+		Height                            int
+	}
+	type groupAcc struct {
+		key      groupKey
+		size     int64
+		count    int
+		videoCdc string
+		audioCdc string
+	}
+	order := make([]groupKey, 0, len(versions))
+	groups := make(map[groupKey]*groupAcc, len(versions))
+
 	for _, v := range versions {
 		var mi probe.MediaInfo
 		if v.MediaInfoJSON != "" {
@@ -213,9 +234,39 @@ func ComputeFormatString(versions []RecordingVersion) string {
 			// produces a useful "{ext} - ? + ? - ? - {size}" line.
 			_ = json.Unmarshal([]byte(v.MediaInfoJSON), &mi)
 		}
-		ext := filepath.Ext(v.FilePath)
-		infos = append(infos,
-			releaseformat.FromVersionAndMediaInfo(mi, v.FileSizeBytes, ext))
+		info := releaseformat.FromVersionAndMediaInfo(
+			mi, v.FileSizeBytes, filepath.Ext(v.FilePath))
+		key := groupKey{
+			Container:  info.Container,
+			VideoCodec: info.VideoCodec,
+			AudioCodec: info.AudioCodec,
+			Height:     info.Height,
+		}
+		acc, ok := groups[key]
+		if !ok {
+			acc = &groupAcc{
+				key:      key,
+				videoCdc: info.VideoCodec,
+				audioCdc: info.AudioCodec,
+			}
+			groups[key] = acc
+			order = append(order, key)
+		}
+		acc.size += info.SizeBytes
+		acc.count++
+	}
+
+	infos := make([]releaseformat.VersionInfo, 0, len(order))
+	for _, k := range order {
+		acc := groups[k]
+		infos = append(infos, releaseformat.VersionInfo{
+			Container:  k.Container,
+			VideoCodec: acc.videoCdc,
+			AudioCodec: acc.audioCdc,
+			Height:     k.Height,
+			SizeBytes:  acc.size,
+			PartCount:  acc.count,
+		})
 	}
 	return releaseformat.Compose(infos)
 }
