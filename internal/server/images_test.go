@@ -138,7 +138,12 @@ func TestImagesRoute_PlaceholderOnMiss_ShowBanner(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), ">Cresthaven<")
 }
 
-func TestImagesRoute_PlaceholderOnMiss_RecordingFanart(t *testing.T) {
+// TestImagesRoute_FanartMissReturns404 confirms that fanart is the one
+// slot that does NOT fall through to a generated SVG placeholder. The
+// picker UI keys off the empty body / 404 to render
+// "No image on disk yet" instead of pretending fanart exists. Posters
+// + headshots + show banners keep the placeholder fallback.
+func TestImagesRoute_FanartMissReturns404(t *testing.T) {
 	t.Parallel()
 
 	srv, _, _ := imagesRouteServer(t)
@@ -148,13 +153,7 @@ func TestImagesRoute_PlaceholderOnMiss_RecordingFanart(t *testing.T) {
 		http.MethodGet, "/images/recordings/90100222/fanart.jpg", nil)
 	srv.Handler().ServeHTTP(rr, req)
 
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	body := rr.Body.String()
-	assert.True(t, strings.HasPrefix(body, "<svg"))
-	// Show, tour, date should each render as their own line.
-	assert.Contains(t, body, ">Marigold<")
-	assert.Contains(t, body, ">OBC<")
-	assert.Contains(t, body, ">2009-12-13<")
+	assert.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
 }
 
 func TestImagesRoute_UnknownEntityStillRenders(t *testing.T) {

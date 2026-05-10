@@ -296,7 +296,13 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 
 	var localFanartURL, localPosterURL string
 	if cache := s.ImageCache(); cache != nil && !cache.Disabled() {
-		localFanartURL = cache.RecordingFanartURL(id)
+		// Fanart is the only slot that does NOT fall through to a
+		// generated placeholder — emit "" when the file isn't on disk
+		// so the picker's "No image on disk yet" branch renders
+		// instead of a broken-image icon.
+		if cache.HasRecordingFanart(id) {
+			localFanartURL = cache.RecordingFanartURL(id)
+		}
 		localPosterURL = cache.RecordingPosterURL(id)
 	}
 

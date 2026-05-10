@@ -68,6 +68,17 @@ func (s *Server) imagesHandler(c echo.Context) error {
 		}
 	}
 
+	// Fanart is the one slot that should NOT fall back to a generated
+	// placeholder. Posters + headshots + show banners are surfaced
+	// prominently in grid views where a missing image leaves a hole;
+	// fanart is decorative and the absence is meaningful (the user
+	// hasn't picked one). Returning 404 lets the picker render
+	// "No image on disk yet" instead of a synthetic SVG that pretends
+	// fanart exists.
+	if slot.Kind == placeholder.KindRecordingFanart {
+		return c.NoContent(http.StatusNotFound)
+	}
+
 	return s.servePlaceholder(c, slot)
 }
 
