@@ -159,6 +159,26 @@ func upsertVersion(
 	return nil
 }
 
+// UpdateVersionFilePath rewrites the file_path on an existing
+// recording_versions row. Used by the scanner's externally-managed
+// drift detection: when an external tool (Radarr / Plex) renames the
+// folder out from under us, we update the row's file_path in place
+// rather than re-enqueueing the file. Returns ent.IsNotFound when
+// the id doesn't resolve.
+func UpdateVersionFilePath(
+	ctx context.Context, client *ent.Client, versionID int64, newPath string,
+) error {
+	_, err := client.RecordingVersion.UpdateOneID(versionID).
+		SetFilePath(newPath).
+		SetLastSeenAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf(
+			"update recording_versions.file_path for %d: %w", versionID, err)
+	}
+	return nil
+}
+
 // DeleteVersion removes a single recording_versions row by primary key.
 // Missing rows are not an error — callers reconciling against on-disk
 // state may issue deletes optimistically.

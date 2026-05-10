@@ -249,6 +249,17 @@ func (e *Engine) walkDir(ctx context.Context, dir string, res *Result) {
 // len(Extras). The accounting holds because every file the classifier
 // sees is either a part or an extra.
 func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result) {
+	// Externally-managed sentinel pre-check. When the folder carries
+	// the .promptbook-externally-managed marker AND a .encora-id
+	// sidecar that resolves to a known recording, we treat this as a
+	// path-drift event (the external tool — Radarr / Plex — renamed
+	// the parent folder out from under us) and update the existing
+	// recording_versions rows in place rather than enqueueing the
+	// folder. An orphan sentinel (no recording match) falls through
+	// to the normal scan path so the user can still import the file.
+	if e.maybeHandleExternallyManagedDrift(ctx, folder, res) {
+		return
+	}
 	media, err := collectMediaFiles(folder)
 	if err != nil {
 		recordError(res, fmt.Errorf("walk folder %q: %w", folder, err))
@@ -592,4 +603,128 @@ func recordError(res *Result, err error) {
 		return
 	}
 	res.Errors = append(res.Errors, err)
+}
+
+// maybeHandleExternallyManagedDrift reconciles a folder that carries
+// the .promptbook-externally-managed sentinel against the local
+// recording_versions table. Returns true when the folder was handled
+// (the caller skips its normal walk-and-enqueue logic); false when
+// the folder lacks the sentinel OR the sidecar's recording id
+// doesn't resolve (orphan sentinel — fall through so the user can
+// re-import the file via the queue).
+//
+// Drift handling: for each video file in the folder, if a
+// recording_versions row exists for this recording_id whose
+// basename matches the on-disk file (so multipart parts get matched
+// by their part filename) and whose current file_path differs, the
+// row's file_path is updated in place. The sentinel itself is left
+// alone — it survives the scan so a future drift event still
+// triggers this branch.
+func (e *Engine) maybeHandleExternallyManagedDrift(
+	ctx context.Context, folder string, res *Result,
+) bool {
+	sentinel := filepath.Join(folder, ingest.ExternallyManagedSentinel)
+	if _, err := os.Stat(sentinel); err != nil {
+		return false
+	}
+	id, _, resolveErr := rename.Resolve(folder, 0)
+	if resolveErr != nil {
+		// Orphan sentinel (no .encora-id, or unparseable). Fall
+		// through to the normal scan so the user can re-establish
+		// the link via the queue.
+		e.Logger.Debug().Err(resolveErr).Str("folder", folder).
+			Msg("scanner: externally-managed sentinel without resolvable encora id; ignoring")
+		return false
+	}
+	if _, lookupErr := storage.LoadRecording(ctx, e.DB, id); lookupErr != nil {
+		if errors.Is(lookupErr, storage.ErrRecordingNotFound) {
+			// Recording isn't in the local DB. Treat as orphan and
+			// fall through so the queue picks it up the regular way.
+			e.Logger.Debug().Int64("encora_id", id).Str("folder", folder).
+				Msg("scanner: externally-managed sentinel points at unknown recording; ignoring")
+			return false
+		}
+		recordError(res, fmt.Errorf(
+			"externally-managed lookup for %d in %q: %w", id, folder, lookupErr))
+		// Fail-safe: handled=true so the folder isn't enqueued on a
+		// transient DB error. The next scan retries.
+		return true
+	}
+	e.reconcileExternallyManagedFolder(ctx, folder, id, res)
+	return true
+}
+
+// reconcileExternallyManagedFolder walks every video file inside
+// folder and updates the corresponding recording_versions.file_path
+// when the row's recorded path differs. Matches by recording_id +
+// basename so multipart parts (act-1.mkv, act-2.mkv) each align
+// against their own row.
+func (e *Engine) reconcileExternallyManagedFolder(
+	ctx context.Context, folder string, recordingID int64, res *Result,
+) {
+	versions, err := storage.ListVersions(ctx, e.DB, recordingID)
+	if err != nil {
+		recordError(res, fmt.Errorf(
+			"list versions for externally-managed recording %d: %w", recordingID, err))
+		return
+	}
+	if len(versions) == 0 {
+		// No version rows yet — nothing to drift. The folder may be a
+		// stale sentinel from a deleted import; leave it alone rather
+		// than enqueueing it (the user explicitly opted into externally-
+		// managed mode).
+		return
+	}
+	versionByBase := make(map[string]storage.RecordingVersion, len(versions))
+	for _, v := range versions {
+		versionByBase[filepath.Base(v.FilePath)] = v
+	}
+
+	walkErr := filepath.WalkDir(folder, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			//nolint:nilerr // intentional: keep walking past per-entry errors so a single permission blip doesn't drop the whole folder.
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if _, ok := ingest.VideoExtensions[strings.ToLower(filepath.Ext(path))]; !ok {
+			return nil
+		}
+		base := filepath.Base(path)
+		row, ok := versionByBase[base]
+		if !ok {
+			// No row matches this filename. Could be a new file added
+			// to an externally-managed folder; phase 4 only handles
+			// drift, so leave the file alone.
+			return nil
+		}
+		if row.FilePath == path {
+			res.Skipped++
+			return nil
+		}
+		oldPath := row.FilePath
+		if upsertErr := storage.UpdateVersionFilePath(ctx, e.DB, row.ID, path); upsertErr != nil {
+			recordError(res, fmt.Errorf(
+				"update file_path for recording_versions row %d: %w", row.ID, upsertErr))
+			// Per-entry failures don't abort the walk — a single
+			// permission blip shouldn't drop every other part. The
+			// recordError call above captured the diagnostic.
+			return nil
+		}
+		e.Logger.Info().
+			Int64("recording_id", recordingID).
+			Str("from", oldPath).
+			Str("to", path).
+			Msg("scanner: externally-managed path drift — updated recording_versions")
+		// Count the drift as a "skip" from the queue's perspective:
+		// no enqueue happened, no error happened. The dedicated drift
+		// signal lives in the log line.
+		res.Skipped++
+		return nil
+	})
+	if walkErr != nil {
+		recordError(res, fmt.Errorf(
+			"walk externally-managed folder %q: %w", folder, walkErr))
+	}
 }
