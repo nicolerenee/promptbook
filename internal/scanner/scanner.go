@@ -327,8 +327,11 @@ func mergedWithShow(show, tour string, file, folder match.Parsed) match.Parsed {
 	out.IsMaster = file.IsMaster || folder.IsMaster
 	out.IsMatinee = file.IsMatinee || folder.IsMatinee
 	out.IsPreview = file.IsPreview || folder.IsPreview
-	out.IsAct1 = file.IsAct1 || folder.IsAct1
-	out.IsAct2 = file.IsAct2 || folder.IsAct2
+	// Part markers come from the FILE — that's what differentiates
+	// sibling rips in the same folder. Folder-level part markers
+	// don't really exist.
+	out.PartIndex = file.PartIndex
+	out.PartKind = file.PartKind
 	return out
 }
 

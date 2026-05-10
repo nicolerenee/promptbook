@@ -12,19 +12,19 @@ import (
 // user's tmp/incoming folder fed through Parse() with the expected
 // (show, date, tour) tuple. Anything missing or wrong here is a
 // regression in the parser.
-//
-//nolint:gocognit // table-driven test; each case is a flat assertion.
 func TestParseCorpus(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		in        string
-		wantShow  string
-		wantTour  string
-		wantDate  match.ParsedDate
-		wantSrc   string
-		wantFlags map[string]bool // matinee, master, preview, act1, act2
+		name          string
+		in            string
+		wantShow      string
+		wantTour      string
+		wantDate      match.ParsedDate
+		wantSrc       string
+		wantFlags     map[string]bool // matinee, master, preview
+		wantPartIndex int             // 0 = not a part
+		wantPartKind  string          // act / part / pt; empty when PartIndex is 0
 	}{
 		{
 			name:     "Mockingbird Lane ISO date with bracketed source",
@@ -229,12 +229,71 @@ func TestParseCorpus(t *testing.T) {
 			if tt.wantFlags["preview"] {
 				assert.True(t, got.IsPreview, "preview flag")
 			}
-			if tt.wantFlags["act1"] {
-				assert.True(t, got.IsAct1, "act1 flag")
-			}
-			if tt.wantFlags["act2"] {
-				assert.True(t, got.IsAct2, "act2 flag")
-			}
+			assert.Equal(t, tt.wantPartIndex, got.PartIndex, "part index")
+			assert.Equal(t, tt.wantPartKind, got.PartKind, "part kind")
+		})
+	}
+}
+
+// TestParsePartMarkers covers the bare act/pt/part markers the
+// scanner needs to recognize so sibling rip files in a folder can
+// be grouped under one logical recording.
+func TestParsePartMarkers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		in        string
+		wantShow  string
+		wantIndex int
+		wantKind  string
+	}{
+		{name: "ACT 1 alone", in: "ACT 1.mp4",
+			wantShow: "", wantIndex: 1, wantKind: match.PartKindAct},
+		{name: "ACT 2 alone", in: "ACT 2.mp4",
+			wantShow: "", wantIndex: 2, wantKind: match.PartKindAct},
+		{name: "Act1 no space", in: "Act1.mp4",
+			wantShow: "", wantIndex: 1, wantKind: match.PartKindAct},
+		{name: "act_1 underscore", in: "act_1.mp4",
+			wantShow: "", wantIndex: 1, wantKind: match.PartKindAct},
+		{name: "act-2 dash", in: "act-2.mp4",
+			wantShow: "", wantIndex: 2, wantKind: match.PartKindAct},
+		{name: "Act II Roman", in: "Act II.mp4",
+			wantShow: "", wantIndex: 2, wantKind: match.PartKindAct},
+		{name: "act iii Roman", in: "act iii.mp4",
+			wantShow: "", wantIndex: 3, wantKind: match.PartKindAct},
+		{name: "Pt 1", in: "Pt 1.mp4",
+			wantShow: "", wantIndex: 1, wantKind: match.PartKindPt},
+		{name: "pt-2 dash", in: "pt-2.mp4",
+			wantShow: "", wantIndex: 2, wantKind: match.PartKindPt},
+		{name: "pt2 no space", in: "pt2.mp4",
+			wantShow: "", wantIndex: 2, wantKind: match.PartKindPt},
+		{name: "Part 1", in: "Part 1.mp4",
+			wantShow: "", wantIndex: 1, wantKind: match.PartKindPart},
+		{name: "TBoM ... Act1 stripped, show preserved",
+			in:       "TBoM September West End Act1.mp4",
+			wantShow: "TBoM September West End",
+			// 2022 falls into a Sep 2022 reMonthYear match in the
+			// caller path, but PARSE proper just sees the show + part.
+			wantIndex: 1, wantKind: match.PartKindAct},
+		{name: "trailing date + act", in: "7-24 act 1.mp4",
+			wantShow:  "7-24",
+			wantIndex: 1, wantKind: match.PartKindAct},
+		{name: "Connecticut shouldn't match (act inside word)",
+			in:        "Connecticut Story 2024-01-21.mp4",
+			wantShow:  "Connecticut Story",
+			wantIndex: 0, wantKind: ""},
+		{name: "no part marker — Tideline Manor baseline",
+			in:        "Tideline Manor 2024-1-21 M.mp4",
+			wantShow:  "Tideline Manor",
+			wantIndex: 0, wantKind: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := match.Parse(tt.in)
+			assert.Equal(t, tt.wantShow, got.ShowGuess, "show")
+			assert.Equal(t, tt.wantIndex, got.PartIndex, "part index")
+			assert.Equal(t, tt.wantKind, got.PartKind, "part kind")
 		})
 	}
 }

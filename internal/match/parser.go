@@ -61,8 +61,18 @@ func (d ParsedDate) ISO() string {
 // between the show and the date — multiple because filenames like
 // "Quill Theatre Revival - Third West End Revival - October, 2023" carry
 // the tour as a multi-word phrase. Source / IsMaster / IsMatinee /
-// IsPreview / IsAct1 / IsAct2 are best-effort flags the matcher uses
-// to sort siblings in nested folders (e.g., the user's two-act rips).
+// IsPreview are best-effort flags.
+//
+// PartIndex captures multi-part markers ("Act 1", "act 2", "Pt-1",
+// "Part II", etc.). 1-based; 0 means "not a part". Sibling files
+// from the same folder with PartIndex 1 / 2 / … are different cuts
+// of the SAME logical recording — the scanner groups them under one
+// suggested recording id, and the eventual rename uses the index to
+// distinguish the imported files. PartKind preserves whether the
+// marker was an "act" or "pt|part" so a future rename template can
+// emit the right label; today the matcher only cares that PartIndex
+// > 0 means "this filename's show name is unreliable; trust the
+// folder's parse instead".
 type Parsed struct {
 	ShowGuess string
 	Tour      string
@@ -71,9 +81,16 @@ type Parsed struct {
 	IsMaster  bool
 	IsMatinee bool
 	IsPreview bool
-	IsAct1    bool
-	IsAct2    bool
+	PartIndex int
+	PartKind  string // "act" | "part" | "pt" | "" when not a part.
 }
+
+// PartKind values returned by the parser.
+const (
+	PartKindAct  = "act"
+	PartKindPart = "part"
+	PartKindPt   = "pt"
+)
 
 // Parse extracts metadata from a single filename or folder name.
 // The extension is stripped before parsing; pass either form. The
@@ -99,6 +116,7 @@ func Parse(name string) Parsed {
 	p := Parsed{}
 	name = extractBrackets(name, &p)
 	name = extractParens(name, &p)
+	name = extractPart(name, &p)
 	name, p.Date = extractDate(name)
 	name = applyFlags(name, &p)
 
@@ -180,16 +198,96 @@ var parensRE = regexp.MustCompile(`\([^()]*\)`)
 func extractParens(name string, p *Parsed) string {
 	for _, paren := range parensRE.FindAllString(name, -1) {
 		body := strings.ToLower(strings.TrimSpace(strings.Trim(paren, "()")))
-		switch {
-		case strings.Contains(body, "preview"):
+		if strings.Contains(body, "preview") {
 			p.IsPreview = true
-		case body == "act 1" || body == "act1" || body == "act i":
-			p.IsAct1 = true
-		case body == "act 2" || body == "act2" || body == "act ii":
-			p.IsAct2 = true
+			continue
+		}
+		if kind, idx, ok := matchPartToken(body); ok {
+			p.PartKind = kind
+			p.PartIndex = idx
 		}
 	}
 	return strings.TrimSpace(parensRE.ReplaceAllString(name, " "))
+}
+
+// partRE matches a trailing multi-part marker on the residual name.
+// Anchored to end-of-string so it only fires when the marker is the
+// LAST thing in the name (typical for files like "Act 1.mp4" → here
+// the .mp4 is already stripped). Word boundary at the start guards
+// against accidental hits inside words like "Connecticut" that
+// contain an "act" substring.
+//
+// Roman numerals are limited to 1-9 (i, ii, iii, iv, v, vi, vii,
+// viii, ix) — acts past IX don't happen in practice and unbounded
+// regex would hit pathological edge cases.
+var partRE = regexp.MustCompile(
+	`(?i)\b(act|part|pt)[\s\-_.]*(\d+|i{1,3}|iv|v|vi{0,3}|ix)\.?\s*$`)
+
+// extractPart strips a trailing "Act 1" / "ACT2" / "Pt-1" / "Part
+// II" marker (case-insensitive, several separator variants) and
+// records the part index + kind. Roman-numeral suffixes up through
+// IX are recognized. When the marker doesn't fit, name is returned
+// unchanged.
+func extractPart(name string, p *Parsed) string {
+	loc := partRE.FindStringSubmatchIndex(name)
+	if loc == nil {
+		return name
+	}
+	match := partRE.FindStringSubmatch(name)
+	idx := parsePartNumber(match[2])
+	if idx == 0 {
+		return name
+	}
+	p.PartKind = strings.ToLower(match[1])
+	if p.PartKind == "pt" {
+		p.PartKind = PartKindPt
+	}
+	p.PartIndex = idx
+	// Trim the matched suffix plus any trailing separator residue
+	// (a leading dash from "Show - act 1" or trailing "." we
+	// optionally captured).
+	out := strings.TrimRight(name[:loc[0]], " -_.,")
+	return strings.TrimSpace(out)
+}
+
+// matchPartToken parses a parenthesized act marker like "act 1" /
+// "Act II". Returns the canonical PartKind* value and 1-based index
+// when the body matches, ok=false otherwise.
+func matchPartToken(body string) (string, int, bool) {
+	loc := partRE.FindStringSubmatchIndex(body)
+	if loc == nil || loc[0] != 0 || loc[1] != len(body) {
+		return "", 0, false
+	}
+	match := partRE.FindStringSubmatch(body)
+	idx := parsePartNumber(match[2])
+	if idx == 0 {
+		return "", 0, false
+	}
+	kind := strings.ToLower(match[1])
+	if kind == "pt" {
+		kind = PartKindPt
+	}
+	return kind, idx, true
+}
+
+// romanNumerals maps the lowercased Roman-numeral form for 1-9 to
+// its decimal index. Acts past IX don't happen in practice, so the
+// table caps there.
+//
+//nolint:gochecknoglobals,mnd // immutable lookup; Roman→decimal is inherent.
+var romanNumerals = map[string]int{
+	"i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5,
+	"vi": 6, "vii": 7, "viii": 8, "ix": 9,
+}
+
+// parsePartNumber decodes either a base-10 integer or a Roman
+// numeral 1-9 to its 1-based index. Returns 0 on bad input.
+func parsePartNumber(s string) int {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if n, err := strconv.Atoi(s); err == nil && n > 0 {
+		return n
+	}
+	return romanNumerals[s]
 }
 
 // monthNames maps the spelled-out + 3-letter abbreviated month forms
