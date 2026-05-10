@@ -22,8 +22,6 @@ package server
 //   - Content-Type forwarded from upstream when it's image/*; coerced
 //     to application/octet-stream otherwise so a misconfigured upstream
 //     can't trick the browser into rendering HTML.
-//   - Cache-Control short-lived public so re-fetches in the picker
-//     hit the disk cache, but a fresh browser session re-validates.
 
 import (
 	"context"
@@ -41,7 +39,6 @@ import (
 const (
 	upstreamProxyTimeout      = 8 * time.Second
 	upstreamProxyMaxBodyBytes = 10 * 1024 * 1024
-	upstreamProxyCacheControl = "public, max-age=300"
 )
 
 // upstreamHostAllowlist enumerates the host suffixes the proxy will
@@ -111,7 +108,6 @@ func (s *Server) handleUpstreamImageProxy(c echo.Context) error {
 		contentType = "application/octet-stream"
 	}
 	c.Response().Header().Set("Content-Type", contentType)
-	c.Response().Header().Set("Cache-Control", upstreamProxyCacheControl)
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	c.Response().WriteHeader(http.StatusOK)
 

@@ -116,7 +116,6 @@ func TestImagesRoute_PlaceholderOnMiss_Headshot(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal(t, "image/svg+xml; charset=utf-8", rr.Header().Get("Content-Type"))
-	assert.Contains(t, rr.Header().Get("Cache-Control"), "max-age=300")
 	body := rr.Body.String()
 	assert.True(t, strings.HasPrefix(body, "<svg"), "placeholder must be SVG")
 	// Initials BD = "Brian" + "d'Arcy" — matches the performer row seeded above.

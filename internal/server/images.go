@@ -21,12 +21,6 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
-// placeholderCacheControl is the Cache-Control header attached to an
-// SVG placeholder response. Five minutes balances "the user re-loads
-// after kicking off a refresh job" against not pummelling the server
-// for repeated 404-equivalents on a static page.
-const placeholderCacheControl = "public, max-age=300"
-
 // imagesHandler resolves a /images/... request against the on-disk
 // imagecache and falls through to a generated SVG placeholder when no
 // file is present. The handler stays in the server package (not the
@@ -153,7 +147,6 @@ func (s *Server) servePlaceholder(c echo.Context, slot imageSlot) error {
 	if err != nil {
 		return fmt.Errorf("render placeholder %d: %w", slot.ID, err)
 	}
-	c.Response().Header().Set("Cache-Control", placeholderCacheControl)
 	return c.Blob(http.StatusOK, "image/svg+xml; charset=utf-8", body)
 }
 
