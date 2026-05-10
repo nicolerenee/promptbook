@@ -245,6 +245,7 @@ func buildJobRunner(
 	registered += registerRefreshEncora(runner, db, encClient, imgCache)
 	registered += registerImageRefreshJobs(runner, db, encClient, smClient, imgCache, imgRenderer)
 	registered += registerScanIncoming(runner, db)
+	registered += registerScanLibraryRoot(runner, db)
 
 	if registered == 0 {
 		log.Info().Msg("jobs runner has no registered jobs (encora + incomingDirs both unconfigured)")
@@ -345,6 +346,30 @@ func registerScanIncoming(runner *jobs.Runner, db *ent.Client) int {
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("register scan-incoming job")
+		return 0
+	}
+	return 1
+}
+
+// registerScanLibraryRoot wires the scan-library-root job when
+// library.root is configured. Manual-only: Interval is left zero so
+// the scheduler ticker never auto-fires it. The user invokes it via
+// the queue page's "Scan library" button (POST
+// /api/v1/jobs/scheduled/scan-library-root/run) when they want to
+// backfill orphan recordings into the queue.
+func registerScanLibraryRoot(runner *jobs.Runner, db *ent.Client) int {
+	if appConfig.Library.Root == "" {
+		return 0
+	}
+	err := runner.Register(jobs.JobDef{
+		Job: &builtin.ScanLibraryRootJob{
+			DB:     db,
+			Root:   appConfig.Library.Root,
+			Logger: log.Logger,
+		},
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("register scan-library-root job")
 		return 0
 	}
 	return 1

@@ -26,6 +26,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/scanner"
+	"github.com/nicolerenee/promptbook/internal/storage"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
 
@@ -213,5 +214,67 @@ func (j *ScanIncomingJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 		Int("skipped", res.Skipped).
 		Int("errors", len(res.Errors)).
 		Msg("scan-incoming: pass complete")
+	return nil
+}
+
+// ScanLibraryRootJob walks library.root once and queues anything that
+// doesn't already have a recording_versions row. Use case: backfill
+// an existing Jellyfin tree that pre-dates promptbook into the queue
+// + import flow so each recording gets renamed under the new default
+// templates and gets a tracking row written.
+//
+// Manual-only by design. The library-root tree is large and stable;
+// re-walking it on a schedule would be a lot of stat traffic for
+// almost no win, and the user only needs to trigger it occasionally
+// (after a fresh import drop, or once during initial migration). The
+// runner registration leaves Interval as the zero value so the
+// ticker never auto-fires it.
+type ScanLibraryRootJob struct {
+	DB     *ent.Client
+	Root   string
+	Logger zerolog.Logger
+}
+
+// Name is the registry key for this job.
+func (j *ScanLibraryRootJob) Name() string { return "scan-library-root" }
+
+// Run executes one scanner pass over Root. Files already represented
+// in recording_versions are silently skipped via the IsTracked
+// callback; everything else lands on the manual_import_queue with the
+// matcher's best-confidence suggestion (most library-root folders
+// carry an `[encora-N]` token so the matcher resolves them at high
+// confidence). Ignores args — the job is unparameterized.
+func (j *ScanLibraryRootJob) Run(ctx context.Context, _ jobs.JobArgs) error {
+	if j.Root == "" {
+		return errors.New("scan-library-root: library.root is not configured")
+	}
+	engine := &scanner.Engine{
+		DB:        j.DB,
+		WatchDirs: []string{j.Root},
+		Logger:    j.Logger,
+		IsTracked: func(path string) bool {
+			exists, err := storage.VersionExistsByPath(ctx, j.DB, path)
+			if err != nil {
+				// On lookup error, treat as untracked so the file
+				// still surfaces in the queue rather than being
+				// silently dropped. The scanner's per-file error
+				// channel will record the underlying issue.
+				j.Logger.Warn().Err(err).Str("path", path).
+					Msg("scan-library-root: tracked-lookup failed; treating as untracked")
+				return false
+			}
+			return exists
+		},
+	}
+	res, err := engine.Scan(ctx)
+	if err != nil {
+		return fmt.Errorf("scan-library-root: %w", err)
+	}
+	j.Logger.Info().
+		Int("enqueued", res.Enqueued).
+		Int("removed", res.Removed).
+		Int("skipped", res.Skipped).
+		Int("errors", len(res.Errors)).
+		Msg("scan-library-root: pass complete")
 	return nil
 }

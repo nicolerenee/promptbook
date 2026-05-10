@@ -161,6 +161,13 @@ export const state = {
     // not configured, scan already running, etc.).
     rescanning:  false,
     rescanError: null,
+    // scanningLibrary mirrors rescanning but for the Scan library
+    // button — fires the scan-library-root job (manual-only, no
+    // recurring schedule) so orphan recordings already living in
+    // library.root get backfilled into the queue. scanLibraryError
+    // carries the inline message when the trigger itself fails.
+    scanningLibrary:  false,
+    scanLibraryError: null,
   },
   // history mirrors the legacy /static/history.js view-model. kind is
   // the active filter tab; recordingID, when set, scopes the list to

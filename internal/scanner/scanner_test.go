@@ -374,6 +374,45 @@ func TestScanSkipsEmptyFolder(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+// TestScanSkipsTrackedFiles covers the IsTracked-callback hook used
+// by the scan-library-root job. The scanner asks the callback for
+// each main file before enqueueing; a "true" answer means the file
+// is already represented in recording_versions (or any equivalent
+// signal) and should be skipped silently. Two folders are scanned;
+// the callback returns true for one of them and the other should be
+// the only row that lands on the queue.
+func TestScanSkipsTrackedFiles(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	// Two unit-sized folders. The scanner walks one level deep, so
+	// each folder produces exactly one main-file candidate.
+	trackedFolder := filepath.Join(f.watchDir, "Already-Tracked [encora-1111]")
+	trackedMain := filepath.Join(trackedFolder, "main.mkv")
+	orphanFolder := filepath.Join(f.watchDir, "Orphan [encora-2222]")
+	orphanMain := filepath.Join(orphanFolder, "main.mkv")
+	writeFile(t, trackedMain, 1024*1024)
+	writeFile(t, orphanMain, 1024*1024)
+
+	// IsTracked answers true only for the tracked folder's main file.
+	// The scanner must therefore skip the tracked folder and enqueue
+	// only the orphan.
+	f.engine.IsTracked = func(path string) bool {
+		return path == trackedMain
+	}
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued, "tracked file must be skipped; orphan enqueued")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, orphanMain, got[0].FilePath,
+		"only the orphan main file should land on the queue")
+}
+
 // TestScanLooseFileExtrasCountIsZero pins the contract that loose
 // top-level files still produce a queue row with extras_count == 0
 // (folder-as-unit only kicks in for top-level directories).

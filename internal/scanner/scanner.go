@@ -68,11 +68,22 @@ type Result struct {
 // Engine bundles the dependencies a polling scanner needs. One Engine
 // drives one logical watch loop; callers wanting multiple cadences
 // should construct multiple Engines.
+//
+// IsTracked, when non-nil, is consulted before enqueueing each main
+// file so a caller can keep storage details out of the scanner. The
+// callback should return true when the file is already represented in
+// recording_versions (or any other "we already know about this
+// recording" signal). When nil, the scanner falls back to its
+// internal recording_versions check — the historical scan-incoming
+// behavior. The new scan-library-root job supplies a closure here to
+// filter orphans against an existing Jellyfin tree without coupling
+// the scanner package to ent.
 type Engine struct {
 	DB        *ent.Client
 	WatchDirs []string
 	Interval  time.Duration
 	Logger    zerolog.Logger
+	IsTracked func(path string) bool
 }
 
 // Run loops Scan on a ticker until ctx is cancelled. Each pass logs
@@ -384,7 +395,7 @@ func (e *Engine) processFile(ctx context.Context, path string, res *Result, extr
 		return
 	}
 
-	already, err := versionExistsForPath(ctx, e.DB, path)
+	already, err := e.alreadyTracked(ctx, path)
 	if err != nil {
 		recordError(res, fmt.Errorf("check recording_versions for %q: %w", path, err))
 		return
@@ -558,6 +569,19 @@ func (e *Engine) confidenceFor(ctx context.Context, id int64, res *Result, path 
 	}
 	recordError(res, fmt.Errorf("load recording %d for %q: %w", id, path, err))
 	return ""
+}
+
+// alreadyTracked decides whether the scanner should skip path because
+// it's already part of a tracked recording. When the Engine has an
+// IsTracked callback set, it's the source of truth (the callback is
+// expected to consult storage on its own, so the scanner doesn't need
+// to know about ent here). Otherwise we fall back to the historical
+// inline recording_versions lookup — the scan-incoming default.
+func (e *Engine) alreadyTracked(ctx context.Context, path string) (bool, error) {
+	if e.IsTracked != nil {
+		return e.IsTracked(path), nil
+	}
+	return versionExistsForPath(ctx, e.DB, path)
 }
 
 // versionExistsForPath returns true if any recording_versions row

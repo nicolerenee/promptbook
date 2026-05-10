@@ -128,20 +128,22 @@ function mapQueueItem(node) {
   return out;
 }
 
-// triggerRescan POSTs the scan-incoming job + refetches the queue
+// triggerScan POSTs the supplied scheduled-job + refetches the queue
 // once the run has had a moment to land. The job is async — RunNow
 // returns immediately with a run_id — so we wait briefly before
 // refetching so a typical small-incoming-dir scan has time to write
-// its rows. The button enters a busy state for the duration so a
-// rapid double-click is a no-op.
-function triggerRescan() {
+// its rows. The busy / error keys are read off `state.queue` via the
+// supplied (busyKey, errorKey) so a single helper drives both the
+// Re-scan and Scan library buttons. The button enters a busy state
+// for the duration so a rapid double-click is a no-op.
+function triggerScan(jobName, busyKey, errorKey) {
   const q = state.queue;
-  if (q.rescanning) return;
-  q.rescanning = true;
-  q.rescanError = null;
+  if (q[busyKey]) return;
+  q[busyKey] = true;
+  q[errorKey] = null;
   m.redraw();
 
-  api.post('/jobs/scheduled/scan-incoming/run', {})
+  api.post('/jobs/scheduled/' + jobName + '/run', {})
     .then(() => new Promise((resolve) => setTimeout(resolve, 1500)))
     .then(() => loadQueue())
     .catch((err) => {
@@ -149,17 +151,31 @@ function triggerRescan() {
       // brief inline message rather than an alert; everything else
       // surfaces the underlying error text the same way.
       if (err && err.status === 409) {
-        q.rescanError = 'A scan is already running.';
+        q[errorKey] = 'A scan is already running.';
       } else if (err && err.status === 503) {
-        q.rescanError = 'Scanner is not configured.';
+        q[errorKey] = 'Scanner is not configured.';
       } else {
-        q.rescanError = errorMessage(err);
+        q[errorKey] = errorMessage(err);
       }
     })
     .then(() => {
-      q.rescanning = false;
+      q[busyKey] = false;
       m.redraw();
     });
+}
+
+// triggerRescan fires the scan-incoming job (the watched-folder
+// poller) — the legacy "Re-scan" button.
+function triggerRescan() {
+  triggerScan('scan-incoming', 'rescanning', 'rescanError');
+}
+
+// triggerScanLibrary fires the scan-library-root job — the manual
+// orphan-backfill pass over library.root. Same async lifecycle as
+// triggerRescan; the two keep distinct busy / error keys so a
+// concurrent click on one doesn't blank out the other's spinner.
+function triggerScanLibrary() {
+  triggerScan('scan-library-root', 'scanningLibrary', 'scanLibraryError');
 }
 
 // loadQueue fetches the queue list and stores it in shared state. Items
@@ -339,12 +355,19 @@ const Queue = {
           m('h1', { class: 'text-3xl font-semibold' }, 'Queue'),
           m('p', { class: 'text-sm opacity-70 mt-1' }, subText),
         ]),
-        // Action buttons. Re-scan triggers the scan-incoming job +
-        // refetches; Import-all-auto-resolved is still a stub.
+        // Action buttons. Re-scan fires the scan-incoming job (the
+        // watched-folder poller); Scan library fires the manual
+        // scan-library-root pass that backfills orphan recordings
+        // already living under library.root into the queue.
+        // Import-all-auto-resolved is still a stub.
         m('div', { class: 'flex items-center gap-2' }, [
           state.queue.rescanError
             ? m('span', { class: 'text-xs text-error mr-2' },
                 state.queue.rescanError)
+            : null,
+          state.queue.scanLibraryError
+            ? m('span', { class: 'text-xs text-error mr-2' },
+                state.queue.scanLibraryError)
             : null,
           m('button', {
             type: 'button',
@@ -355,6 +378,17 @@ const Queue = {
             ? [m('span', { class: 'loading loading-spinner loading-xs' }),
                'Re-scanning…']
             : 'Re-scan'),
+          m('button', {
+            type: 'button',
+            class: 'btn btn-ghost btn-sm',
+            disabled: !!state.queue.scanningLibrary,
+            onclick: triggerScanLibrary,
+            title: 'Scan library.root for orphan recordings not yet ' +
+                   'tracked in promptbook',
+          }, state.queue.scanningLibrary
+            ? [m('span', { class: 'loading loading-spinner loading-xs' }),
+               'Scanning library…']
+            : 'Scan library'),
           m('button', {
             type: 'button',
             class: 'btn btn-primary btn-sm',

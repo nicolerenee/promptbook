@@ -62,6 +62,19 @@ func ListVersions(
 	return out, nil
 }
 
+// VersionExistsByPath returns true when any recording_versions row
+// references the exact file_path. Useful for scanner-style flows that
+// want a single yes/no decision without hydrating the full row.
+func VersionExistsByPath(ctx context.Context, client *ent.Client, path string) (bool, error) {
+	exists, err := client.RecordingVersion.Query().
+		Where(recordingversion.FilePath(path)).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("query recording_versions by path: %w", err)
+	}
+	return exists, nil
+}
+
 // UpsertVersion inserts a recording version or updates it in place when a
 // row already exists for (recording_id, file_path). On conflict, every
 // mutable field is overwritten with the incoming values except added_at,
