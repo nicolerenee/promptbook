@@ -43,7 +43,8 @@ func TestAPISettingsRedactsKeys(t *testing.T) {
 			WatchInterval:  time.Minute,
 		},
 		Server: config.ServerConfig{
-			Listen: "[::]:8080",
+			Listen:    "[::]:8080",
+			PublicURL: "https://promptbook.example.com",
 			OIDC: config.OIDCConfig{
 				Issuer:      "https://freckle.id",
 				Audience:    "promptbook",
@@ -105,6 +106,7 @@ func TestAPISettingsRedactsKeys(t *testing.T) {
 
 	srvBlock, ok := got["server"].(map[string]any)
 	require.True(t, ok)
+	assert.Equal(t, "https://promptbook.example.com", srvBlock["public_url"])
 	oidc, ok := srvBlock["oidc"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "1h0m0s", oidc["jwks_refresh"])
@@ -136,6 +138,9 @@ func TestAPISettingsEmptyConfig(t *testing.T) {
 
 	enc := got["encora"].(map[string]any)
 	assert.Equal(t, false, enc["api_key_set"])
+
+	srvBlock := got["server"].(map[string]any)
+	assert.Empty(t, srvBlock["public_url"])
 
 	library := got["library"].(map[string]any)
 	dirs, ok := library["incoming_dirs"].([]any)

@@ -71,10 +71,15 @@ type MovieSet struct {
 }
 
 // Actor mirrors the /library/MovieNfoSaver shape — performer name,
-// character role, and a numeric order so cast renders in production order.
+// character role, optional headshot URL, and a numeric order so cast
+// renders in production order. Thumb is emitted as an absolute URL
+// pointing at the promptbook server's /images/actors/<id>.jpg route
+// when a public URL is configured; omitted otherwise (no fallback
+// exists for actor thumbs in Jellyfin/Plex).
 type Actor struct {
 	Name  string `xml:"name"`
 	Role  string `xml:"role,omitempty"`
+	Thumb string `xml:"thumb,omitempty"`
 	Order int    `xml:"order"`
 }
 
@@ -289,12 +294,20 @@ func MovieNFOPathForPlan(p rename.Plan) string {
 }
 
 // WriteOptions carries the optional plumbing the writer needs to emit
-// local image references in the NFO. Cache is optional; when nil or
-// the cache is disabled, the writer skips image resolution and the
-// NFO simply omits the <thumb> / <fanart> elements. DB is unused
-// today — under the v2 single-file-per-slot layout image selection is
-// implicit by file existence — but the field is kept for API stability
-// and a future audit-trail use case.
+// image references in the NFO. Cache is optional; when nil or the
+// cache is disabled, the writer skips local image resolution. DB is
+// unused today — under the v2 single-file-per-slot layout image
+// selection is implicit by file existence — but the field is kept
+// for API stability and a future audit-trail use case.
+//
+// PublicURL, when non-empty, switches the writer into URL mode: the
+// movie poster, fanart, and per-actor headshot elements all carry
+// absolute http(s) URLs pointing at the promptbook server's /images/*
+// routes so media servers (Jellyfin/Emby/Plex) can fetch the images
+// over HTTP without sharing a filesystem with promptbook. When empty
+// the writer falls back to today's behaviour: local sibling-file
+// paths for the movie images (Cache permitting) and no <thumb> child
+// on <actor> elements.
 type WriteOptions struct {
 	// DB is reserved for future use (audit trail of which choice was
 	// in effect when the NFO was written). Currently ignored. Typed as
@@ -302,17 +315,27 @@ type WriteOptions struct {
 	// is fine since the field is not consulted.
 	DB *ent.Client
 	// Cache is the on-disk image cache. nil or Cache.Disabled() == true
-	// disables image references.
+	// disables local image references.
 	Cache *imagecache.Cache
+	// PublicURL is the externally-reachable base URL of the promptbook
+	// server (e.g. "https://promptbook.example.com"). When set, the
+	// writer emits absolute /images/recordings/<id>/{poster,fanart}.jpg
+	// and /images/actors/<id>.jpg URLs in place of (or alongside) the
+	// local cache paths. A trailing slash is tolerated and stripped.
+	PublicURL string
 }
 
-// WriteRecordingFile renders the NFO for rec into folder, including
-// local poster / fanart references when opts has a usable Cache.
+// WriteRecordingFile renders the NFO for rec into folder. When
+// opts.PublicURL is set, the movie poster + fanart and every actor
+// gain absolute /images/* URLs pointing at the promptbook server.
+// Otherwise the writer falls back to local sibling paths via Cache
+// (movie images only — actor thumbs require PublicURL because
+// Jellyfin doesn't have a local-fallback convention for them).
 // Returns the absolute path to the written movie.nfo.
 //
-// Image-reference resolution is best-effort: a missing slot file
-// simply omits the corresponding element rather than emitting a
-// broken reference.
+// Image-reference resolution is best-effort: a missing slot file in
+// local mode simply omits the corresponding element rather than
+// emitting a broken reference.
 func WriteRecordingFile(
 	_ context.Context,
 	folder string,
@@ -320,14 +343,59 @@ func WriteRecordingFile(
 	opts WriteOptions,
 ) (string, error) {
 	model := FromRecording(rec)
-	posterRel, fanartRel := resolveLocalImagePaths(opts.Cache, rec, folder)
+	if base := strings.TrimSuffix(opts.PublicURL, "/"); base != "" {
+		applyPublicURLImages(&model, rec, base)
+	} else {
+		applyLocalImages(&model, rec, folder, opts.Cache)
+	}
+	return WriteFile(folder, model)
+}
+
+// applyPublicURLImages mutates model to reference absolute http(s)
+// URLs at the configured promptbook public URL. The /images/* layout
+// is fixed by the server's image handler and kept in sync with
+// imagecache's URL helpers; the writer constructs paths directly to
+// avoid pulling the cache into URL mode (the cache's URL helpers
+// short-circuit when Disabled, which would silently drop URLs in a
+// remote-only deployment).
+func applyPublicURLImages(model *MovieNFO, rec encora.Recording, base string) {
+	model.Thumbs = []Thumb{{
+		Aspect: "poster",
+		Path:   fmt.Sprintf("%s/images/recordings/%d/poster.jpg", base, rec.ID),
+	}}
+	model.Fanart = &Fanart{Thumbs: []Thumb{{
+		Path: fmt.Sprintf("%s/images/recordings/%d/fanart.jpg", base, rec.ID),
+	}}}
+	// FromRecording emits one Actor per rec.Cast entry in order, so
+	// indexes align 1:1 — that's how we recover each performer's id
+	// for the headshot URL.
+	for i := range model.Actors {
+		performerID := rec.Cast[i].Performer.ID
+		if performerID <= 0 {
+			// Skip placeholder actors with no upstream id; without an
+			// id there's no canonical headshot URL to point at.
+			continue
+		}
+		model.Actors[i].Thumb = fmt.Sprintf("%s/images/actors/%d.jpg", base, performerID)
+	}
+}
+
+// applyLocalImages mutates model to reference cache-backed local
+// sibling files (poster.jpg / fanart.jpg) when the cache has them on
+// disk. Mirrors the pre-public-URL behaviour exactly. Actor thumbs
+// are intentionally left empty — Jellyfin doesn't pick up local
+// per-actor sidecar files, so emitting a relative path would just
+// confuse manual inspection.
+func applyLocalImages(
+	model *MovieNFO, rec encora.Recording, folder string, cache *imagecache.Cache,
+) {
+	posterRel, fanartRel := resolveLocalImagePaths(cache, rec, folder)
 	if posterRel != "" {
 		model.Thumbs = append(model.Thumbs, Thumb{Aspect: "poster", Path: posterRel})
 	}
 	if fanartRel != "" {
 		model.Fanart = &Fanart{Thumbs: []Thumb{{Path: fanartRel}}}
 	}
-	return WriteFile(folder, model)
 }
 
 // resolveLocalImagePaths returns NFO-relative paths to the poster and

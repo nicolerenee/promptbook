@@ -68,6 +68,13 @@ type Engine struct {
 	// those elements omitted — Jellyfin/Plex fall back to upstream
 	// scrapes.
 	ImageCache *imagecache.Cache
+	// PublicURL is the externally-reachable base URL of the promptbook
+	// server. When set, NFOs written after a successful ingest carry
+	// absolute /images/* URLs for poster, fanart, and per-actor
+	// headshots so a remote media server can fetch them over HTTP.
+	// Empty preserves the local-sibling-file behaviour for movie images
+	// and skips actor thumbs entirely.
+	PublicURL string
 	// Prober extracts codec/resolution metadata from the source file
 	// for the new {Container} / {VideoCodec} / {Quality} rename tokens.
 	// Required: ingest fails the item with a probe error if Prober is
@@ -295,7 +302,11 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 		ctx,
 		item.Plan.AbsoluteFolder(),
 		*item.Recording,
-		nfo.WriteOptions{DB: e.DB, Cache: e.ImageCache},
+		nfo.WriteOptions{
+			DB:        e.DB,
+			Cache:     e.ImageCache,
+			PublicURL: e.PublicURL,
+		},
 	)
 	if nfoErr != nil {
 		item.Err = nfoErr

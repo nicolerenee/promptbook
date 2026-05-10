@@ -112,6 +112,7 @@ func runLibraryIngest(cmd *cobra.Command, args []string) error {
 		Logger:            log.Logger,
 		ImageCache:        imgCache,
 		Prober:            probe.FFProbe{Path: appConfig.Library.FFProbePath},
+		PublicURL:         appConfig.Server.PublicURL,
 	}
 
 	res, err := engine.Ingest(ctx, src, ingest.Options{

@@ -88,9 +88,18 @@ type LibraryConfig struct {
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).
+//
+// PublicURL is the externally-reachable base URL of the promptbook server.
+// Used as the base for image URLs written into NFO files so media servers
+// can fetch posters, fanart, and actor headshots over HTTP. Empty disables
+// URL emission — NFOs fall back to local sibling files (poster.jpg,
+// fanart.jpg) for movie images and skip actor thumbs entirely. No default
+// is set: the empty string is a valid (no-URL) state that mirrors how
+// local-only setups expect the writer to behave.
 type ServerConfig struct {
-	Listen string     `mapstructure:"listen"`
-	OIDC   OIDCConfig `mapstructure:"oidc"`
+	Listen    string     `mapstructure:"listen"`
+	PublicURL string     `mapstructure:"publicURL"`
+	OIDC      OIDCConfig `mapstructure:"oidc"`
 }
 
 // OIDCConfig configures JWT validation for /api/v1/*.

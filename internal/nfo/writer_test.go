@@ -141,6 +141,97 @@ func TestWriteRecordingFileFanartOnly(t *testing.T) {
 	assert.NotContains(t, string(got), `<thumb aspect="poster">`)
 }
 
+// TestNFO_WithPublicURL exercises the URL emission path: with
+// PublicURL set, the writer must emit absolute /images/* URLs for the
+// movie poster, fanart, and every actor's headshot — no local sibling
+// paths, no Cache-resolved paths, regardless of whether the cache has
+// the files on disk.
+func TestNFO_WithPublicURL(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t)
+	folder := t.TempDir()
+
+	// Trailing-slash on the public URL should be stripped so the
+	// resulting URLs don't have "//images" — verify with both shapes.
+	tests := []struct {
+		name      string
+		publicURL string
+	}{
+		{name: "no trailing slash", publicURL: "https://promptbook.example.com"},
+		{name: "trailing slash", publicURL: "https://promptbook.example.com/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			written, err := nfo.WriteRecordingFile(
+				t.Context(), folder, rec,
+				nfo.WriteOptions{PublicURL: tt.publicURL},
+			)
+			require.NoError(t, err)
+
+			body, err := os.ReadFile(written)
+			require.NoError(t, err)
+			got := string(body)
+
+			// Movie poster: <thumb aspect="poster">URL</thumb> at the
+			// recording's poster slot.
+			assert.Contains(t, got,
+				`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg</thumb>`)
+			// Fanart wraps a <thumb> child.
+			assert.Contains(t, got,
+				`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg</thumb>`)
+			// First cast entry on the Marigold fixture is Avery Morrison
+			// James (performer id 90001001, role Marigold).
+			assert.Contains(t, got,
+				`<thumb>https://promptbook.example.com/images/actors/90001001.jpg</thumb>`)
+			// And the last named cast entry is Marisol Vandermeer (id 90001018).
+			assert.Contains(t, got,
+				`<thumb>https://promptbook.example.com/images/actors/90001018.jpg</thumb>`)
+			// No double-slash anywhere.
+			assert.NotContains(t, got, `//images/`)
+		})
+	}
+}
+
+// TestNFO_NoPublicURL is the symmetric guard: with PublicURL empty
+// the writer must NOT emit URL-flavoured thumbs. Movie + fanart fall
+// back to local sibling paths via Cache (or get omitted entirely
+// when the cache is also disabled), and every <actor> element ends
+// at <order> with no <thumb> child.
+func TestNFO_NoPublicURL(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t)
+	folder := t.TempDir()
+
+	written, err := nfo.WriteRecordingFile(
+		t.Context(), folder, rec,
+		nfo.WriteOptions{}, // no PublicURL, no Cache.
+	)
+	require.NoError(t, err)
+
+	body, err := os.ReadFile(written)
+	require.NoError(t, err)
+	got := string(body)
+
+	// No actor thumbs anywhere — Jellyfin doesn't have a local-fallback
+	// convention, so emitting nothing is the right thing.
+	assert.NotContains(t, got, `/images/actors/`)
+	// No URL-flavoured movie thumbs either.
+	assert.NotContains(t, got, `/images/recordings/`)
+	assert.NotContains(t, got, `<thumb`)
+	assert.NotContains(t, got, `<fanart>`)
+
+	// Spot-check that an actor block ends at <order> and contains
+	// only name/role/order — exactly the shape the golden test
+	// codifies.
+	assert.Contains(t, got,
+		"<actor>\n    <name>Avery Morrison</name>\n"+
+			"    <role>Marigold</role>\n    <order>1</order>\n  </actor>")
+}
+
 // writeFakeImage drops a 1-byte placeholder at path, creating parents.
 // Keeps tests cheap — the writer only stat()s these files, never reads.
 func writeFakeImage(t *testing.T, path string) {

@@ -50,8 +50,9 @@ type settingsLibrary struct {
 }
 
 type settingsServer struct {
-	Listen string       `json:"listen"`
-	OIDC   settingsOIDC `json:"oidc"`
+	Listen    string       `json:"listen"`
+	PublicURL string       `json:"public_url"`
+	OIDC      settingsOIDC `json:"oidc"`
 }
 
 type settingsOIDC struct {
@@ -119,7 +120,8 @@ func (s *Server) handleSettings(c echo.Context) error {
 			ImageRoot:      cfg.Library.ImageRoot,
 		},
 		Server: settingsServer{
-			Listen: cfg.Server.Listen,
+			Listen:    cfg.Server.Listen,
+			PublicURL: cfg.Server.PublicURL,
 			OIDC: settingsOIDC{
 				Issuer:      cfg.Server.OIDC.Issuer,
 				Audience:    cfg.Server.OIDC.Audience,

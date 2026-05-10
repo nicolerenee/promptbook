@@ -94,7 +94,11 @@ func runLibraryNFO(cmd *cobra.Command, args []string) error {
 			ctx,
 			path,
 			loaded.Recording,
-			nfo.WriteOptions{DB: db, Cache: imgCache},
+			nfo.WriteOptions{
+				DB:        db,
+				Cache:     imgCache,
+				PublicURL: appConfig.Server.PublicURL,
+			},
 		)
 		if writeErr != nil {
 			return fmt.Errorf("write nfo for %s: %w", path, writeErr)
