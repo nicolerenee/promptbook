@@ -281,6 +281,20 @@ type recordingDetailResponse struct {
 	// playbill-style band and copy poster-src.jpg through to
 	// poster.jpg unchanged.
 	OverlayDisabled bool `json:"overlay_disabled"`
+	// BannerLayout surfaces the recording's persisted banner position
+	// + image-region choices to the SPA so the picker's preview
+	// selectors pre-populate from saved state. Both fields are
+	// empty strings when nothing's persisted; the SPA falls back to
+	// "bottom" / "middle" defaults in that case.
+	BannerLayout bannerLayoutResponse `json:"banner_layout"`
+}
+
+// bannerLayoutResponse is the wire shape of the per-recording banner
+// layout choices. Mirrors imagerender.Style fields without dragging
+// the renderer types into the API surface.
+type bannerLayoutResponse struct {
+	Position    string `json:"position"`
+	ImageRegion string `json:"image_region"`
 }
 
 // castEntryWithHeadshot mirrors storage.ResolvedCastEntry but adds a
@@ -344,7 +358,29 @@ func (s *Server) handleGetRecording(c echo.Context) error {
 		LocalPosterURL:      localPosterURL,
 		OverlayTextOverride: choice.OverlayTextOverride,
 		OverlayDisabled:     choice.OverlayDisabled,
+		BannerLayout:        bannerLayoutFromChoice(choice),
 	})
+}
+
+// bannerLayoutFromChoice extracts the banner-layout fields from the
+// recording's OverlayStyleJSON blob. Empty fields when nothing's
+// persisted (or the JSON is malformed) — the SPA falls back to the
+// global defaults in that case.
+func bannerLayoutFromChoice(choice storage.ImageChoice) bannerLayoutResponse {
+	if choice.OverlayStyleJSON == nil || *choice.OverlayStyleJSON == "" {
+		return bannerLayoutResponse{}
+	}
+	var raw struct {
+		Position    string `json:"position"`
+		ImageRegion string `json:"image_region"`
+	}
+	if err := json.Unmarshal([]byte(*choice.OverlayStyleJSON), &raw); err != nil {
+		return bannerLayoutResponse{}
+	}
+	return bannerLayoutResponse{
+		Position:    raw.Position,
+		ImageRegion: raw.ImageRegion,
+	}
 }
 
 // castWithLocalHeadshots wraps each ResolvedCastEntry with the local

@@ -37,10 +37,15 @@ type uploadResponse struct {
 }
 
 // fromURLRequest is the JSON body for the "set from URL" endpoints.
-// The picker UI POSTs the chosen upstream URL; the server downloads it
-// into the canonical slot.
+// The picker UI POSTs the chosen upstream URL; the server downloads
+// it into the canonical slot. Position + ImageRegion are optional
+// per-recording layout overrides set via the picker's preview-tile
+// selectors. They get merged into recording_image_choices.OverlayStyleJSON
+// so the persisted style matches what the user previewed.
 type fromURLRequest struct {
-	URL string `json:"url"`
+	URL         string `json:"url"`
+	Position    string `json:"position,omitempty"`
+	ImageRegion string `json:"image_region,omitempty"`
 }
 
 // readUploadBody pulls the "file" form-file out of a multipart request
@@ -237,6 +242,10 @@ func (s *Server) handleSetRecordingFanartFromURL(c echo.Context) error {
 
 // handleSetRecordingPosterFromURL downloads the URL into poster-src.jpg
 // and triggers a render so poster.jpg refreshes against the new source.
+// When the client supplies position / image_region in the JSON body
+// they're persisted into the recording's OverlayStyleJSON before the
+// render runs, so the saved poster matches what the picker preview
+// showed.
 func (s *Server) handleSetRecordingPosterFromURL(c echo.Context) error {
 	id, err := parseRecordingIDParam(c)
 	if err != nil {
@@ -248,14 +257,22 @@ func (s *Server) handleSetRecordingPosterFromURL(c echo.Context) error {
 	if existsErr := s.recordingExists(c, id); existsErr != nil {
 		return existsErr
 	}
-	url, parseErr := parseFromURL(c)
+	req, parseErr := parseFromURLRequest(c)
 	if parseErr != nil {
 		return parseErr
+	}
+	if persistErr := s.persistBannerLayout(
+		c.Request().Context(), id, req.Position, req.ImageRegion,
+	); persistErr != nil {
+		s.logger.Warn().Err(persistErr).Int64("recording_id", id).
+			Msg("poster-from-url: persist banner layout failed")
+		return c.JSON(http.StatusInternalServerError,
+			uploadResponse{Error: persistErr.Error()})
 	}
 	_ = removeIfExists(s.ImageCache().RecordingPosterSrcPath(id))
 	_ = removeIfExists(s.ImageCache().RecordingPosterPath(id))
 	if _, fetchErr := s.ImageCache().FetchRecordingPosterSrc(
-		c.Request().Context(), id, url); fetchErr != nil {
+		c.Request().Context(), id, req.URL); fetchErr != nil {
 		status, resp := mapUploadError(fetchErr)
 		return c.JSON(status, resp)
 	}
@@ -322,16 +339,30 @@ func (s *Server) handleSetActorHeadshotFromURL(c echo.Context) error {
 // parseFromURL pulls the URL field off the JSON body and rejects empty
 // values with a 400.
 func parseFromURL(c echo.Context) (string, error) {
+	req, err := parseFromURLRequest(c)
+	if err != nil {
+		return "", err
+	}
+	return req.URL, nil
+}
+
+// parseFromURLRequest decodes the full from-URL JSON envelope so
+// callers that care about the optional position + image_region
+// fields can read them. Trims whitespace and rejects empty URL.
+func parseFromURLRequest(c echo.Context) (fromURLRequest, error) {
 	var req fromURLRequest
 	if err := c.Bind(&req); err != nil {
-		return "", echo.NewHTTPError(http.StatusBadRequest,
+		return fromURLRequest{}, echo.NewHTTPError(http.StatusBadRequest,
 			fmt.Sprintf("decode body: %s", err.Error()))
 	}
-	url := strings.TrimSpace(req.URL)
-	if url == "" {
-		return "", echo.NewHTTPError(http.StatusBadRequest, "url is required")
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		return fromURLRequest{}, echo.NewHTTPError(
+			http.StatusBadRequest, "url is required")
 	}
-	return url, nil
+	req.Position = strings.TrimSpace(req.Position)
+	req.ImageRegion = strings.TrimSpace(req.ImageRegion)
+	return req, nil
 }
 
 // parseShowIDParam extracts and validates the show_id path parameter.

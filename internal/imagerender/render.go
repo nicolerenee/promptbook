@@ -116,17 +116,37 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	return nil
 }
 
+// PreviewOverrides lets a caller (the picker preview endpoint) layer
+// transient style choices on top of the recording's persisted style
+// without writing them to the DB. Empty fields fall through to the
+// persisted/default value.
+type PreviewOverrides struct {
+	// Position overrides the banner edge ("top" | "bottom"). Empty
+	// = use the persisted/default value.
+	Position string
+	// ImageRegion overrides the source-crop region ("top" | "middle"
+	// | "bottom"). Empty = use the persisted/default value.
+	ImageRegion string
+}
+
 // Preview composites the recording's overlay band onto src and
 // returns the result, without writing to disk. Used by the picker
 // to show a "what will this look like?" tile next to the upstream
 // thumbnail before the user commits the selection. Returns src
 // unchanged when the recording has the burn-in opt-out flag set.
 //
+// `overrides` carries transient picker choices (banner position +
+// image-region selectors) that need to apply to the in-memory
+// preview without persisting; the from-URL handler is responsible
+// for writing those choices to OverlayStyleJSON when the user clicks
+// Save.
+//
 // Errors fail loudly (unlike Regenerate, which is best-effort) so
 // the calling handler can surface the underlying failure to the
 // user instead of silently rendering an empty preview.
 func (r *Renderer) Preview(
 	ctx context.Context, recordingID int64, src image.Image,
+	overrides PreviewOverrides,
 ) (image.Image, error) {
 	if r == nil {
 		return src, nil
@@ -143,6 +163,12 @@ func (r *Renderer) Preview(
 	rows, style, err := r.overlayInputs(ctx, recordingID, choice)
 	if err != nil {
 		return nil, err
+	}
+	if overrides.Position != "" {
+		style.Position = resolveBannerPosition(BannerPosition(overrides.Position))
+	}
+	if overrides.ImageRegion != "" {
+		style.ImageRegion = resolveImageRegion(ImageRegion(overrides.ImageRegion))
 	}
 	return compose(src, rows, style), nil
 }

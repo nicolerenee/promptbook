@@ -168,6 +168,12 @@ function loadRecording(id) {
           : autoOverlayText(body);
       state.recording.overlayDisabled =
         !!(body && body.overlay_disabled);
+      // Banner layout: prefer the recording's persisted choices,
+      // falling back to the renderer's defaults so the preview
+      // matches what poster.jpg looks like on disk.
+      const bl = (body && body.banner_layout) || {};
+      state.recording.bannerPosition = bl.position || 'bottom';
+      state.recording.bannerImageRegion = bl.image_region || 'middle';
     })
     .catch((err) => {
       state.recording.loaded = null;
@@ -253,12 +259,19 @@ function stagePickerChoice(kind, url) {
 // commitPickerChoice POSTs the staged URL for kind into the matching
 // from-url endpoint, bumps imageVersion on success, and re-loads the
 // recording detail so local_*_url + the version cache-buster surface
-// the new image without a manual page refresh.
+// the new image without a manual page refresh. For the poster row
+// the body also carries the picker's banner-layout selectors so the
+// renderer's persisted style matches what the preview showed.
 function commitPickerChoice(id, kind) {
   const staged = (state.recording.pickerStaged || {})[kind];
   if (!staged) return;
   const fromURLPath = '/recordings/' + id + '/' + kind + '-from-url';
-  postPickerChoice(fromURLPath, { url: staged }, () => {
+  const body = { url: staged };
+  if (kind === 'poster') {
+    body.position = state.recording.bannerPosition || 'bottom';
+    body.image_region = state.recording.bannerImageRegion || 'middle';
+  }
+  postPickerChoice(fromURLPath, body, () => {
     state.recording.imageVersion =
       (state.recording.imageVersion || 0) + 1;
     if (state.recording.pickerStaged) {
@@ -830,12 +843,22 @@ function renderPickerTab(loaded, kind) {
   // so the staged thumbnail IS the preview already. The server
   // composites the overlay over the staged URL via
   // /poster-preview?url= and streams the result; the browser caches
-  // it for the lifetime of the staged URL.
+  // it for the lifetime of the staged URL + selector values.
   let previewURL = null;
+  const bannerPosition = state.recording.bannerPosition || 'bottom';
+  const bannerRegion = state.recording.bannerImageRegion || 'middle';
   if (kind === 'poster' && stagedURL) {
     previewURL = '/api/v1/recordings/' + encodeURIComponent(id)
-      + '/poster-preview?url=' + encodeURIComponent(stagedURL);
+      + '/poster-preview?url=' + encodeURIComponent(stagedURL)
+      + '&position=' + encodeURIComponent(bannerPosition)
+      + '&region=' + encodeURIComponent(bannerRegion);
   }
+
+  // Banner-layout selectors live on the poster tab only; fanart has
+  // no overlay so position/region don't apply.
+  const layoutSelectors = kind === 'poster'
+    ? renderBannerLayoutSelectors(bannerPosition, bannerRegion)
+    : null;
 
   return renderUpstreamPicker({
     currentURL: withImageVersion(localURL),
@@ -849,11 +872,51 @@ function renderPickerTab(loaded, kind) {
     loadGen: genByKind[kind] || 0,
     staged: stagedURL,
     previewURL,
+    layoutControls: layoutSelectors,
     onPick: (url) => stagePickerChoice(kind, url),
     onUpload: (file) => runUpload(uploadPath, id, file),
     onRefetch: () => loadOptions(id, kind),
     uploadLabel: kind === 'fanart' ? 'Upload fanart' : 'Upload poster',
   });
+}
+
+// renderBannerLayoutSelectors draws the position + image-region
+// dropdowns above the Current/Preview tile pair on the poster tab.
+// Selecting a value updates state.recording.banner* and triggers a
+// redraw so the Preview URL re-builds with the new query params.
+function renderBannerLayoutSelectors(position, region) {
+  return m('div', { class: 'flex flex-wrap gap-3 mb-2' }, [
+    m('label', { class: 'form-control' }, [
+      m('div', { class: 'label py-1' },
+        m('span', { class: 'label-text text-xs' }, 'Banner position')),
+      m('select', {
+        class: 'select select-sm select-bordered',
+        value: position,
+        onchange: (ev) => {
+          state.recording.bannerPosition = ev.target.value;
+        },
+      }, [
+        m('option', { value: 'bottom' }, 'Bottom'),
+        m('option', { value: 'top' }, 'Top'),
+      ]),
+    ]),
+    m('label', { class: 'form-control' }, [
+      m('div', { class: 'label py-1' },
+        m('span', { class: 'label-text text-xs' },
+          'Image area (which 80% to keep)')),
+      m('select', {
+        class: 'select select-sm select-bordered',
+        value: region,
+        onchange: (ev) => {
+          state.recording.bannerImageRegion = ev.target.value;
+        },
+      }, [
+        m('option', { value: 'middle' }, 'Middle (default)'),
+        m('option', { value: 'top' }, 'Top (cut bottom 20%)'),
+        m('option', { value: 'bottom' }, 'Bottom (cut top 20%)'),
+      ]),
+    ]),
+  ]);
 }
 
 // renderOverlayEditor is the burned-in-text override subsection. The

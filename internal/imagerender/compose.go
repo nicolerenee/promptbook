@@ -132,16 +132,58 @@ func loadFace(weight string, sizePx int) font.Face {
 // 3-row recording. Per-row font size is driven by character budget
 // (see charBudgetSize) capped by the slot height, so dates always
 // render at the same scale across recordings regardless of length.
+//
+// The final image dimensions match src exactly. style.Position picks
+// which edge the band sits at (bottom by default). style.ImageRegion
+// picks which 80 % slice of src is rendered alongside the band: the
+// band always covers 20 % of the height, so this is the user's only
+// choice over WHICH 20 % of source is "lost" to the band.
+//
 // Returns a *image.RGBA so callers can hand it straight to jpeg.Encode.
+// Long for a reason: pipeline of layout math + per-slot text resolution.
+//
+//nolint:gocognit,funlen // single linear pipeline; splitting hides the shape.
 func compose(src image.Image, rows []string, style Style) *image.RGBA {
 	bounds := src.Bounds()
-	dst := image.NewRGBA(bounds)
-	draw.Draw(dst, bounds, src, bounds.Min, draw.Src)
+	totalW, totalH := bounds.Dx(), bounds.Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
 
-	resolved := resolveStyle(style, image.Rect(0, 0, bounds.Dx(),
-		max(int(float64(bounds.Dy())*style.BandHeightFraction), 1)))
-	bandH := max(int(float64(bounds.Dy())*style.BandHeightFraction), 1)
-	bandRect := image.Rect(bounds.Min.X, bounds.Max.Y-bandH, bounds.Max.X, bounds.Max.Y)
+	bandH := min(max(int(float64(totalH)*style.BandHeightFraction), 1), totalH)
+	imageH := totalH - bandH
+
+	// Source crop: pick the 80 %-tall slice of src to keep based on
+	// ImageRegion. srcCropY0 is in src.Bounds() coordinates.
+	srcCropY0 := bounds.Min.Y + (totalH-imageH)/centerDivisor
+	switch resolveImageRegion(style.ImageRegion) {
+	case ImageRegionTop:
+		srcCropY0 = bounds.Min.Y
+	case ImageRegionBottom:
+		srcCropY0 = bounds.Max.Y - imageH
+	case ImageRegionMiddle:
+		// already set above.
+	}
+
+	// Destination layout: band on top or bottom based on Position.
+	// imageDstY0 is the y-coordinate where the cropped image starts
+	// in dst; bandRect is where the band fill + text get drawn.
+	var imageDstY0 int
+	var bandRect image.Rectangle
+	if resolveBannerPosition(style.Position) == BannerPositionTop {
+		bandRect = image.Rect(0, 0, totalW, bandH)
+		imageDstY0 = bandH
+	} else {
+		bandRect = image.Rect(0, imageH, totalW, totalH)
+		imageDstY0 = 0
+	}
+
+	// Draw the cropped source slice into the image area.
+	if imageH > 0 {
+		imageDstRect := image.Rect(0, imageDstY0, totalW, imageDstY0+imageH)
+		draw.Draw(dst, imageDstRect, src,
+			image.Pt(bounds.Min.X, srcCropY0), draw.Src)
+	}
+
+	resolved := resolveStyle(style, bandRect)
 	maxTextWidth := bandRect.Dx() - hPadFactor*resolved.PadX
 	if maxTextWidth < 1 {
 		maxTextWidth = bandRect.Dx()
@@ -225,8 +267,12 @@ func compose(src image.Image, rows []string, style Style) *image.RGBA {
 		}
 	}
 	if !hasText {
-		// No rows have text. Return the raw image — don't paint a
-		// blank band over the source.
+		// No rows have text — return the raw source. The crop we
+		// drew into the image area gets overwritten with full src so
+		// the user's "I cleared the overlay" intent yields the
+		// untouched image, not a cropped version with a black band.
+		draw.Draw(dst, image.Rect(0, 0, totalW, totalH),
+			src, bounds.Min, draw.Src)
 		return dst
 	}
 

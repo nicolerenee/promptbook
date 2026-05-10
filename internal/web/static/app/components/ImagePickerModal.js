@@ -188,6 +188,7 @@ export function renderUpstreamPicker(attrs) {
   const {
     currentURL, currentLabel, currentAlt,
     aspect, options, loading, error, busy, loadGen, staged, previewURL,
+    layoutControls,
     onPick, onUpload, onRefetch, uploadLabel,
   } = attrs;
 
@@ -207,6 +208,11 @@ export function renderUpstreamPicker(attrs) {
         : 'aspect-[2/3] w-48');
 
   return m('section', { class: 'space-y-4' }, [
+    // Banner-layout selectors (position + image-region) — caller
+    // supplies the rendered vnode; we just slot it in above the
+    // Current/Preview pair so the user sees their choices reflect
+    // immediately in the Preview tile.
+    layoutControls,
     // Current + (optional) Preview, laid out side-by-side.
     m('div', { class: 'space-y-2' }, [
       m('h3', { class: 'text-sm font-semibold' }, currentLabel),

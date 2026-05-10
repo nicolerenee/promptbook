@@ -16,6 +16,61 @@ const (
 	WeightBold    = "bold"
 )
 
+// BannerPosition picks which edge of the final image the band sits
+// against. The image area always occupies the other 80 % of the band
+// height — final image dimensions match the source exactly.
+type BannerPosition string
+
+// Recognized BannerPosition values. Anything else falls through to
+// BannerPositionBottom in resolveBannerPosition.
+const (
+	BannerPositionTop    BannerPosition = "top"
+	BannerPositionBottom BannerPosition = "bottom" // default
+)
+
+// ImageRegion selects which 80 %-tall slice of the source image is
+// kept and rendered alongside the band. The final image dimensions
+// match the source — the only choice is which strip of the source
+// gets covered (the other 20 % becomes band area). Naming refers to
+// the region that is KEPT visible, not the region that is cut.
+//
+//	top    — keep top 80 %    (cut bottom 20 %)  — pre-feature behavior
+//	middle — keep middle 80 % (cut 10 % top + 10 % bottom) — default
+//	bottom — keep bottom 80 % (cut top 20 %)
+type ImageRegion string
+
+// Recognized ImageRegion values. Anything else falls through to
+// ImageRegionMiddle in resolveImageRegion.
+const (
+	ImageRegionTop    ImageRegion = "top"
+	ImageRegionMiddle ImageRegion = "middle" // default
+	ImageRegionBottom ImageRegion = "bottom"
+)
+
+// resolveBannerPosition returns p when it's a recognized value, or
+// BannerPositionBottom when it's empty/unknown. The renderer NEVER
+// fails on a bad value — it falls back to the default so a typo in
+// overlay_style_json can't blank-out a poster.
+func resolveBannerPosition(p BannerPosition) BannerPosition {
+	switch p {
+	case BannerPositionTop, BannerPositionBottom:
+		return p
+	default:
+		return BannerPositionBottom
+	}
+}
+
+// resolveImageRegion returns r when it's a recognized value, or
+// ImageRegionMiddle when it's empty/unknown.
+func resolveImageRegion(r ImageRegion) ImageRegion {
+	switch r {
+	case ImageRegionTop, ImageRegionMiddle, ImageRegionBottom:
+		return r
+	default:
+		return ImageRegionMiddle
+	}
+}
+
 // FontSpec is the per-text-row font configuration the renderer uses.
 // SizePx is the pixel height of an em-square. Weight is informational
 // today (the embedded font ships in a single weight) and reserved for
@@ -59,6 +114,12 @@ type Style struct {
 	Title    FontSpec `json:"title"`
 	Caption  FontSpec `json:"caption"`
 	Subtitle FontSpec `json:"subtitle"`
+	// Position picks which edge of the final image the band sits at.
+	// Empty falls through to BannerPositionBottom in compose.
+	Position BannerPosition `json:"position,omitempty"`
+	// ImageRegion picks which 80 % slice of the source is rendered
+	// alongside the band. Empty falls through to ImageRegionMiddle.
+	ImageRegion ImageRegion `json:"image_region,omitempty"`
 }
 
 // Default style values. Pulled out as named consts so the mnd lint
@@ -114,6 +175,8 @@ var DefaultStyle = Style{
 	Eyebrow:            FontSpec{SizePx: defaultEyebrowSizePx, Weight: WeightRegular},
 	Title:              FontSpec{SizePx: defaultTitleSizePx, Weight: WeightBold},
 	Caption:            FontSpec{SizePx: defaultCaptionSizePx, Weight: WeightRegular},
+	Position:           BannerPositionBottom,
+	ImageRegion:        ImageRegionMiddle,
 }
 
 // styleOverlay is the wire shape mergeStyle accepts. Every field is
@@ -128,6 +191,8 @@ type styleOverlay struct {
 	PadX               *int      `json:"pad_x,omitempty"`
 	Title              *FontSpec `json:"title,omitempty"`
 	Subtitle           *FontSpec `json:"subtitle,omitempty"`
+	Position           *string   `json:"position,omitempty"`
+	ImageRegion        *string   `json:"image_region,omitempty"`
 }
 
 // mergeStyle decodes overrideJSON and returns a Style with the named
@@ -135,6 +200,10 @@ type styleOverlay struct {
 // itself is malformed; per-field decode errors (a bad color string)
 // fall through with the base value preserved so a single typo can't
 // destroy the whole render.
+//
+// branch is one assignment, splitting it would just hide the shape.
+//
+//nolint:gocognit // linear sequence of optional-field merges; each
 func mergeStyle(base Style, overrideJSON string) (Style, error) {
 	var o styleOverlay
 	if err := json.Unmarshal([]byte(overrideJSON), &o); err != nil {
@@ -172,6 +241,12 @@ func mergeStyle(base Style, overrideJSON string) (Style, error) {
 		if c, ok := parseHexColor(*o.TextColor); ok {
 			out.TextColor = c
 		}
+	}
+	if o.Position != nil {
+		out.Position = resolveBannerPosition(BannerPosition(*o.Position))
+	}
+	if o.ImageRegion != nil {
+		out.ImageRegion = resolveImageRegion(ImageRegion(*o.ImageRegion))
 	}
 	return out, nil
 }

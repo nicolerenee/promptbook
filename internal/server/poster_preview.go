@@ -23,6 +23,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -78,7 +79,12 @@ func (s *Server) handleRecordingPosterPreview(c echo.Context) error {
 		return fetchErr
 	}
 
-	composed, err := s.imageRenderer.Preview(c.Request().Context(), id, src)
+	overrides := imagerender.PreviewOverrides{
+		Position:    strings.TrimSpace(c.QueryParam("position")),
+		ImageRegion: strings.TrimSpace(c.QueryParam("region")),
+	}
+	composed, err := s.imageRenderer.Preview(
+		c.Request().Context(), id, src, overrides)
 	if err != nil {
 		s.logger.Warn().Err(err).Int64("recording_id", id).Msg("poster preview compose failed")
 		return echo.NewHTTPError(http.StatusInternalServerError,
