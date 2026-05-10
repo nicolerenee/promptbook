@@ -36,6 +36,42 @@ import state from '../state.js';
 import { smartDate } from '../utils/format.js';
 import Pagination from './Pagination.js';
 
+// LS_VIEW + LS_MODE are the localStorage keys the Library page uses to
+// persist the user's preferred layout across visits. The URL still
+// wins when it carries an explicit ?view=/?mode= (so deep links work);
+// localStorage is the fallback when the URL is bare. Sort + status +
+// page are intentionally NOT persisted — they're query-driven and
+// would surprise the user if they survived navigation.
+const LS_VIEW = 'pb.library.view';
+const LS_MODE = 'pb.library.mode';
+
+// readStoredView / readStoredMode return the persisted preference, or
+// '' when nothing is stored or localStorage is unavailable (private
+// mode, server-side render, etc.). The empty-string sentinel keeps the
+// caller branching simple — falsy means "no preference".
+function readStoredView() {
+  try {
+    const v = window.localStorage.getItem(LS_VIEW);
+    return v === 'grid' || v === 'list' ? v : '';
+  } catch (_) {
+    return '';
+  }
+}
+function readStoredMode() {
+  try {
+    const v = window.localStorage.getItem(LS_MODE);
+    return v === 'shows' || v === 'recordings' ? v : '';
+  } catch (_) {
+    return '';
+  }
+}
+function writeStoredView(v) {
+  try { window.localStorage.setItem(LS_VIEW, v); } catch (_) { /* no-op */ }
+}
+function writeStoredMode(v) {
+  try { window.localStorage.setItem(LS_MODE, v); } catch (_) { /* no-op */ }
+}
+
 // STATUS_META keys on the lowercase API tokens so meta lookups against
 // /api/v1/recordings JSON resolve directly. The DaisyUI badge color
 // modifier is intentionally chosen per the design doc:
@@ -105,17 +141,29 @@ function defaultDirForKey(key) {
 }
 
 // readURLParams pulls the active status / sort / view / mode / page
-// state out of the current Mithril route.
+// state out of the current Mithril route. View + mode fall back to
+// the user's persisted preference (localStorage) when the URL has no
+// explicit value, so navigating to bare `/` after picking grid+shows
+// once restores that layout instead of resetting to list+recordings.
 function readURLParams() {
   const params = m.route.param() || {};
   const lib = state.library;
 
   // Mode comes first because the sort vocabulary depends on it.
+  // URL param wins; otherwise consult localStorage; otherwise default.
   const rawMode = (params.mode || '').toLowerCase();
-  lib.mode = rawMode === 'shows' ? 'shows' : 'recordings';
+  if (rawMode === 'shows' || rawMode === 'recordings') {
+    lib.mode = rawMode;
+  } else {
+    lib.mode = readStoredMode() || 'recordings';
+  }
 
   const rawView = (params.view || '').toLowerCase();
-  lib.view = rawView === 'grid' ? 'grid' : 'list';
+  if (rawView === 'grid' || rawView === 'list') {
+    lib.view = rawView;
+  } else {
+    lib.view = readStoredView() || 'list';
+  }
 
   const rawStatus = (params.status || '').toLowerCase();
   const canon = STATUS_FILTERS.find((f) => f.key.toLowerCase() === rawStatus);
@@ -227,20 +275,24 @@ function setStatus(key) {
 }
 
 // setView toggles between list and grid. Sort + filter survive the
-// switch since both views render the same dataset.
+// switch since both views render the same dataset. Persisted to
+// localStorage so the choice survives navigation away and back.
 function setView(key) {
   if (key !== 'list' && key !== 'grid') return;
   state.library.view = key;
+  writeStoredView(key);
   pushURLParams();
 }
 
 // setMode toggles between recordings and shows. The sort axis flips
 // to that mode's default since the column set is mode-specific.
+// Persisted to localStorage alongside view.
 function setMode(key) {
   if (key !== 'recordings' && key !== 'shows') return;
   const lib = state.library;
   if (lib.mode === key) return;
   lib.mode = key;
+  writeStoredMode(key);
   const def = defaultSortForMode(key);
   lib.sortKey = def.key;
   lib.sortDir = def.dir;
