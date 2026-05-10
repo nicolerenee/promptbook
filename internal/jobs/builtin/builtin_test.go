@@ -14,6 +14,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/jobs/builtin"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -140,4 +141,65 @@ func TestScanLibraryRootJob_NoRoot(t *testing.T) {
 	err := job.Run(context.Background(), jobs.JobArgs{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "library.root")
+}
+
+// TestRegenerateAllNFOJob_NoService covers the configuration guard:
+// without an nforefresh.Service the job fails fast rather than
+// silently no-oping.
+func TestRegenerateAllNFOJob_NoService(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	dbPath := filepath.Join(t.TempDir(), "promptbook.db")
+	sqlDB, db, err := storage.OpenEnt(ctx, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	job := &builtin.RegenerateAllNFOJob{DB: db, Logger: zerolog.Nop()}
+	err = job.Run(ctx, jobs.JobArgs{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nforefresh service")
+}
+
+// TestRegenerateAllNFOJob_RewritesEachRecording walks two recordings
+// (one with a version on disk, one without) and asserts the job
+// rewrites the on-disk one's NFO without erroring on the no-version
+// recording. Real nforefresh.Service is wired so the contract
+// covers the actual writer path.
+func TestRegenerateAllNFOJob_RewritesEachRecording(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	tmp := t.TempDir()
+
+	dbPath := filepath.Join(tmp, "promptbook.db")
+	sqlDB, db, err := storage.OpenEnt(ctx, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	// Recording with a real on-disk version — the job rewrites its
+	// movie.nfo into the version's parent directory.
+	const onDiskID = int64(7777)
+	seedRecording(t, db, onDiskID)
+	folder := filepath.Join(tmp, "lib", "OnDisk [encora-7777]")
+	require.NoError(t, os.MkdirAll(folder, 0o755))
+	mainFile := filepath.Join(folder, "main.mkv")
+	writeFile(t, mainFile, 1024)
+	seedVersion(t, db, onDiskID, mainFile)
+
+	// Recording with no version — the job should skip it cleanly.
+	const noFilesID = int64(8888)
+	seedRecording(t, db, noFilesID)
+
+	svc := nforefresh.New(db, nil, nil, "", zerolog.Nop())
+	job := &builtin.RegenerateAllNFOJob{
+		DB:      db,
+		Service: svc,
+		Logger:  zerolog.Nop(),
+	}
+	require.NoError(t, job.Run(ctx, jobs.JobArgs{}))
+
+	nfoPath := filepath.Join(folder, "movie.nfo")
+	body, err := os.ReadFile(nfoPath)
+	require.NoError(t, err, "movie.nfo must land next to the on-disk version")
+	assert.Contains(t, string(body), "<movie>",
+		"rewritten NFO must carry the canonical <movie> root")
 }

@@ -314,6 +314,7 @@ func buildJobRunner(
 	)
 	registered += registerScanIncoming(runner, db)
 	registered += registerScanLibraryRoot(runner, db)
+	registered += registerRegenerateAllNFO(runner, db, nfoRefresh)
 
 	if registered == 0 {
 		log.Info().Msg("jobs runner has no registered jobs (encora + incomingDirs both unconfigured)")
@@ -469,6 +470,33 @@ func registerScanIncoming(runner *jobs.Runner, db *ent.Client) int {
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("register scan-incoming job")
+		return 0
+	}
+	return 1
+}
+
+// registerRegenerateAllNFO wires the regenerate-all-nfo job when an
+// nforefresh service is configured (i.e. the image cache is on, which
+// is required for the URL-rewrite cache-bust to work). Manual-only:
+// Interval is left zero so the scheduler ticker never auto-fires it.
+// The user invokes it from the jobs page when public URL changes,
+// schema bumps, or image-cache rebuilds need the on-disk NFOs to
+// catch up.
+func registerRegenerateAllNFO(
+	runner *jobs.Runner, db *ent.Client, nfoRefresh *nforefresh.Service,
+) int {
+	if nfoRefresh == nil {
+		return 0
+	}
+	err := runner.Register(jobs.JobDef{
+		Job: &builtin.RegenerateAllNFOJob{
+			DB:      db,
+			Service: nfoRefresh,
+			Logger:  log.Logger,
+		},
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("register regenerate-all-nfo job")
 		return 0
 	}
 	return 1

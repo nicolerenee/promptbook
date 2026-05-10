@@ -85,6 +85,34 @@ func ListVersions(
 	return out, nil
 }
 
+// ListRecordingIDsWithVersions returns the distinct recording_id
+// values that have at least one recording_versions row. Drives the
+// regenerate-all-nfo job's outer loop — only recordings with at
+// least one file on disk have an NFO worth rewriting.
+//
+// Returned in ascending recording_id order so the job's progress
+// log lines tick through the catalog deterministically (helpful when
+// inspecting a partial run).
+func ListRecordingIDsWithVersions(ctx context.Context, client *ent.Client) ([]int64, error) {
+	var ids []int64
+	if err := client.RecordingVersion.Query().
+		Order(recordingversion.ByRecordingID()).
+		Select(recordingversion.FieldRecordingID).
+		Scan(ctx, &ids); err != nil {
+		return nil, fmt.Errorf("query recording ids with versions: %w", err)
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 // VersionExistsByPath returns true when any recording_versions row
 // references the exact file_path. Useful for scanner-style flows that
 // want a single yes/no decision without hydrating the full row.

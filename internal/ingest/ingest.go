@@ -604,10 +604,14 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 // at the source path, write the .encora-id sidecar + the
 // .promptbook-externally-managed sentinel next to the source so a
 // later scan can recognize the file as externally managed (even if
-// the external tool renames the folder), and flip the recording row's
-// externally_managed flag. NFO writing + subtitle fetching are
-// skipped — the catalog-only flow is read-only on disk except for the
-// two sidecar files.
+// the external tool renames the folder), flip the recording row's
+// externally_managed flag, and write the movie.nfo alongside the
+// source file so Plex/Emby/Jellyfin's local providers pick up the
+// recording's metadata + image references without an HTTP fetch.
+// Subtitle fetching is still skipped — the externally-managed flow
+// is for files an external tool already owns; downloading subtitles
+// would litter the external tool's directory with unexpected
+// artifacts.
 func (e *Engine) applyExternallyManaged(ctx context.Context, item *ItemResult) {
 	srcParent := filepath.Dir(item.Source)
 	if sidecarErr := writeEncoraIDSidecar(srcParent, item.EncoraID); sidecarErr != nil {
@@ -628,7 +632,28 @@ func (e *Engine) applyExternallyManaged(ctx context.Context, item *ItemResult) {
 		// a soft error (item.Err set, action remains "moved") so the
 		// caller can retry the toggle without re-importing.
 		item.Err = fmt.Errorf("set externally_managed flag: %w", flagErr)
+		return
 	}
+	nfoPath, nfoErr := nfo.WriteRecordingFile(
+		ctx,
+		srcParent,
+		*item.Recording,
+		nfo.WriteOptions{
+			DB:          e.DB,
+			Cache:       e.ImageCache,
+			PublicURL:   e.PublicURL,
+			ExternalIDs: item.ExternalIDs,
+		},
+	)
+	if nfoErr != nil {
+		// NFO failure isn't fatal — the file + sidecars are already in
+		// place, and a future regenerate-all-nfo run picks up the
+		// missed write. Surface so the user notices, but don't
+		// rollback.
+		item.Err = fmt.Errorf("write nfo for externally-managed recording: %w", nfoErr)
+		return
+	}
+	item.NFOPath = nfoPath
 }
 
 // maybeRemoveEmptyDir checks dir and removes it when empty, unless

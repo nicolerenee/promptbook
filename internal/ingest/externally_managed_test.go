@@ -13,11 +13,13 @@ import (
 )
 
 // TestIngest_ExternallyManagedSingleFile pins the catalog-only
-// single-file ingest: the source file MUST stay where it is, no
-// movie.nfo is written, the .encora-id sidecar + sentinel are dropped
-// next to the source, and the recording row's externally_managed flag
-// is flipped to true. The recording_versions row's file_path mirrors
-// the source path verbatim.
+// single-file ingest: the source file MUST stay where it is, the
+// .encora-id sidecar + sentinel are dropped next to the source, the
+// movie.nfo is written alongside the source so Plex/Emby/Jellyfin's
+// local providers can read it without an HTTP fetch, and the
+// recording row's externally_managed flag is flipped to true. The
+// recording_versions row's file_path mirrors the source path
+// verbatim.
 func TestIngest_ExternallyManagedSingleFile(t *testing.T) {
 	t.Parallel()
 
@@ -59,7 +61,8 @@ func TestIngest_ExternallyManagedSingleFile(t *testing.T) {
 	require.NoError(t, err, "source file must still exist after ingest")
 	assert.Equal(t, srcBytes, got, "source bytes must be untouched")
 
-	// Library root must remain empty — no canonical folder, no NFO.
+	// Library root must remain empty — the canonical folder isn't
+	// created when nothing is moved.
 	if entries, statErr := os.ReadDir(libRoot); statErr == nil {
 		assert.Empty(t, entries,
 			"library root must remain empty for externally-managed imports")
@@ -94,10 +97,14 @@ func TestIngest_ExternallyManagedSingleFile(t *testing.T) {
 	assert.False(t, fetcher.called,
 		"subtitle fetcher must not run for externally-managed imports")
 
-	// NFO path is empty — the catalog-only path never writes
-	// movie.nfo.
-	assert.Empty(t, item.NFOPath,
-		"NFOPath must be empty for externally-managed imports")
+	// movie.nfo lands alongside the source file so the local-files
+	// metadata agents Plex/Emby/Jellyfin run can read the recording's
+	// metadata without an HTTP fetch.
+	expectedNFO := filepath.Join(srcDir, "movie.nfo")
+	assert.Equal(t, expectedNFO, item.NFOPath,
+		"NFOPath must point at movie.nfo in the source folder")
+	_, err = os.Stat(expectedNFO)
+	require.NoError(t, err, "movie.nfo must exist next to the source file")
 }
 
 // TestIngest_ExternallyManagedMultipart pins the catalog-only

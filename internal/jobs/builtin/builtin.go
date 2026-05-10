@@ -26,6 +26,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/scanner"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
@@ -284,5 +285,81 @@ func (j *ScanLibraryRootJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 		Int("skipped", res.Skipped).
 		Int("errors", len(res.Errors)).
 		Msg("scan-library-root: pass complete")
+	return nil
+}
+
+// RegenerateAllNFOJob walks every recording with at least one
+// recording_versions row and rewrites its movie.nfo using
+// nforefresh.Service. Use cases:
+//
+//   - The user changed `server.publicURL` and old NFOs reference the
+//     old base URL. Re-running this rewrites every NFO with the new
+//     URL so media servers re-fetch images on next scan.
+//   - A schema change adds new fields to the NFO writer (e.g.
+//     <uniqueid> per external provider) and existing on-disk NFOs
+//     need to gain those fields without re-importing.
+//   - An image cache rebuild bumped every poster/fanart mtime; the
+//     `?v={mtime}` cache-buster URLs in old NFOs are stale.
+//
+// Manual-only by design. Rewriting hundreds of NFOs is cheap but
+// not so cheap that you want it on a recurring schedule. The runner
+// registration leaves Interval as the zero value so the ticker
+// never auto-fires it.
+//
+// Per-recording failures are logged but don't abort the batch — one
+// missing folder shouldn't block the rest of the catalog. The summary
+// log line records totals so the user can audit.
+type RegenerateAllNFOJob struct {
+	DB      *ent.Client
+	Service *nforefresh.Service
+	Logger  zerolog.Logger
+}
+
+// Name is the registry key for this job.
+func (j *RegenerateAllNFOJob) Name() string { return "regenerate-all-nfo" }
+
+// Run executes one pass over every recording with versions. Ignores
+// args — the job is unparameterized.
+func (j *RegenerateAllNFOJob) Run(ctx context.Context, _ jobs.JobArgs) error {
+	if j.DB == nil {
+		return errors.New("regenerate-all-nfo: db not configured")
+	}
+	if j.Service == nil {
+		return errors.New("regenerate-all-nfo: nforefresh service not configured")
+	}
+	ids, err := storage.ListRecordingIDsWithVersions(ctx, j.DB)
+	if err != nil {
+		return fmt.Errorf("regenerate-all-nfo: list recordings: %w", err)
+	}
+	j.Logger.Info().
+		Int("recordings", len(ids)).
+		Msg("regenerate-all-nfo: pass starting")
+	var (
+		rewritten int
+		failed    int
+	)
+	for _, id := range ids {
+		// Honor cancellation between recordings so the user can
+		// abort a long pass cleanly via the runner.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			j.Logger.Warn().Err(ctxErr).
+				Int("rewritten", rewritten).
+				Int("failed", failed).
+				Msg("regenerate-all-nfo: cancelled mid-pass")
+			return fmt.Errorf("regenerate-all-nfo: cancelled: %w", ctxErr)
+		}
+		if rewriteErr := j.Service.RewriteForRecording(ctx, id); rewriteErr != nil {
+			failed++
+			j.Logger.Warn().Err(rewriteErr).
+				Int64("recording_id", id).
+				Msg("regenerate-all-nfo: per-recording rewrite failed; continuing")
+			continue
+		}
+		rewritten++
+	}
+	j.Logger.Info().
+		Int("rewritten", rewritten).
+		Int("failed", failed).
+		Msg("regenerate-all-nfo: pass complete")
 	return nil
 }
