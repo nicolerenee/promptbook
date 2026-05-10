@@ -197,6 +197,13 @@ export const state = {
     // carries the inline message when the trigger itself fails.
     scanningLibrary:  false,
     scanLibraryError: null,
+    // successToast is set by the queue page after a successful
+    // import so the view renders a "Imported · {show}" toast with a
+    // "View recording" link. Cleared by the dismiss button, the
+    // 8-second auto-dismiss timer, or by clicking through to the
+    // recording. Object shape: { recordingID, show, duplicate,
+    // timerScheduled }.
+    successToast: null,
   },
   // history mirrors the legacy /static/history.js view-model. kind is
   // the active filter tab; recordingID, when set, scopes the list to

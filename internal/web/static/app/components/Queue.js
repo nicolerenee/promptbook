@@ -291,10 +291,27 @@ function closeImportModal() {
   state.queue.importingLocal = null;
 }
 
-// onImportSucceeded fires after the modal's mutation returns ok=true.
-// Drops the row from local state + closes the modal. Mirrors the
-// legacy handleImport's success branch.
-function onImportSucceeded(item) {
+// onImportSucceeded fires after the modal's mutation returns ok=true
+// (or action="duplicate"). Drops the row from local state, captures
+// a "view recording" toast pointing at the recording the user just
+// imported, then closes the modal. The toast is the only post-import
+// affordance for hopping straight to the new recording's detail
+// page; the user previously had to navigate back through the
+// recordings list which lost a click.
+function onImportSucceeded(item, resp) {
+  // Read the chosen match BEFORE closeImportModal clears
+  // importingLocal. The match always carries id + show; the modal's
+  // typeahead lets the user override the queue's suggested
+  // recording, so we can't rely on item.suggested_recording.
+  const local = state.queue.importingLocal;
+  const match = (local && local.match) || item.suggested_recording || {};
+  if (match.id) {
+    state.queue.successToast = {
+      recordingID: match.id,
+      show: match.show || 'Recording',
+      duplicate: !!(resp && resp.action === 'duplicate'),
+    };
+  }
   removeRow(item.id);
   closeImportModal();
 }
@@ -503,10 +520,66 @@ const Queue = {
         item:       q.importingItem,
         local:      q.importingLocal,
         onClose:    closeImportModal,
-        onImported: () => onImportSucceeded(q.importingItem),
+        onImported: (resp) => onImportSucceeded(q.importingItem, resp),
       }),
+
+      // Post-import success toast. Pinned bottom-right with a
+      // "View recording" link so the user can hop straight to the
+      // newly-imported recording's detail page without bouncing
+      // through the recordings list.
+      renderImportSuccessToast(q.successToast),
     ]);
   },
 };
+
+// renderImportSuccessToast surfaces state.queue.successToast as a
+// DaisyUI alert-success toast with a dismiss button + a "View
+// recording" link. Clicking the link routes via Mithril's router so
+// the SPA stays a single load. Dismiss clears the state field; the
+// toast also auto-dismisses after 8 seconds via a setTimeout the
+// view fires once on first render of a given toast.
+function renderImportSuccessToast(toast) {
+  if (!toast) return null;
+  // Schedule a one-shot auto-dismiss the first time we render this
+  // particular toast (different recordingID → different toast).
+  // Mithril fires view() on every redraw so we gate on a sentinel
+  // attached to the toast object itself.
+  if (!toast.timerScheduled) {
+    toast.timerScheduled = true;
+    setTimeout(() => {
+      if (state.queue.successToast === toast) {
+        state.queue.successToast = null;
+        m.redraw();
+      }
+    }, 8000);
+  }
+  const dismiss = () => { state.queue.successToast = null; };
+  const goToRecording = (ev) => {
+    ev.preventDefault();
+    state.queue.successToast = null;
+    m.route.set('/recordings/' + toast.recordingID);
+  };
+  const headline = toast.duplicate
+    ? 'Already imported'
+    : 'Imported · ' + toast.show;
+  return m('div', { class: 'toast toast-end z-50' }, [
+    m('div', { role: 'status', class: 'alert alert-success' }, [
+      m('div', { class: 'flex flex-col gap-1 items-start' }, [
+        m('span', { class: 'text-sm font-medium' }, headline),
+        m('a', {
+          href: '/recordings/' + toast.recordingID,
+          class: 'link link-hover text-sm',
+          onclick: goToRecording,
+        }, 'View recording →'),
+      ]),
+      m('button', {
+        type: 'button',
+        class: 'btn btn-xs btn-ghost',
+        'aria-label': 'Dismiss',
+        onclick: dismiss,
+      }, '×'),
+    ]),
+  ]);
+}
 
 export default Queue;
