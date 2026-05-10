@@ -32,18 +32,22 @@ import m from 'https://esm.sh/mithril@2.2.2';
 // in the next tick.
 const dimsCache = new Map();
 
-// captureDims is the shared <img onload> handler. We only redraw when
-// we actually learn something new so a redraw storm doesn't fire from
-// every picker-strip render.
+// captureDims is the shared <img onload> handler. Reads the literal
+// src attribute (not el.src, which the browser resolves to an
+// absolute URL) so the cache key matches what dimsLabel looks up.
+// Only redraws when we actually learn something new so a redraw
+// storm doesn't fire from every picker-strip render.
 function captureDims(ev) {
   const el = ev.target;
-  if (!el || !el.src) return;
+  if (!el) return;
+  const key = el.getAttribute('src');
+  if (!key) return;
   const w = el.naturalWidth | 0;
   const h = el.naturalHeight | 0;
   if (!w || !h) return;
-  const prev = dimsCache.get(el.src);
+  const prev = dimsCache.get(key);
   if (prev && prev.w === w && prev.h === h) return;
-  dimsCache.set(el.src, { w, h });
+  dimsCache.set(key, { w, h });
   m.redraw();
 }
 
