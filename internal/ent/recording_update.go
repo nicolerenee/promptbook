@@ -505,6 +505,20 @@ func (_u *RecordingUpdate) AddWantersCount(v int) *RecordingUpdate {
 	return _u
 }
 
+// SetExternallyManaged sets the "externally_managed" field.
+func (_u *RecordingUpdate) SetExternallyManaged(v bool) *RecordingUpdate {
+	_u.mutation.SetExternallyManaged(v)
+	return _u
+}
+
+// SetNillableExternallyManaged sets the "externally_managed" field if the given value is not nil.
+func (_u *RecordingUpdate) SetNillableExternallyManaged(v *bool) *RecordingUpdate {
+	if v != nil {
+		_u.SetExternallyManaged(*v)
+	}
+	return _u
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (_u *RecordingUpdate) SetLastUpdated(v string) *RecordingUpdate {
 	_u.mutation.SetLastUpdated(v)
@@ -831,6 +845,9 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedWantersCount(); ok {
 		_spec.AddField(recording.FieldWantersCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ExternallyManaged(); ok {
+		_spec.SetField(recording.FieldExternallyManaged, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.LastUpdated(); ok {
 		_spec.SetField(recording.FieldLastUpdated, field.TypeString, value)
@@ -1499,6 +1516,20 @@ func (_u *RecordingUpdateOne) AddWantersCount(v int) *RecordingUpdateOne {
 	return _u
 }
 
+// SetExternallyManaged sets the "externally_managed" field.
+func (_u *RecordingUpdateOne) SetExternallyManaged(v bool) *RecordingUpdateOne {
+	_u.mutation.SetExternallyManaged(v)
+	return _u
+}
+
+// SetNillableExternallyManaged sets the "externally_managed" field if the given value is not nil.
+func (_u *RecordingUpdateOne) SetNillableExternallyManaged(v *bool) *RecordingUpdateOne {
+	if v != nil {
+		_u.SetExternallyManaged(*v)
+	}
+	return _u
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (_u *RecordingUpdateOne) SetLastUpdated(v string) *RecordingUpdateOne {
 	_u.mutation.SetLastUpdated(v)
@@ -1855,6 +1886,9 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 	}
 	if value, ok := _u.mutation.AddedWantersCount(); ok {
 		_spec.AddField(recording.FieldWantersCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ExternallyManaged(); ok {
+		_spec.SetField(recording.FieldExternallyManaged, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.LastUpdated(); ok {
 		_spec.SetField(recording.FieldLastUpdated, field.TypeString, value)

@@ -38,6 +38,12 @@ type LoadedRecording struct {
 	Versions          []RecordingVersion
 	LocalFormatString string
 	Cast              []ResolvedCastEntry
+	// ExternallyManaged mirrors recordings.externally_managed — true
+	// when an external tool (Radarr/Plex/Jellyfin) owns the files on
+	// disk and promptbook only catalogs the recording. The recording
+	// detail page hides rename / NFO / move controls in this mode;
+	// the toggle flips it via setRecordingExternallyManaged.
+	ExternallyManaged bool
 }
 
 // ResolvedCastEntry pairs a cast row with the canonical performer +
@@ -69,7 +75,11 @@ func LoadRecording(
 	if err != nil {
 		return nil, fmt.Errorf("decode recording %d: %w", id, err)
 	}
-	loaded := &LoadedRecording{Recording: r, RawJSONPresent: true}
+	loaded := &LoadedRecording{
+		Recording:         r,
+		RawJSONPresent:    true,
+		ExternallyManaged: row.ExternallyManaged,
+	}
 
 	if cerr := fillCollectionState(ctx, client, id, loaded); cerr != nil {
 		return nil, cerr
@@ -166,6 +176,29 @@ func SetCollectionFormat(
 // ErrCollectionEntryNotFound is returned by SetCollectionFormat when
 // the recording id has no row in collection_entries.
 var ErrCollectionEntryNotFound = errors.New("storage: collection entry not found")
+
+// SetRecordingExternallyManaged flips the recordings.externally_managed
+// flag for the given recording. Used by the ingest pipeline (when an
+// import opted into externally-managed mode) and by the recording
+// detail page's setRecordingExternallyManaged toggle. Returns
+// ErrRecordingNotFound when the row is missing — defensive; callers
+// shouldn't reach this path without a confirmed recording id.
+func SetRecordingExternallyManaged(
+	ctx context.Context, client *ent.Client, recordingID int64, externallyManaged bool,
+) error {
+	n, err := client.Recording.Update().
+		Where(recording.IDEQ(recordingID)).
+		SetExternallyManaged(externallyManaged).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf(
+			"update recordings.externally_managed for %d: %w", recordingID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("recording %d: %w", recordingID, ErrRecordingNotFound)
+	}
+	return nil
+}
 
 func fillCollectionState(
 	ctx context.Context,

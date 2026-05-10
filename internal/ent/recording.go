@@ -80,6 +80,8 @@ type Recording struct {
 	OwnersCount int `json:"owners_count,omitempty"`
 	// WantersCount holds the value of the "wanters_count" field.
 	WantersCount int `json:"wanters_count,omitempty"`
+	// ExternallyManaged holds the value of the "externally_managed" field.
+	ExternallyManaged bool `json:"externally_managed,omitempty"`
 	// LastUpdated holds the value of the "last_updated" field.
 	LastUpdated string `json:"last_updated,omitempty"`
 	// RawJSON holds the value of the "raw_json" field.
@@ -156,7 +158,7 @@ func (*Recording) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case recording.FieldDateMonthKnown, recording.FieldDateDayKnown, recording.FieldNftForever, recording.FieldIsOpening, recording.FieldIsClosing, recording.FieldIsPreview, recording.FieldIsConcert, recording.FieldIsNfs, recording.FieldIsFavourite, recording.FieldHasScreenshots, recording.FieldHasSubtitles, recording.FieldBootCampRecommended:
+		case recording.FieldDateMonthKnown, recording.FieldDateDayKnown, recording.FieldNftForever, recording.FieldIsOpening, recording.FieldIsClosing, recording.FieldIsPreview, recording.FieldIsConcert, recording.FieldIsNfs, recording.FieldIsFavourite, recording.FieldHasScreenshots, recording.FieldHasSubtitles, recording.FieldBootCampRecommended, recording.FieldExternallyManaged:
 			values[i] = new(sql.NullBool)
 		case recording.FieldID, recording.FieldShowID, recording.FieldOwnersCount, recording.FieldWantersCount:
 			values[i] = new(sql.NullInt64)
@@ -375,6 +377,12 @@ func (_m *Recording) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.WantersCount = int(value.Int64)
 			}
+		case recording.FieldExternallyManaged:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field externally_managed", values[i])
+			} else if value.Valid {
+				_m.ExternallyManaged = value.Bool
+			}
 		case recording.FieldLastUpdated:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field last_updated", values[i])
@@ -549,6 +557,9 @@ func (_m *Recording) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("wanters_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.WantersCount))
+	builder.WriteString(", ")
+	builder.WriteString("externally_managed=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ExternallyManaged))
 	builder.WriteString(", ")
 	builder.WriteString("last_updated=")
 	builder.WriteString(_m.LastUpdated)

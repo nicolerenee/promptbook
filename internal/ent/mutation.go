@@ -7373,6 +7373,7 @@ type RecordingMutation struct {
 	addowners_count       *int
 	wanters_count         *int
 	addwanters_count      *int
+	externally_managed    *bool
 	last_updated          *string
 	raw_json              *string
 	last_seen_at          *time.Time
@@ -8705,6 +8706,42 @@ func (m *RecordingMutation) ResetWantersCount() {
 	m.addwanters_count = nil
 }
 
+// SetExternallyManaged sets the "externally_managed" field.
+func (m *RecordingMutation) SetExternallyManaged(b bool) {
+	m.externally_managed = &b
+}
+
+// ExternallyManaged returns the value of the "externally_managed" field in the mutation.
+func (m *RecordingMutation) ExternallyManaged() (r bool, exists bool) {
+	v := m.externally_managed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternallyManaged returns the old "externally_managed" field's value of the Recording entity.
+// If the Recording object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RecordingMutation) OldExternallyManaged(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternallyManaged is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternallyManaged requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternallyManaged: %w", err)
+	}
+	return oldValue.ExternallyManaged, nil
+}
+
+// ResetExternallyManaged resets all changes to the "externally_managed" field.
+func (m *RecordingMutation) ResetExternallyManaged() {
+	m.externally_managed = nil
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (m *RecordingMutation) SetLastUpdated(s string) {
 	m.last_updated = &s
@@ -9036,7 +9073,7 @@ func (m *RecordingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RecordingMutation) Fields() []string {
-	fields := make([]string, 0, 34)
+	fields := make([]string, 0, 35)
 	if m.show != nil {
 		fields = append(fields, recording.FieldShowID)
 	}
@@ -9130,6 +9167,9 @@ func (m *RecordingMutation) Fields() []string {
 	if m.wanters_count != nil {
 		fields = append(fields, recording.FieldWantersCount)
 	}
+	if m.externally_managed != nil {
+		fields = append(fields, recording.FieldExternallyManaged)
+	}
 	if m.last_updated != nil {
 		fields = append(fields, recording.FieldLastUpdated)
 	}
@@ -9209,6 +9249,8 @@ func (m *RecordingMutation) Field(name string) (ent.Value, bool) {
 		return m.OwnersCount()
 	case recording.FieldWantersCount:
 		return m.WantersCount()
+	case recording.FieldExternallyManaged:
+		return m.ExternallyManaged()
 	case recording.FieldLastUpdated:
 		return m.LastUpdated()
 	case recording.FieldRawJSON:
@@ -9286,6 +9328,8 @@ func (m *RecordingMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldOwnersCount(ctx)
 	case recording.FieldWantersCount:
 		return m.OldWantersCount(ctx)
+	case recording.FieldExternallyManaged:
+		return m.OldExternallyManaged(ctx)
 	case recording.FieldLastUpdated:
 		return m.OldLastUpdated(ctx)
 	case recording.FieldRawJSON:
@@ -9518,6 +9562,13 @@ func (m *RecordingMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetWantersCount(v)
 		return nil
+	case recording.FieldExternallyManaged:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternallyManaged(v)
+		return nil
 	case recording.FieldLastUpdated:
 		v, ok := value.(string)
 		if !ok {
@@ -9734,6 +9785,9 @@ func (m *RecordingMutation) ResetField(name string) error {
 		return nil
 	case recording.FieldWantersCount:
 		m.ResetWantersCount()
+		return nil
+	case recording.FieldExternallyManaged:
+		m.ResetExternallyManaged()
 		return nil
 	case recording.FieldLastUpdated:
 		m.ResetLastUpdated()

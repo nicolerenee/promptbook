@@ -300,6 +300,7 @@ var (
 		{Name: "boot_camp_recommended", Type: field.TypeBool, Default: false},
 		{Name: "owners_count", Type: field.TypeInt, Default: 0},
 		{Name: "wanters_count", Type: field.TypeInt, Default: 0},
+		{Name: "externally_managed", Type: field.TypeBool, Default: false},
 		{Name: "last_updated", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "raw_json", Type: field.TypeString, Size: 2147483647},
 		{Name: "last_seen_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP", SchemaType: map[string]string{"sqlite3": "datetime"}},
@@ -313,7 +314,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "recordings_shows_recordings",
-				Columns:    []*schema.Column{RecordingsColumns[34]},
+				Columns:    []*schema.Column{RecordingsColumns[35]},
 				RefColumns: []*schema.Column{ShowsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -322,7 +323,7 @@ var (
 			{
 				Name:    "recording_show_id",
 				Unique:  false,
-				Columns: []*schema.Column{RecordingsColumns[34]},
+				Columns: []*schema.Column{RecordingsColumns[35]},
 			},
 		},
 	}

@@ -307,12 +307,16 @@ func init() {
 	recordingDescWantersCount := recordingFields[31].Descriptor()
 	// recording.DefaultWantersCount holds the default value on creation for the wanters_count field.
 	recording.DefaultWantersCount = recordingDescWantersCount.Default.(int)
+	// recordingDescExternallyManaged is the schema descriptor for externally_managed field.
+	recordingDescExternallyManaged := recordingFields[32].Descriptor()
+	// recording.DefaultExternallyManaged holds the default value on creation for the externally_managed field.
+	recording.DefaultExternallyManaged = recordingDescExternallyManaged.Default.(bool)
 	// recordingDescLastUpdated is the schema descriptor for last_updated field.
-	recordingDescLastUpdated := recordingFields[32].Descriptor()
+	recordingDescLastUpdated := recordingFields[33].Descriptor()
 	// recording.DefaultLastUpdated holds the default value on creation for the last_updated field.
 	recording.DefaultLastUpdated = recordingDescLastUpdated.Default.(string)
 	// recordingDescLastSeenAt is the schema descriptor for last_seen_at field.
-	recordingDescLastSeenAt := recordingFields[34].Descriptor()
+	recordingDescLastSeenAt := recordingFields[35].Descriptor()
 	// recording.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
 	recording.DefaultLastSeenAt = recordingDescLastSeenAt.Default.(func() time.Time)
 	recordingimagechoiceFields := schema.RecordingImageChoice{}.Fields()

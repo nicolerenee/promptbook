@@ -124,6 +124,22 @@ type Options struct {
 	// preserving today's behaviour exactly for callers that don't yet
 	// know about multipart/extras.
 	FileAssignments []FileAssignment
+	// ExternallyManaged, when true, runs the catalog-only ingest
+	// flow: the source file is NOT moved, no movie.nfo is written,
+	// no subtitles are fetched. The recording_versions row's
+	// file_path is the source path verbatim; .encora-id and the
+	// .promptbook-externally-managed sentinel get written next to
+	// the source so a later scan can recover the link if the
+	// external tool renames the folder. The recordings.externally_managed
+	// flag is flipped to true on the recording row before / after
+	// the upsert.
+	//
+	// Used when an external tool (Radarr/Plex/Jellyfin) owns the
+	// files on disk and promptbook is purely a catalog. Multi-file
+	// (parts + extras) is supported — every part stays at its source
+	// path; the sentinel goes in the parent folder; extras stay in
+	// place as well.
+	ExternallyManaged bool
 }
 
 // FileAssignment routes one source file to a role inside a multi-
@@ -155,6 +171,20 @@ const (
 	ActionWouldMove = "would-move"
 	ActionSkipped   = "skipped"
 )
+
+// ExternallyManagedSentinel is the empty-file marker promptbook drops
+// next to the source file when an externally-managed import lands.
+// The scanner reads this on a later pass to detect "this folder is
+// already an externally-managed recording" — even if the external
+// tool (Radarr/Plex) renamed the parent folder since the original
+// import — and updates recording_versions.file_path in place rather
+// than re-enqueueing the file.
+//
+// The file is intentionally empty: the .encora-id sidecar already
+// carries the recording id, and the sentinel only signals "don't
+// enqueue me." Keeping it empty also means the external tool's own
+// scanners won't trip on unexpected metadata content.
+const ExternallyManagedSentinel = ".promptbook-externally-managed"
 
 // ItemResult records what happened (or would happen) for one video.
 type ItemResult struct {
@@ -194,6 +224,13 @@ type ItemResult struct {
 	// part-1 file. Used by the GraphQL mutation surface to surface
 	// per-extra outcomes; empty for the legacy single-file flow.
 	AppliedExtras []AppliedExtra
+	// ExternallyManaged mirrors Options.ExternallyManaged onto the
+	// per-item state so the apply / recordVersion helpers can branch
+	// without threading Options through every call site. The
+	// catalog-only path skips file moves, NFO writes, and subtitle
+	// fetches; it still probes media info and writes the .encora-id
+	// + sentinel sidecars next to the source file.
+	ExternallyManaged bool
 }
 
 // AppliedExtra is one extras row written during a multi-file ingest.
@@ -266,8 +303,9 @@ func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result,
 // ingestOne runs the full pipeline for a single video path.
 func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemResult {
 	return e.ingestOneWithSeed(ctx, src, opts, ItemResult{
-		Source:       src,
-		SourceFolder: opts.SourceFolder,
+		Source:            src,
+		SourceFolder:      opts.SourceFolder,
+		ExternallyManaged: opts.ExternallyManaged,
 	})
 }
 
@@ -280,6 +318,11 @@ func (e *Engine) ingestOneWithSeed(
 ) ItemResult {
 	item := seed
 	item.Source = src
+	// ExternallyManaged is an Options-driven, per-call switch — never a
+	// per-file override. Always trust the option so a callerseed that
+	// forgot to set it doesn't accidentally drop into the
+	// move-the-file flow.
+	item.ExternallyManaged = opts.ExternallyManaged
 
 	if !e.resolveID(src, opts, &item) {
 		e.recordIngestEvent(ctx, opts, &item)
@@ -383,6 +426,13 @@ func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bo
 
 func (e *Engine) fillDryRunPaths(item *ItemResult) {
 	item.Action = ActionWouldMove
+	if item.ExternallyManaged {
+		// Externally-managed dry-run: no move, no NFO, no subtitles.
+		// The "destination" for the upcoming write is the source path
+		// itself; the SPA's preview surfaces that as "File stays at
+		// source · {src}" so the user sees what's about to happen.
+		return
+	}
 	item.NFOPath = nfo.MovieNFOPathForPlan(*item.Plan)
 	if item.Recording.Metadata.HasSubtitles {
 		item.SubtitlePaths = e.plannedSubtitlePaths(item.Plan)
@@ -390,6 +440,10 @@ func (e *Engine) fillDryRunPaths(item *ItemResult) {
 }
 
 func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
+	if item.ExternallyManaged {
+		e.applyExternallyManaged(ctx, item)
+		return
+	}
 	// Plan.Apply moves ONLY the source file into the canonical library
 	// destination. When the queue row was a folder-as-unit drop (the
 	// scanner picked the main recording out of a folder that also
@@ -444,6 +498,38 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 	item.NFOPath = nfoPath
 }
 
+// applyExternallyManaged is the catalog-only apply path: leave the
+// source file in place, persist a recording_versions row that points
+// at the source path, write the .encora-id sidecar + the
+// .promptbook-externally-managed sentinel next to the source so a
+// later scan can recognize the file as externally managed (even if
+// the external tool renames the folder), and flip the recording row's
+// externally_managed flag. NFO writing + subtitle fetching are
+// skipped — the catalog-only flow is read-only on disk except for the
+// two sidecar files.
+func (e *Engine) applyExternallyManaged(ctx context.Context, item *ItemResult) {
+	srcParent := filepath.Dir(item.Source)
+	if sidecarErr := writeEncoraIDSidecar(srcParent, item.EncoraID); sidecarErr != nil {
+		e.Logger.Warn().Err(sidecarErr).Str("dir", srcParent).
+			Msg("failed to write .encora-id sidecar for externally-managed import")
+	}
+	if sentinelErr := writeExternallyManagedSentinel(srcParent); sentinelErr != nil {
+		e.Logger.Warn().Err(sentinelErr).Str("dir", srcParent).
+			Msg("failed to write externally-managed sentinel")
+	}
+	item.Action = ActionMoved
+	e.recordVersion(ctx, item)
+	if flagErr := storage.SetRecordingExternallyManaged(
+		ctx, e.DB, item.EncoraID, true,
+	); flagErr != nil {
+		// The file is in place + the version row exists; failing the
+		// flag flip would leave a misleading ingest result. Surface as
+		// a soft error (item.Err set, action remains "moved") so the
+		// caller can retry the toggle without re-importing.
+		item.Err = fmt.Errorf("set externally_managed flag: %w", flagErr)
+	}
+}
+
 // maybeRemoveEmptyDir checks dir and removes it when empty, unless
 // dir is one of the configured ProtectedDirs (the watched roots
 // themselves) or the path is missing. Errors get debug-logged and
@@ -488,10 +574,17 @@ func (e *Engine) maybeRemoveEmptyDir(dir string) {
 // roll back the move (the file is already in place and other consumers
 // can recover it via a future scan), so we log a warning and move on.
 func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
-	dest := item.Plan.AbsoluteFile()
+	// Externally-managed imports leave the file at the source path;
+	// the version row tracks that location verbatim so a later
+	// detail-page render or rename-preview reads the right file. The
+	// move-the-file path uses Plan.AbsoluteFile() instead.
+	dest := item.Source
+	if !item.ExternallyManaged {
+		dest = item.Plan.AbsoluteFile()
+	}
 	info, err := os.Stat(dest)
 	if err != nil {
-		e.Logger.Warn().Err(err).Str("path", dest).Msg("failed to stat moved file")
+		e.Logger.Warn().Err(err).Str("path", dest).Msg("failed to stat ingested file")
 		return
 	}
 
@@ -522,6 +615,38 @@ func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
 		e.Logger.Warn().Err(upsertErr).Msg("failed to record version")
 	}
 }
+
+// writeEncoraIDSidecar drops a .encora-id sidecar in dir. Mirrors
+// rename.Plan.EnsureSidecar but works against an arbitrary directory
+// (the source folder for externally-managed imports) rather than the
+// canonical library folder. Idempotent: an existing sidecar is
+// overwritten with the same id.
+func writeEncoraIDSidecar(dir string, id int64) error {
+	path := filepath.Join(dir, rename.SidecarFilename)
+	content := fmt.Sprintf("%d\n", id)
+	if err := os.WriteFile(path, []byte(content), externallyManagedSidecarPerm); err != nil {
+		return fmt.Errorf("write encora-id sidecar %s: %w", path, err)
+	}
+	return nil
+}
+
+// writeExternallyManagedSentinel drops the empty sentinel file in
+// dir. The scanner reads this on later passes to recognize the folder
+// as already-imported externally-managed even when the external tool
+// (Radarr/Plex) renamed the parent folder out from under us.
+func writeExternallyManagedSentinel(dir string) error {
+	path := filepath.Join(dir, ExternallyManagedSentinel)
+	if err := os.WriteFile(path, nil, externallyManagedSidecarPerm); err != nil {
+		return fmt.Errorf("write externally-managed sentinel %s: %w", path, err)
+	}
+	return nil
+}
+
+// externallyManagedSidecarPerm matches rename.libraryFilePerm
+// (world-readable) so downstream consumers running as different uids
+// can still read the sidecar / sentinel files. 0o644 mirrors the
+// rename engine's choice rather than introducing a new convention.
+const externallyManagedSidecarPerm = 0o644
 
 // encodeMediaInfo JSON-encodes the probe.MediaInfo blob for
 // persistence on the recording_versions row. A marshal failure is

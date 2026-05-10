@@ -210,6 +210,11 @@ func WantersCount(v int) predicate.Recording {
 	return predicate.Recording(sql.FieldEQ(FieldWantersCount, v))
 }
 
+// ExternallyManaged applies equality check predicate on the "externally_managed" field. It's identical to ExternallyManagedEQ.
+func ExternallyManaged(v bool) predicate.Recording {
+	return predicate.Recording(sql.FieldEQ(FieldExternallyManaged, v))
+}
+
 // LastUpdated applies equality check predicate on the "last_updated" field. It's identical to LastUpdatedEQ.
 func LastUpdated(v string) predicate.Recording {
 	return predicate.Recording(sql.FieldEQ(FieldLastUpdated, v))
@@ -1523,6 +1528,16 @@ func WantersCountLT(v int) predicate.Recording {
 // WantersCountLTE applies the LTE predicate on the "wanters_count" field.
 func WantersCountLTE(v int) predicate.Recording {
 	return predicate.Recording(sql.FieldLTE(FieldWantersCount, v))
+}
+
+// ExternallyManagedEQ applies the EQ predicate on the "externally_managed" field.
+func ExternallyManagedEQ(v bool) predicate.Recording {
+	return predicate.Recording(sql.FieldEQ(FieldExternallyManaged, v))
+}
+
+// ExternallyManagedNEQ applies the NEQ predicate on the "externally_managed" field.
+func ExternallyManagedNEQ(v bool) predicate.Recording {
+	return predicate.Recording(sql.FieldNEQ(FieldExternallyManaged, v))
 }
 
 // LastUpdatedEQ applies the EQ predicate on the "last_updated" field.

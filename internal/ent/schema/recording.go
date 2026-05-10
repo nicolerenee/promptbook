@@ -77,6 +77,13 @@ func (Recording) Fields() []ent.Field {
 		field.Bool("boot_camp_recommended").Default(false),
 		field.Int("owners_count").Default(0),
 		field.Int("wanters_count").Default(0),
+		// externally_managed marks a recording whose files are owned
+		// by an external tool (Radarr/Plex/Jellyfin) — promptbook
+		// catalogs the recording, writes a sidecar to anchor the
+		// link to Encora, and otherwise keeps its hands off (no
+		// rename, no NFO, no subtitles). Default false preserves the
+		// behaviour of every existing row.
+		field.Bool("externally_managed").Default(false),
 		field.Text("last_updated").Default("").
 			Annotations(entgql.OrderField("LAST_UPDATED")),
 		// raw_json holds the JSON-encoded encora.Recording. Plain Text

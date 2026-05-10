@@ -264,6 +264,7 @@ type ComplexityRoot struct {
 		DateTime            func(childComplexity int) int
 		DateVariant         func(childComplexity int) int
 		EncoraFormat        func(childComplexity int) int
+		ExternallyManaged   func(childComplexity int) int
 		Extras              func(childComplexity int) int
 		GiftingStatus       func(childComplexity int) int
 		HasScreenshots      func(childComplexity int) int
@@ -1625,6 +1626,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.EncoraFormat(childComplexity), true
+	case "Recording.externallyManaged":
+		if e.ComplexityRoot.Recording.ExternallyManaged == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.ExternallyManaged(childComplexity), true
 	case "Recording.extras":
 		if e.ComplexityRoot.Recording.Extras == nil {
 			break
@@ -3229,6 +3236,8 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_ownersCount(ctx, field)
 	case "wantersCount":
 		return ec.fieldContext_Recording_wantersCount(ctx, field)
+	case "externallyManaged":
+		return ec.fieldContext_Recording_externallyManaged(ctx, field)
 	case "lastUpdated":
 		return ec.fieldContext_Recording_lastUpdated(ctx, field)
 	case "rawJSON":
@@ -9270,6 +9279,29 @@ func (ec *executionContext) _Recording_wantersCount(ctx context.Context, field g
 }
 func (ec *executionContext) fieldContext_Recording_wantersCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Recording", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_externallyManaged(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_externallyManaged(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExternallyManaged, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_externallyManaged(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _Recording_lastUpdated(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
@@ -17526,7 +17558,7 @@ func (ec *executionContext) unmarshalInputRecordingWhereInput(ctx context.Contex
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"not", "and", "or", "id", "idNEQ", "idIn", "idNotIn", "idGT", "idGTE", "idLT", "idLTE", "showID", "showIDNEQ", "showIDIn", "showIDNotIn", "tour", "tourNEQ", "tourIn", "tourNotIn", "tourGT", "tourGTE", "tourLT", "tourLTE", "tourContains", "tourHasPrefix", "tourHasSuffix", "tourEqualFold", "tourContainsFold", "dateFull", "dateFullNEQ", "dateFullIn", "dateFullNotIn", "dateFullGT", "dateFullGTE", "dateFullLT", "dateFullLTE", "dateFullContains", "dateFullHasPrefix", "dateFullHasSuffix", "dateFullEqualFold", "dateFullContainsFold", "dateMonthKnown", "dateMonthKnownNEQ", "dateDayKnown", "dateDayKnownNEQ", "dateVariant", "dateVariantNEQ", "dateVariantIn", "dateVariantNotIn", "dateVariantGT", "dateVariantGTE", "dateVariantLT", "dateVariantLTE", "dateVariantContains", "dateVariantHasPrefix", "dateVariantHasSuffix", "dateVariantIsNil", "dateVariantNotNil", "dateVariantEqualFold", "dateVariantContainsFold", "dateTime", "dateTimeNEQ", "dateTimeIn", "dateTimeNotIn", "dateTimeGT", "dateTimeGTE", "dateTimeLT", "dateTimeLTE", "dateTimeContains", "dateTimeHasPrefix", "dateTimeHasSuffix", "dateTimeEqualFold", "dateTimeContainsFold", "master", "masterNEQ", "masterIn", "masterNotIn", "masterGT", "masterGTE", "masterLT", "masterLTE", "masterContains", "masterHasPrefix", "masterHasSuffix", "masterEqualFold", "masterContainsFold", "nftDate", "nftDateNEQ", "nftDateIn", "nftDateNotIn", "nftDateGT", "nftDateGTE", "nftDateLT", "nftDateLTE", "nftDateContains", "nftDateHasPrefix", "nftDateHasSuffix", "nftDateIsNil", "nftDateNotNil", "nftDateEqualFold", "nftDateContainsFold", "nftForever", "nftForeverNEQ", "notes", "notesNEQ", "notesIn", "notesNotIn", "notesGT", "notesGTE", "notesLT", "notesLTE", "notesContains", "notesHasPrefix", "notesHasSuffix", "notesEqualFold", "notesContainsFold", "masterNotes", "masterNotesNEQ", "masterNotesIn", "masterNotesNotIn", "masterNotesGT", "masterNotesGTE", "masterNotesLT", "masterNotesLTE", "masterNotesContains", "masterNotesHasPrefix", "masterNotesHasSuffix", "masterNotesIsNil", "masterNotesNotNil", "masterNotesEqualFold", "masterNotesContainsFold", "releaseFormat", "releaseFormatNEQ", "releaseFormatIn", "releaseFormatNotIn", "releaseFormatGT", "releaseFormatGTE", "releaseFormatLT", "releaseFormatLTE", "releaseFormatContains", "releaseFormatHasPrefix", "releaseFormatHasSuffix", "releaseFormatIsNil", "releaseFormatNotNil", "releaseFormatEqualFold", "releaseFormatContainsFold", "venue", "venueNEQ", "venueIn", "venueNotIn", "venueGT", "venueGTE", "venueLT", "venueLTE", "venueContains", "venueHasPrefix", "venueHasSuffix", "venueEqualFold", "venueContainsFold", "city", "cityNEQ", "cityIn", "cityNotIn", "cityGT", "cityGTE", "cityLT", "cityLTE", "cityContains", "cityHasPrefix", "cityHasSuffix", "cityEqualFold", "cityContainsFold", "mediaType", "mediaTypeNEQ", "mediaTypeIn", "mediaTypeNotIn", "mediaTypeGT", "mediaTypeGTE", "mediaTypeLT", "mediaTypeLTE", "mediaTypeContains", "mediaTypeHasPrefix", "mediaTypeHasSuffix", "mediaTypeEqualFold", "mediaTypeContainsFold", "recordingType", "recordingTypeNEQ", "recordingTypeIn", "recordingTypeNotIn", "recordingTypeGT", "recordingTypeGTE", "recordingTypeLT", "recordingTypeLTE", "recordingTypeContains", "recordingTypeHasPrefix", "recordingTypeHasSuffix", "recordingTypeEqualFold", "recordingTypeContainsFold", "amountRecorded", "amountRecordedNEQ", "amountRecordedIn", "amountRecordedNotIn", "amountRecordedGT", "amountRecordedGTE", "amountRecordedLT", "amountRecordedLTE", "amountRecordedContains", "amountRecordedHasPrefix", "amountRecordedHasSuffix", "amountRecordedEqualFold", "amountRecordedContainsFold", "giftingStatus", "giftingStatusNEQ", "giftingStatusIn", "giftingStatusNotIn", "giftingStatusGT", "giftingStatusGTE", "giftingStatusLT", "giftingStatusLTE", "giftingStatusContains", "giftingStatusHasPrefix", "giftingStatusHasSuffix", "giftingStatusEqualFold", "giftingStatusContainsFold", "limitedStatus", "limitedStatusNEQ", "limitedStatusIn", "limitedStatusNotIn", "limitedStatusGT", "limitedStatusGTE", "limitedStatusLT", "limitedStatusLTE", "limitedStatusContains", "limitedStatusHasPrefix", "limitedStatusHasSuffix", "limitedStatusEqualFold", "limitedStatusContainsFold", "isOpening", "isOpeningNEQ", "isClosing", "isClosingNEQ", "isPreview", "isPreviewNEQ", "isConcert", "isConcertNEQ", "isNfs", "isNfsNEQ", "isFavourite", "isFavouriteNEQ", "hasScreenshots", "hasScreenshotsNEQ", "hasSubtitles", "hasSubtitlesNEQ", "bootCampRecommended", "bootCampRecommendedNEQ", "ownersCount", "ownersCountNEQ", "ownersCountIn", "ownersCountNotIn", "ownersCountGT", "ownersCountGTE", "ownersCountLT", "ownersCountLTE", "wantersCount", "wantersCountNEQ", "wantersCountIn", "wantersCountNotIn", "wantersCountGT", "wantersCountGTE", "wantersCountLT", "wantersCountLTE", "lastUpdated", "lastUpdatedNEQ", "lastUpdatedIn", "lastUpdatedNotIn", "lastUpdatedGT", "lastUpdatedGTE", "lastUpdatedLT", "lastUpdatedLTE", "lastUpdatedContains", "lastUpdatedHasPrefix", "lastUpdatedHasSuffix", "lastUpdatedEqualFold", "lastUpdatedContainsFold", "rawJSON", "rawJSONNEQ", "rawJSONIn", "rawJSONNotIn", "rawJSONGT", "rawJSONGTE", "rawJSONLT", "rawJSONLTE", "rawJSONContains", "rawJSONHasPrefix", "rawJSONHasSuffix", "rawJSONEqualFold", "rawJSONContainsFold", "lastSeenAt", "lastSeenAtNEQ", "lastSeenAtIn", "lastSeenAtNotIn", "lastSeenAtGT", "lastSeenAtGTE", "lastSeenAtLT", "lastSeenAtLTE", "hasShow", "hasShowWith", "hasCastEntries", "hasCastEntriesWith", "hasVersions", "hasVersionsWith"}
+	fieldsInOrder := [...]string{"not", "and", "or", "id", "idNEQ", "idIn", "idNotIn", "idGT", "idGTE", "idLT", "idLTE", "showID", "showIDNEQ", "showIDIn", "showIDNotIn", "tour", "tourNEQ", "tourIn", "tourNotIn", "tourGT", "tourGTE", "tourLT", "tourLTE", "tourContains", "tourHasPrefix", "tourHasSuffix", "tourEqualFold", "tourContainsFold", "dateFull", "dateFullNEQ", "dateFullIn", "dateFullNotIn", "dateFullGT", "dateFullGTE", "dateFullLT", "dateFullLTE", "dateFullContains", "dateFullHasPrefix", "dateFullHasSuffix", "dateFullEqualFold", "dateFullContainsFold", "dateMonthKnown", "dateMonthKnownNEQ", "dateDayKnown", "dateDayKnownNEQ", "dateVariant", "dateVariantNEQ", "dateVariantIn", "dateVariantNotIn", "dateVariantGT", "dateVariantGTE", "dateVariantLT", "dateVariantLTE", "dateVariantContains", "dateVariantHasPrefix", "dateVariantHasSuffix", "dateVariantIsNil", "dateVariantNotNil", "dateVariantEqualFold", "dateVariantContainsFold", "dateTime", "dateTimeNEQ", "dateTimeIn", "dateTimeNotIn", "dateTimeGT", "dateTimeGTE", "dateTimeLT", "dateTimeLTE", "dateTimeContains", "dateTimeHasPrefix", "dateTimeHasSuffix", "dateTimeEqualFold", "dateTimeContainsFold", "master", "masterNEQ", "masterIn", "masterNotIn", "masterGT", "masterGTE", "masterLT", "masterLTE", "masterContains", "masterHasPrefix", "masterHasSuffix", "masterEqualFold", "masterContainsFold", "nftDate", "nftDateNEQ", "nftDateIn", "nftDateNotIn", "nftDateGT", "nftDateGTE", "nftDateLT", "nftDateLTE", "nftDateContains", "nftDateHasPrefix", "nftDateHasSuffix", "nftDateIsNil", "nftDateNotNil", "nftDateEqualFold", "nftDateContainsFold", "nftForever", "nftForeverNEQ", "notes", "notesNEQ", "notesIn", "notesNotIn", "notesGT", "notesGTE", "notesLT", "notesLTE", "notesContains", "notesHasPrefix", "notesHasSuffix", "notesEqualFold", "notesContainsFold", "masterNotes", "masterNotesNEQ", "masterNotesIn", "masterNotesNotIn", "masterNotesGT", "masterNotesGTE", "masterNotesLT", "masterNotesLTE", "masterNotesContains", "masterNotesHasPrefix", "masterNotesHasSuffix", "masterNotesIsNil", "masterNotesNotNil", "masterNotesEqualFold", "masterNotesContainsFold", "releaseFormat", "releaseFormatNEQ", "releaseFormatIn", "releaseFormatNotIn", "releaseFormatGT", "releaseFormatGTE", "releaseFormatLT", "releaseFormatLTE", "releaseFormatContains", "releaseFormatHasPrefix", "releaseFormatHasSuffix", "releaseFormatIsNil", "releaseFormatNotNil", "releaseFormatEqualFold", "releaseFormatContainsFold", "venue", "venueNEQ", "venueIn", "venueNotIn", "venueGT", "venueGTE", "venueLT", "venueLTE", "venueContains", "venueHasPrefix", "venueHasSuffix", "venueEqualFold", "venueContainsFold", "city", "cityNEQ", "cityIn", "cityNotIn", "cityGT", "cityGTE", "cityLT", "cityLTE", "cityContains", "cityHasPrefix", "cityHasSuffix", "cityEqualFold", "cityContainsFold", "mediaType", "mediaTypeNEQ", "mediaTypeIn", "mediaTypeNotIn", "mediaTypeGT", "mediaTypeGTE", "mediaTypeLT", "mediaTypeLTE", "mediaTypeContains", "mediaTypeHasPrefix", "mediaTypeHasSuffix", "mediaTypeEqualFold", "mediaTypeContainsFold", "recordingType", "recordingTypeNEQ", "recordingTypeIn", "recordingTypeNotIn", "recordingTypeGT", "recordingTypeGTE", "recordingTypeLT", "recordingTypeLTE", "recordingTypeContains", "recordingTypeHasPrefix", "recordingTypeHasSuffix", "recordingTypeEqualFold", "recordingTypeContainsFold", "amountRecorded", "amountRecordedNEQ", "amountRecordedIn", "amountRecordedNotIn", "amountRecordedGT", "amountRecordedGTE", "amountRecordedLT", "amountRecordedLTE", "amountRecordedContains", "amountRecordedHasPrefix", "amountRecordedHasSuffix", "amountRecordedEqualFold", "amountRecordedContainsFold", "giftingStatus", "giftingStatusNEQ", "giftingStatusIn", "giftingStatusNotIn", "giftingStatusGT", "giftingStatusGTE", "giftingStatusLT", "giftingStatusLTE", "giftingStatusContains", "giftingStatusHasPrefix", "giftingStatusHasSuffix", "giftingStatusEqualFold", "giftingStatusContainsFold", "limitedStatus", "limitedStatusNEQ", "limitedStatusIn", "limitedStatusNotIn", "limitedStatusGT", "limitedStatusGTE", "limitedStatusLT", "limitedStatusLTE", "limitedStatusContains", "limitedStatusHasPrefix", "limitedStatusHasSuffix", "limitedStatusEqualFold", "limitedStatusContainsFold", "isOpening", "isOpeningNEQ", "isClosing", "isClosingNEQ", "isPreview", "isPreviewNEQ", "isConcert", "isConcertNEQ", "isNfs", "isNfsNEQ", "isFavourite", "isFavouriteNEQ", "hasScreenshots", "hasScreenshotsNEQ", "hasSubtitles", "hasSubtitlesNEQ", "bootCampRecommended", "bootCampRecommendedNEQ", "ownersCount", "ownersCountNEQ", "ownersCountIn", "ownersCountNotIn", "ownersCountGT", "ownersCountGTE", "ownersCountLT", "ownersCountLTE", "wantersCount", "wantersCountNEQ", "wantersCountIn", "wantersCountNotIn", "wantersCountGT", "wantersCountGTE", "wantersCountLT", "wantersCountLTE", "externallyManaged", "externallyManagedNEQ", "lastUpdated", "lastUpdatedNEQ", "lastUpdatedIn", "lastUpdatedNotIn", "lastUpdatedGT", "lastUpdatedGTE", "lastUpdatedLT", "lastUpdatedLTE", "lastUpdatedContains", "lastUpdatedHasPrefix", "lastUpdatedHasSuffix", "lastUpdatedEqualFold", "lastUpdatedContainsFold", "rawJSON", "rawJSONNEQ", "rawJSONIn", "rawJSONNotIn", "rawJSONGT", "rawJSONGTE", "rawJSONLT", "rawJSONLTE", "rawJSONContains", "rawJSONHasPrefix", "rawJSONHasSuffix", "rawJSONEqualFold", "rawJSONContainsFold", "lastSeenAt", "lastSeenAtNEQ", "lastSeenAtIn", "lastSeenAtNotIn", "lastSeenAtGT", "lastSeenAtGTE", "lastSeenAtLT", "lastSeenAtLTE", "hasShow", "hasShowWith", "hasCastEntries", "hasCastEntriesWith", "hasVersions", "hasVersionsWith"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -19430,6 +19462,20 @@ func (ec *executionContext) unmarshalInputRecordingWhereInput(ctx context.Contex
 				return it, err
 			}
 			it.WantersCountLTE = data
+		case "externallyManaged":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("externallyManaged"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExternallyManaged = data
+		case "externallyManagedNEQ":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("externallyManagedNEQ"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExternallyManagedNEQ = data
 		case "lastUpdated":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("lastUpdated"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -23018,6 +23064,11 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 			}
 		case "wantersCount":
 			out.Values[i] = ec._Recording_wantersCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "externallyManaged":
+			out.Values[i] = ec._Recording_externallyManaged(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}

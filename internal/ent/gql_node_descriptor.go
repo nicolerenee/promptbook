@@ -261,7 +261,7 @@ func (_m *Recording) Node(ctx context.Context) (node *Node, err error) {
 	node = &Node{
 		ID:     _m.ID,
 		Type:   "Recording",
-		Fields: make([]*Field, 33),
+		Fields: make([]*Field, 34),
 		Edges:  make([]*Edge, 3),
 	}
 	var buf []byte
@@ -505,10 +505,18 @@ func (_m *Recording) Node(ctx context.Context) (node *Node, err error) {
 		Name:  "wanters_count",
 		Value: string(buf),
 	}
-	if buf, err = json.Marshal(_m.LastUpdated); err != nil {
+	if buf, err = json.Marshal(_m.ExternallyManaged); err != nil {
 		return nil, err
 	}
 	node.Fields[30] = &Field{
+		Type:  "bool",
+		Name:  "externally_managed",
+		Value: string(buf),
+	}
+	if buf, err = json.Marshal(_m.LastUpdated); err != nil {
+		return nil, err
+	}
+	node.Fields[31] = &Field{
 		Type:  "string",
 		Name:  "last_updated",
 		Value: string(buf),
@@ -516,7 +524,7 @@ func (_m *Recording) Node(ctx context.Context) (node *Node, err error) {
 	if buf, err = json.Marshal(_m.RawJSON); err != nil {
 		return nil, err
 	}
-	node.Fields[31] = &Field{
+	node.Fields[32] = &Field{
 		Type:  "string",
 		Name:  "raw_json",
 		Value: string(buf),
@@ -524,7 +532,7 @@ func (_m *Recording) Node(ctx context.Context) (node *Node, err error) {
 	if buf, err = json.Marshal(_m.LastSeenAt); err != nil {
 		return nil, err
 	}
-	node.Fields[32] = &Field{
+	node.Fields[33] = &Field{
 		Type:  "time.Time",
 		Name:  "last_seen_at",
 		Value: string(buf),

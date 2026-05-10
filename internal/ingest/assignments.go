@@ -255,10 +255,11 @@ func (e *Engine) ingestWithAssignments(
 // needs: the canonical folder, the recording id, and a pointer to
 // the result row that owns AppliedExtras.
 type mainsApplyOutcome struct {
-	aborted          bool
-	firstPlanFolder  string
-	recordingID      int64
-	appliedExtrasRow *ItemResult
+	aborted           bool
+	firstPlanFolder   string
+	recordingID       int64
+	appliedExtrasRow  *ItemResult
+	externallyManaged bool
 }
 
 // ingestMainsAndParts runs every main / part assignment through the
@@ -271,7 +272,7 @@ func (e *Engine) ingestMainsAndParts(
 	ctx context.Context, cls *classifiedAssignments,
 	opts Options, res *Result,
 ) mainsApplyOutcome {
-	out := mainsApplyOutcome{}
+	out := mainsApplyOutcome{externallyManaged: opts.ExternallyManaged}
 	if cls.main != nil {
 		seed := ItemResult{SourceFolder: opts.SourceFolder}
 		item := e.ingestOneWithSeed(ctx, cls.main.SourcePath, opts, seed)
@@ -340,19 +341,27 @@ func (e *Engine) applyExtras(
 // applyOneExtra moves a single extra file into its canonical
 // subfolder + writes the recording_extras row. Returns an
 // AppliedExtra tagged with Err on failure.
+//
+// For externally-managed imports the source file stays put — the
+// recording_extras row records the file at its source path so the
+// detail page can still surface the bonus material, but no copy /
+// move runs. This matches the catalog-only behaviour the main file
+// applies above.
 func (e *Engine) applyOneExtra(
 	ctx context.Context, ex FileAssignment,
 	mains mainsApplyOutcome, dryRun bool,
 ) AppliedExtra {
 	kind := strings.TrimPrefix(ex.Kind, assignmentKindPrefixExtra)
-	subfolder, ok := extraKindToSubfolder[kind]
-	if !ok {
-		// Unknown kind: dump to other/ rather than failing the move.
-		// The user can re-classify after the fact via a future
-		// admin surface; phase 1 just needs the file landed.
-		subfolder = extraKindToSubfolder[ExtraKindOther]
+	if _, ok := extraKindToSubfolder[kind]; !ok {
+		// Unknown kind: dump to other/ rather than failing. The user
+		// can re-classify after the fact via a future admin surface;
+		// phase 1 just needs the file landed.
 		kind = ExtraKindOther
 	}
+	if mains.externallyManaged {
+		return e.applyOneExtraExternallyManaged(ctx, ex, mains, kind, dryRun)
+	}
+	subfolder := extraKindToSubfolder[kind]
 	destDir := filepath.Join(mains.firstPlanFolder, subfolder)
 	dest := filepath.Join(destDir, filepath.Base(ex.SourcePath))
 	out := AppliedExtra{
@@ -392,6 +401,59 @@ func (e *Engine) applyOneExtra(
 		out.Err = fmt.Errorf("upsert recording_extras row: %w", err)
 		e.Logger.Warn().Err(out.Err).Str("dest", dest).
 			Msg("failed to record extras row")
+		return out
+	}
+	return out
+}
+
+// applyOneExtraExternallyManaged handles the catalog-only path for an
+// extras assignment: leave the file at the source path, persist a
+// recording_extras row that points at the source path, and stop. No
+// directory creation, no move, no overwrite check — the external
+// tool owns the file layout.
+func (e *Engine) applyOneExtraExternallyManaged(
+	ctx context.Context, ex FileAssignment,
+	mains mainsApplyOutcome, kind string, dryRun bool,
+) AppliedExtra {
+	out := AppliedExtra{
+		SourcePath: ex.SourcePath,
+		DestPath:   ex.SourcePath,
+		Kind:       kind,
+		Label:      ex.Label,
+	}
+	if dryRun {
+		return out
+	}
+	info, statErr := os.Stat(ex.SourcePath)
+	if statErr != nil {
+		out.Err = fmt.Errorf("stat extra %s: %w", ex.SourcePath, statErr)
+		e.Logger.Warn().Err(out.Err).Str("source", ex.SourcePath).
+			Msg("failed to stat externally-managed extra")
+		return out
+	}
+	size := info.Size()
+	if info.IsDir() {
+		dirSize, dirErr := directorySize(ex.SourcePath)
+		if dirErr != nil {
+			out.Err = fmt.Errorf("size of extra dir %s: %w", ex.SourcePath, dirErr)
+			e.Logger.Warn().Err(out.Err).Str("source", ex.SourcePath).
+				Msg("failed to size externally-managed extra dir")
+			return out
+		}
+		size = dirSize
+	}
+	row := storage.RecordingExtra{
+		RecordingID:   mains.recordingID,
+		FilePath:      ex.SourcePath,
+		Kind:          kind,
+		Label:         ex.Label,
+		FileSizeBytes: size,
+	}
+	if _, err := storage.UpsertExtra(ctx, e.DB, row); err != nil {
+		out.Err = fmt.Errorf(
+			"upsert externally-managed recording_extras row: %w", err)
+		e.Logger.Warn().Err(out.Err).Str("path", ex.SourcePath).
+			Msg("failed to record externally-managed extras row")
 		return out
 	}
 	return out

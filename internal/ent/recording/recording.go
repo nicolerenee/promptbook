@@ -76,6 +76,8 @@ const (
 	FieldOwnersCount = "owners_count"
 	// FieldWantersCount holds the string denoting the wanters_count field in the database.
 	FieldWantersCount = "wanters_count"
+	// FieldExternallyManaged holds the string denoting the externally_managed field in the database.
+	FieldExternallyManaged = "externally_managed"
 	// FieldLastUpdated holds the string denoting the last_updated field in the database.
 	FieldLastUpdated = "last_updated"
 	// FieldRawJSON holds the string denoting the raw_json field in the database.
@@ -164,6 +166,7 @@ var Columns = []string{
 	FieldBootCampRecommended,
 	FieldOwnersCount,
 	FieldWantersCount,
+	FieldExternallyManaged,
 	FieldLastUpdated,
 	FieldRawJSON,
 	FieldLastSeenAt,
@@ -232,6 +235,8 @@ var (
 	DefaultOwnersCount int
 	// DefaultWantersCount holds the default value on creation for the "wanters_count" field.
 	DefaultWantersCount int
+	// DefaultExternallyManaged holds the default value on creation for the "externally_managed" field.
+	DefaultExternallyManaged bool
 	// DefaultLastUpdated holds the default value on creation for the "last_updated" field.
 	DefaultLastUpdated string
 	// DefaultLastSeenAt holds the default value on creation for the "last_seen_at" field.
@@ -399,6 +404,11 @@ func ByOwnersCount(opts ...sql.OrderTermOption) OrderOption {
 // ByWantersCount orders the results by the wanters_count field.
 func ByWantersCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldWantersCount, opts...).ToFunc()
+}
+
+// ByExternallyManaged orders the results by the externally_managed field.
+func ByExternallyManaged(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExternallyManaged, opts...).ToFunc()
 }
 
 // ByLastUpdated orders the results by the last_updated field.

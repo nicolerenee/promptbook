@@ -1759,6 +1759,10 @@ type RecordingWhereInput struct {
 	WantersCountLT    *int  `json:"wantersCountLT,omitempty"`
 	WantersCountLTE   *int  `json:"wantersCountLTE,omitempty"`
 
+	// "externally_managed" field predicates.
+	ExternallyManaged    *bool `json:"externallyManaged,omitempty"`
+	ExternallyManagedNEQ *bool `json:"externallyManagedNEQ,omitempty"`
+
 	// "last_updated" field predicates.
 	LastUpdated             *string  `json:"lastUpdated,omitempty"`
 	LastUpdatedNEQ          *string  `json:"lastUpdatedNEQ,omitempty"`
@@ -2686,6 +2690,12 @@ func (i *RecordingWhereInput) P() (predicate.Recording, error) {
 	}
 	if i.WantersCountLTE != nil {
 		predicates = append(predicates, recording.WantersCountLTE(*i.WantersCountLTE))
+	}
+	if i.ExternallyManaged != nil {
+		predicates = append(predicates, recording.ExternallyManagedEQ(*i.ExternallyManaged))
+	}
+	if i.ExternallyManagedNEQ != nil {
+		predicates = append(predicates, recording.ExternallyManagedNEQ(*i.ExternallyManagedNEQ))
 	}
 	if i.LastUpdated != nil {
 		predicates = append(predicates, recording.LastUpdatedEQ(*i.LastUpdated))

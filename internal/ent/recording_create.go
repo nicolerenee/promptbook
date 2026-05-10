@@ -452,6 +452,20 @@ func (_c *RecordingCreate) SetNillableWantersCount(v *int) *RecordingCreate {
 	return _c
 }
 
+// SetExternallyManaged sets the "externally_managed" field.
+func (_c *RecordingCreate) SetExternallyManaged(v bool) *RecordingCreate {
+	_c.mutation.SetExternallyManaged(v)
+	return _c
+}
+
+// SetNillableExternallyManaged sets the "externally_managed" field if the given value is not nil.
+func (_c *RecordingCreate) SetNillableExternallyManaged(v *bool) *RecordingCreate {
+	if v != nil {
+		_c.SetExternallyManaged(*v)
+	}
+	return _c
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (_c *RecordingCreate) SetLastUpdated(v string) *RecordingCreate {
 	_c.mutation.SetLastUpdated(v)
@@ -681,6 +695,10 @@ func (_c *RecordingCreate) defaults() {
 		v := recording.DefaultWantersCount
 		_c.mutation.SetWantersCount(v)
 	}
+	if _, ok := _c.mutation.ExternallyManaged(); !ok {
+		v := recording.DefaultExternallyManaged
+		_c.mutation.SetExternallyManaged(v)
+	}
 	if _, ok := _c.mutation.LastUpdated(); !ok {
 		v := recording.DefaultLastUpdated
 		_c.mutation.SetLastUpdated(v)
@@ -773,6 +791,9 @@ func (_c *RecordingCreate) check() error {
 	}
 	if _, ok := _c.mutation.WantersCount(); !ok {
 		return &ValidationError{Name: "wanters_count", err: errors.New(`ent: missing required field "Recording.wanters_count"`)}
+	}
+	if _, ok := _c.mutation.ExternallyManaged(); !ok {
+		return &ValidationError{Name: "externally_managed", err: errors.New(`ent: missing required field "Recording.externally_managed"`)}
 	}
 	if _, ok := _c.mutation.LastUpdated(); !ok {
 		return &ValidationError{Name: "last_updated", err: errors.New(`ent: missing required field "Recording.last_updated"`)}
@@ -938,6 +959,10 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.WantersCount(); ok {
 		_spec.SetField(recording.FieldWantersCount, field.TypeInt, value)
 		_node.WantersCount = value
+	}
+	if value, ok := _c.mutation.ExternallyManaged(); ok {
+		_spec.SetField(recording.FieldExternallyManaged, field.TypeBool, value)
+		_node.ExternallyManaged = value
 	}
 	if value, ok := _c.mutation.LastUpdated(); ok {
 		_spec.SetField(recording.FieldLastUpdated, field.TypeString, value)
@@ -1473,6 +1498,18 @@ func (u *RecordingUpsert) UpdateWantersCount() *RecordingUpsert {
 // AddWantersCount adds v to the "wanters_count" field.
 func (u *RecordingUpsert) AddWantersCount(v int) *RecordingUpsert {
 	u.Add(recording.FieldWantersCount, v)
+	return u
+}
+
+// SetExternallyManaged sets the "externally_managed" field.
+func (u *RecordingUpsert) SetExternallyManaged(v bool) *RecordingUpsert {
+	u.Set(recording.FieldExternallyManaged, v)
+	return u
+}
+
+// UpdateExternallyManaged sets the "externally_managed" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdateExternallyManaged() *RecordingUpsert {
+	u.SetExcluded(recording.FieldExternallyManaged)
 	return u
 }
 
@@ -2033,6 +2070,20 @@ func (u *RecordingUpsertOne) AddWantersCount(v int) *RecordingUpsertOne {
 func (u *RecordingUpsertOne) UpdateWantersCount() *RecordingUpsertOne {
 	return u.Update(func(s *RecordingUpsert) {
 		s.UpdateWantersCount()
+	})
+}
+
+// SetExternallyManaged sets the "externally_managed" field.
+func (u *RecordingUpsertOne) SetExternallyManaged(v bool) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetExternallyManaged(v)
+	})
+}
+
+// UpdateExternallyManaged sets the "externally_managed" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdateExternallyManaged() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateExternallyManaged()
 	})
 }
 
@@ -2765,6 +2816,20 @@ func (u *RecordingUpsertBulk) AddWantersCount(v int) *RecordingUpsertBulk {
 func (u *RecordingUpsertBulk) UpdateWantersCount() *RecordingUpsertBulk {
 	return u.Update(func(s *RecordingUpsert) {
 		s.UpdateWantersCount()
+	})
+}
+
+// SetExternallyManaged sets the "externally_managed" field.
+func (u *RecordingUpsertBulk) SetExternallyManaged(v bool) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetExternallyManaged(v)
+	})
+}
+
+// UpdateExternallyManaged sets the "externally_managed" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdateExternallyManaged() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdateExternallyManaged()
 	})
 }
 

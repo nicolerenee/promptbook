@@ -796,6 +796,7 @@ type Recording implements Node {
   bootCampRecommended: Boolean!
   ownersCount: Int!
   wantersCount: Int!
+  externallyManaged: Boolean!
   lastUpdated: String!
   rawJSON: String!
   lastSeenAt: Time!
@@ -1545,6 +1546,11 @@ input RecordingWhereInput {
   wantersCountGTE: Int
   wantersCountLT: Int
   wantersCountLTE: Int
+  """
+  externally_managed field predicates
+  """
+  externallyManaged: Boolean
+  externallyManagedNEQ: Boolean
   """
   last_updated field predicates
   """
