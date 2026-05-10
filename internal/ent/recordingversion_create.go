@@ -161,6 +161,12 @@ func (_c *RecordingVersionCreate) SetNillableLastSeenAt(v *time.Time) *Recording
 	return _c
 }
 
+// SetID sets the "id" field.
+func (_c *RecordingVersionCreate) SetID(v int64) *RecordingVersionCreate {
+	_c.mutation.SetID(v)
+	return _c
+}
+
 // SetRecording sets the "recording" edge to the Recording entity.
 func (_c *RecordingVersionCreate) SetRecording(v *Recording) *RecordingVersionCreate {
 	return _c.SetRecordingID(v.ID)
@@ -291,8 +297,10 @@ func (_c *RecordingVersionCreate) sqlSave(ctx context.Context) (*RecordingVersio
 		}
 		return nil, err
 	}
-	id := _spec.ID.Value.(int64)
-	_node.ID = int(id)
+	if _spec.ID.Value != _node.ID {
+		id := _spec.ID.Value.(int64)
+		_node.ID = int64(id)
+	}
 	_c.mutation.id = &_node.ID
 	_c.mutation.done = true
 	return _node, nil
@@ -301,9 +309,13 @@ func (_c *RecordingVersionCreate) sqlSave(ctx context.Context) (*RecordingVersio
 func (_c *RecordingVersionCreate) createSpec() (*RecordingVersion, *sqlgraph.CreateSpec) {
 	var (
 		_node = &RecordingVersion{config: _c.config}
-		_spec = sqlgraph.NewCreateSpec(recordingversion.Table, sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt))
+		_spec = sqlgraph.NewCreateSpec(recordingversion.Table, sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64))
 	)
 	_spec.OnConflict = _c.conflict
+	if id, ok := _c.mutation.ID(); ok {
+		_node.ID = id
+		_spec.ID.Value = id
+	}
 	if value, ok := _c.mutation.FilePath(); ok {
 		_spec.SetField(recordingversion.FieldFilePath, field.TypeString, value)
 		_node.FilePath = value
@@ -551,16 +563,24 @@ func (u *RecordingVersionUpsert) UpdateLastSeenAt() *RecordingVersionUpsert {
 	return u
 }
 
-// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
 //	client.RecordingVersion.Create().
 //		OnConflict(
 //			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(recordingversion.FieldID)
+//			}),
 //		).
 //		Exec(ctx)
 func (u *RecordingVersionUpsertOne) UpdateNewValues() *RecordingVersionUpsertOne {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(recordingversion.FieldID)
+		}
+	}))
 	return u
 }
 
@@ -768,7 +788,7 @@ func (u *RecordingVersionUpsertOne) ExecX(ctx context.Context) {
 }
 
 // Exec executes the UPSERT query and returns the inserted/updated ID.
-func (u *RecordingVersionUpsertOne) ID(ctx context.Context) (id int, err error) {
+func (u *RecordingVersionUpsertOne) ID(ctx context.Context) (id int64, err error) {
 	node, err := u.create.Save(ctx)
 	if err != nil {
 		return id, err
@@ -777,7 +797,7 @@ func (u *RecordingVersionUpsertOne) ID(ctx context.Context) (id int, err error) 
 }
 
 // IDX is like ID, but panics if an error occurs.
-func (u *RecordingVersionUpsertOne) IDX(ctx context.Context) int {
+func (u *RecordingVersionUpsertOne) IDX(ctx context.Context) int64 {
 	id, err := u.ID(ctx)
 	if err != nil {
 		panic(err)
@@ -832,9 +852,9 @@ func (_c *RecordingVersionCreateBulk) Save(ctx context.Context) ([]*RecordingVer
 					return nil, err
 				}
 				mutation.id = &nodes[i].ID
-				if specs[i].ID.Value != nil {
+				if specs[i].ID.Value != nil && nodes[i].ID == 0 {
 					id := specs[i].ID.Value.(int64)
-					nodes[i].ID = int(id)
+					nodes[i].ID = int64(id)
 				}
 				mutation.done = true
 				return nodes[i], nil
@@ -922,10 +942,20 @@ type RecordingVersionUpsertBulk struct {
 //	client.RecordingVersion.Create().
 //		OnConflict(
 //			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(recordingversion.FieldID)
+//			}),
 //		).
 //		Exec(ctx)
 func (u *RecordingVersionUpsertBulk) UpdateNewValues() *RecordingVersionUpsertBulk {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(recordingversion.FieldID)
+			}
+		}
+	}))
 	return u
 }
 

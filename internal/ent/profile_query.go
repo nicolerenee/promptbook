@@ -22,6 +22,7 @@ type ProfileQuery struct {
 	order      []profile.OrderOption
 	inters     []Interceptor
 	predicates []predicate.Profile
+	loadTotal  []func(context.Context, []*Profile) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -356,6 +357,11 @@ func (_q *ProfileQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Prof
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
 	}
 	return nodes, nil
 }

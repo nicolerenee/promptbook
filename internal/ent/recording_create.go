@@ -497,14 +497,14 @@ func (_c *RecordingCreate) SetShow(v *Show) *RecordingCreate {
 }
 
 // AddCastEntryIDs adds the "cast_entries" edge to the CastEntry entity by IDs.
-func (_c *RecordingCreate) AddCastEntryIDs(ids ...int) *RecordingCreate {
+func (_c *RecordingCreate) AddCastEntryIDs(ids ...int64) *RecordingCreate {
 	_c.mutation.AddCastEntryIDs(ids...)
 	return _c
 }
 
 // AddCastEntries adds the "cast_entries" edges to the CastEntry entity.
 func (_c *RecordingCreate) AddCastEntries(v ...*CastEntry) *RecordingCreate {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -512,14 +512,14 @@ func (_c *RecordingCreate) AddCastEntries(v ...*CastEntry) *RecordingCreate {
 }
 
 // AddVersionIDs adds the "versions" edge to the RecordingVersion entity by IDs.
-func (_c *RecordingCreate) AddVersionIDs(ids ...int) *RecordingCreate {
+func (_c *RecordingCreate) AddVersionIDs(ids ...int64) *RecordingCreate {
 	_c.mutation.AddVersionIDs(ids...)
 	return _c
 }
 
 // AddVersions adds the "versions" edges to the RecordingVersion entity.
 func (_c *RecordingCreate) AddVersions(v ...*RecordingVersion) *RecordingCreate {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -960,7 +960,7 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -976,7 +976,7 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

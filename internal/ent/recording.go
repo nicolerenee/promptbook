@@ -103,6 +103,11 @@ type RecordingEdges struct {
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
 	loadedTypes [3]bool
+	// totalCount holds the count of the edges above.
+	totalCount [3]map[string]int
+
+	namedCastEntries map[string][]*CastEntry
+	namedVersions    map[string][]*RecordingVersion
 }
 
 // ShowOrErr returns the Show value or an error if the edge
@@ -538,6 +543,54 @@ func (_m *Recording) String() string {
 	builder.WriteString(_m.LastSeenAt.Format(time.ANSIC))
 	builder.WriteByte(')')
 	return builder.String()
+}
+
+// NamedCastEntries returns the CastEntries named value or an error if the edge was not
+// loaded in eager-loading with this name.
+func (_m *Recording) NamedCastEntries(name string) ([]*CastEntry, error) {
+	if _m.Edges.namedCastEntries == nil {
+		return nil, &NotLoadedError{edge: name}
+	}
+	nodes, ok := _m.Edges.namedCastEntries[name]
+	if !ok {
+		return nil, &NotLoadedError{edge: name}
+	}
+	return nodes, nil
+}
+
+func (_m *Recording) appendNamedCastEntries(name string, edges ...*CastEntry) {
+	if _m.Edges.namedCastEntries == nil {
+		_m.Edges.namedCastEntries = make(map[string][]*CastEntry)
+	}
+	if len(edges) == 0 {
+		_m.Edges.namedCastEntries[name] = []*CastEntry{}
+	} else {
+		_m.Edges.namedCastEntries[name] = append(_m.Edges.namedCastEntries[name], edges...)
+	}
+}
+
+// NamedVersions returns the Versions named value or an error if the edge was not
+// loaded in eager-loading with this name.
+func (_m *Recording) NamedVersions(name string) ([]*RecordingVersion, error) {
+	if _m.Edges.namedVersions == nil {
+		return nil, &NotLoadedError{edge: name}
+	}
+	nodes, ok := _m.Edges.namedVersions[name]
+	if !ok {
+		return nil, &NotLoadedError{edge: name}
+	}
+	return nodes, nil
+}
+
+func (_m *Recording) appendNamedVersions(name string, edges ...*RecordingVersion) {
+	if _m.Edges.namedVersions == nil {
+		_m.Edges.namedVersions = make(map[string][]*RecordingVersion)
+	}
+	if len(edges) == 0 {
+		_m.Edges.namedVersions[name] = []*RecordingVersion{}
+	} else {
+		_m.Edges.namedVersions[name] = append(_m.Edges.namedVersions[name], edges...)
+	}
 }
 
 // Recordings is a parsable slice of Recording.

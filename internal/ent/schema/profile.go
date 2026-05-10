@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -18,12 +19,18 @@ type Profile struct {
 
 // Annotations sets the table name to `profile` and adds the singleton
 // CHECK constraint that's been on the table since migration 7.
+//
+// SkipAll keeps Profile out of the GraphQL surface — its `int` ID would
+// collide with the `int64` IDs everywhere else and trigger entgql's
+// mixed-id-types check. Profile remains addressable through the REST
+// `/api/v1/profile` endpoint.
 func (Profile) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{
 			Table: "profile",
 			Check: "id = 1",
 		},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 

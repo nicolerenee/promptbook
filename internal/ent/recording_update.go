@@ -552,14 +552,14 @@ func (_u *RecordingUpdate) SetShow(v *Show) *RecordingUpdate {
 }
 
 // AddCastEntryIDs adds the "cast_entries" edge to the CastEntry entity by IDs.
-func (_u *RecordingUpdate) AddCastEntryIDs(ids ...int) *RecordingUpdate {
+func (_u *RecordingUpdate) AddCastEntryIDs(ids ...int64) *RecordingUpdate {
 	_u.mutation.AddCastEntryIDs(ids...)
 	return _u
 }
 
 // AddCastEntries adds the "cast_entries" edges to the CastEntry entity.
 func (_u *RecordingUpdate) AddCastEntries(v ...*CastEntry) *RecordingUpdate {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -567,14 +567,14 @@ func (_u *RecordingUpdate) AddCastEntries(v ...*CastEntry) *RecordingUpdate {
 }
 
 // AddVersionIDs adds the "versions" edge to the RecordingVersion entity by IDs.
-func (_u *RecordingUpdate) AddVersionIDs(ids ...int) *RecordingUpdate {
+func (_u *RecordingUpdate) AddVersionIDs(ids ...int64) *RecordingUpdate {
 	_u.mutation.AddVersionIDs(ids...)
 	return _u
 }
 
 // AddVersions adds the "versions" edges to the RecordingVersion entity.
 func (_u *RecordingUpdate) AddVersions(v ...*RecordingVersion) *RecordingUpdate {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -599,14 +599,14 @@ func (_u *RecordingUpdate) ClearCastEntries() *RecordingUpdate {
 }
 
 // RemoveCastEntryIDs removes the "cast_entries" edge to CastEntry entities by IDs.
-func (_u *RecordingUpdate) RemoveCastEntryIDs(ids ...int) *RecordingUpdate {
+func (_u *RecordingUpdate) RemoveCastEntryIDs(ids ...int64) *RecordingUpdate {
 	_u.mutation.RemoveCastEntryIDs(ids...)
 	return _u
 }
 
 // RemoveCastEntries removes "cast_entries" edges to CastEntry entities.
 func (_u *RecordingUpdate) RemoveCastEntries(v ...*CastEntry) *RecordingUpdate {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -620,14 +620,14 @@ func (_u *RecordingUpdate) ClearVersions() *RecordingUpdate {
 }
 
 // RemoveVersionIDs removes the "versions" edge to RecordingVersion entities by IDs.
-func (_u *RecordingUpdate) RemoveVersionIDs(ids ...int) *RecordingUpdate {
+func (_u *RecordingUpdate) RemoveVersionIDs(ids ...int64) *RecordingUpdate {
 	_u.mutation.RemoveVersionIDs(ids...)
 	return _u
 }
 
 // RemoveVersions removes "versions" edges to RecordingVersion entities.
 func (_u *RecordingUpdate) RemoveVersions(v ...*RecordingVersion) *RecordingUpdate {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -841,7 +841,7 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
@@ -854,7 +854,7 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -870,7 +870,7 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -886,7 +886,7 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
@@ -899,7 +899,7 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -915,7 +915,7 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1465,14 +1465,14 @@ func (_u *RecordingUpdateOne) SetShow(v *Show) *RecordingUpdateOne {
 }
 
 // AddCastEntryIDs adds the "cast_entries" edge to the CastEntry entity by IDs.
-func (_u *RecordingUpdateOne) AddCastEntryIDs(ids ...int) *RecordingUpdateOne {
+func (_u *RecordingUpdateOne) AddCastEntryIDs(ids ...int64) *RecordingUpdateOne {
 	_u.mutation.AddCastEntryIDs(ids...)
 	return _u
 }
 
 // AddCastEntries adds the "cast_entries" edges to the CastEntry entity.
 func (_u *RecordingUpdateOne) AddCastEntries(v ...*CastEntry) *RecordingUpdateOne {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -1480,14 +1480,14 @@ func (_u *RecordingUpdateOne) AddCastEntries(v ...*CastEntry) *RecordingUpdateOn
 }
 
 // AddVersionIDs adds the "versions" edge to the RecordingVersion entity by IDs.
-func (_u *RecordingUpdateOne) AddVersionIDs(ids ...int) *RecordingUpdateOne {
+func (_u *RecordingUpdateOne) AddVersionIDs(ids ...int64) *RecordingUpdateOne {
 	_u.mutation.AddVersionIDs(ids...)
 	return _u
 }
 
 // AddVersions adds the "versions" edges to the RecordingVersion entity.
 func (_u *RecordingUpdateOne) AddVersions(v ...*RecordingVersion) *RecordingUpdateOne {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -1512,14 +1512,14 @@ func (_u *RecordingUpdateOne) ClearCastEntries() *RecordingUpdateOne {
 }
 
 // RemoveCastEntryIDs removes the "cast_entries" edge to CastEntry entities by IDs.
-func (_u *RecordingUpdateOne) RemoveCastEntryIDs(ids ...int) *RecordingUpdateOne {
+func (_u *RecordingUpdateOne) RemoveCastEntryIDs(ids ...int64) *RecordingUpdateOne {
 	_u.mutation.RemoveCastEntryIDs(ids...)
 	return _u
 }
 
 // RemoveCastEntries removes "cast_entries" edges to CastEntry entities.
 func (_u *RecordingUpdateOne) RemoveCastEntries(v ...*CastEntry) *RecordingUpdateOne {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -1533,14 +1533,14 @@ func (_u *RecordingUpdateOne) ClearVersions() *RecordingUpdateOne {
 }
 
 // RemoveVersionIDs removes the "versions" edge to RecordingVersion entities by IDs.
-func (_u *RecordingUpdateOne) RemoveVersionIDs(ids ...int) *RecordingUpdateOne {
+func (_u *RecordingUpdateOne) RemoveVersionIDs(ids ...int64) *RecordingUpdateOne {
 	_u.mutation.RemoveVersionIDs(ids...)
 	return _u
 }
 
 // RemoveVersions removes "versions" edges to RecordingVersion entities.
 func (_u *RecordingUpdateOne) RemoveVersions(v ...*RecordingVersion) *RecordingUpdateOne {
-	ids := make([]int, len(v))
+	ids := make([]int64, len(v))
 	for i := range v {
 		ids[i] = v[i].ID
 	}
@@ -1784,7 +1784,7 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
@@ -1797,7 +1797,7 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1813,7 +1813,7 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Columns: []string{recording.CastEntriesColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1829,7 +1829,7 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
@@ -1842,7 +1842,7 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1858,7 +1858,7 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Columns: []string{recording.VersionsColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt),
+				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

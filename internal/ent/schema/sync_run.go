@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -14,19 +15,28 @@ type SyncRun struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `sync_runs`.
+// Annotations sets the table name to `sync_runs` and exposes the
+// type to GraphQL with a Relay `syncRuns` connection.
 func (SyncRun) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "sync_runs"},
+		entgql.RelayConnection(),
+		entgql.QueryField(),
 	}
 }
 
 // Fields of SyncRun.
+//
+// The auto-increment `id` is declared explicitly as Int64 so it shares
+// the same Go type as Recording/Show/Performer IDs — entgql refuses to
+// generate a Relay schema with mixed PK Go types.
 func (SyncRun) Fields() []ent.Field {
 	return []ent.Field{
+		field.Int64("id"),
 		field.Text("kind"),
 		field.Time("started_at").
-			SchemaType(sqliteSchema(typeDatetime)),
+			SchemaType(sqliteSchema(typeDatetime)).
+			Annotations(entgql.OrderField("STARTED_AT")),
 		field.Time("finished_at").
 			Optional().
 			Nillable().

@@ -60,7 +60,7 @@ type CastEntryMutation struct {
 	config
 	op                 Op
 	typ                string
-	id                 *int
+	id                 *int64
 	performer_id       *int64
 	addperformer_id    *int64
 	performer_name     *string
@@ -103,7 +103,7 @@ func newCastEntryMutation(c config, op Op, opts ...castentryOption) *CastEntryMu
 }
 
 // withCastEntryID sets the ID field of the mutation.
-func withCastEntryID(id int) castentryOption {
+func withCastEntryID(id int64) castentryOption {
 	return func(m *CastEntryMutation) {
 		var (
 			err   error
@@ -153,9 +153,15 @@ func (m CastEntryMutation) Tx() (*Tx, error) {
 	return tx, nil
 }
 
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of CastEntry entities.
+func (m *CastEntryMutation) SetID(id int64) {
+	m.id = &id
+}
+
 // ID returns the ID value in the mutation. Note that the ID is only available
 // if it was provided to the builder or after it was returned from the database.
-func (m *CastEntryMutation) ID() (id int, exists bool) {
+func (m *CastEntryMutation) ID() (id int64, exists bool) {
 	if m.id == nil {
 		return
 	}
@@ -166,12 +172,12 @@ func (m *CastEntryMutation) ID() (id int, exists bool) {
 // That means, if the mutation is applied within a transaction with an isolation level such
 // as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
 // or updated by the mutation.
-func (m *CastEntryMutation) IDs(ctx context.Context) ([]int, error) {
+func (m *CastEntryMutation) IDs(ctx context.Context) ([]int64, error) {
 	switch {
 	case m.op.Is(OpUpdateOne | OpDeleteOne):
 		id, exists := m.ID()
 		if exists {
-			return []int{id}, nil
+			return []int64{id}, nil
 		}
 		fallthrough
 	case m.op.Is(OpUpdate | OpDelete):
@@ -6538,11 +6544,11 @@ type RecordingMutation struct {
 	clearedFields         map[string]struct{}
 	show                  *int64
 	clearedshow           bool
-	cast_entries          map[int]struct{}
-	removedcast_entries   map[int]struct{}
+	cast_entries          map[int64]struct{}
+	removedcast_entries   map[int64]struct{}
 	clearedcast_entries   bool
-	versions              map[int]struct{}
-	removedversions       map[int]struct{}
+	versions              map[int64]struct{}
+	removedversions       map[int64]struct{}
 	clearedversions       bool
 	done                  bool
 	oldValue              func(context.Context) (*Recording, error)
@@ -7997,9 +8003,9 @@ func (m *RecordingMutation) ResetShow() {
 }
 
 // AddCastEntryIDs adds the "cast_entries" edge to the CastEntry entity by ids.
-func (m *RecordingMutation) AddCastEntryIDs(ids ...int) {
+func (m *RecordingMutation) AddCastEntryIDs(ids ...int64) {
 	if m.cast_entries == nil {
-		m.cast_entries = make(map[int]struct{})
+		m.cast_entries = make(map[int64]struct{})
 	}
 	for i := range ids {
 		m.cast_entries[ids[i]] = struct{}{}
@@ -8017,9 +8023,9 @@ func (m *RecordingMutation) CastEntriesCleared() bool {
 }
 
 // RemoveCastEntryIDs removes the "cast_entries" edge to the CastEntry entity by IDs.
-func (m *RecordingMutation) RemoveCastEntryIDs(ids ...int) {
+func (m *RecordingMutation) RemoveCastEntryIDs(ids ...int64) {
 	if m.removedcast_entries == nil {
-		m.removedcast_entries = make(map[int]struct{})
+		m.removedcast_entries = make(map[int64]struct{})
 	}
 	for i := range ids {
 		delete(m.cast_entries, ids[i])
@@ -8028,7 +8034,7 @@ func (m *RecordingMutation) RemoveCastEntryIDs(ids ...int) {
 }
 
 // RemovedCastEntries returns the removed IDs of the "cast_entries" edge to the CastEntry entity.
-func (m *RecordingMutation) RemovedCastEntriesIDs() (ids []int) {
+func (m *RecordingMutation) RemovedCastEntriesIDs() (ids []int64) {
 	for id := range m.removedcast_entries {
 		ids = append(ids, id)
 	}
@@ -8036,7 +8042,7 @@ func (m *RecordingMutation) RemovedCastEntriesIDs() (ids []int) {
 }
 
 // CastEntriesIDs returns the "cast_entries" edge IDs in the mutation.
-func (m *RecordingMutation) CastEntriesIDs() (ids []int) {
+func (m *RecordingMutation) CastEntriesIDs() (ids []int64) {
 	for id := range m.cast_entries {
 		ids = append(ids, id)
 	}
@@ -8051,9 +8057,9 @@ func (m *RecordingMutation) ResetCastEntries() {
 }
 
 // AddVersionIDs adds the "versions" edge to the RecordingVersion entity by ids.
-func (m *RecordingMutation) AddVersionIDs(ids ...int) {
+func (m *RecordingMutation) AddVersionIDs(ids ...int64) {
 	if m.versions == nil {
-		m.versions = make(map[int]struct{})
+		m.versions = make(map[int64]struct{})
 	}
 	for i := range ids {
 		m.versions[ids[i]] = struct{}{}
@@ -8071,9 +8077,9 @@ func (m *RecordingMutation) VersionsCleared() bool {
 }
 
 // RemoveVersionIDs removes the "versions" edge to the RecordingVersion entity by IDs.
-func (m *RecordingMutation) RemoveVersionIDs(ids ...int) {
+func (m *RecordingMutation) RemoveVersionIDs(ids ...int64) {
 	if m.removedversions == nil {
-		m.removedversions = make(map[int]struct{})
+		m.removedversions = make(map[int64]struct{})
 	}
 	for i := range ids {
 		delete(m.versions, ids[i])
@@ -8082,7 +8088,7 @@ func (m *RecordingMutation) RemoveVersionIDs(ids ...int) {
 }
 
 // RemovedVersions returns the removed IDs of the "versions" edge to the RecordingVersion entity.
-func (m *RecordingMutation) RemovedVersionsIDs() (ids []int) {
+func (m *RecordingMutation) RemovedVersionsIDs() (ids []int64) {
 	for id := range m.removedversions {
 		ids = append(ids, id)
 	}
@@ -8090,7 +8096,7 @@ func (m *RecordingMutation) RemovedVersionsIDs() (ids []int) {
 }
 
 // VersionsIDs returns the "versions" edge IDs in the mutation.
-func (m *RecordingMutation) VersionsIDs() (ids []int) {
+func (m *RecordingMutation) VersionsIDs() (ids []int64) {
 	for id := range m.versions {
 		ids = append(ids, id)
 	}
@@ -9518,7 +9524,7 @@ type RecordingVersionMutation struct {
 	config
 	op                 Op
 	typ                string
-	id                 *int
+	id                 *int64
 	file_path          *string
 	file_size_bytes    *int64
 	addfile_size_bytes *int64
@@ -9558,7 +9564,7 @@ func newRecordingVersionMutation(c config, op Op, opts ...recordingversionOption
 }
 
 // withRecordingVersionID sets the ID field of the mutation.
-func withRecordingVersionID(id int) recordingversionOption {
+func withRecordingVersionID(id int64) recordingversionOption {
 	return func(m *RecordingVersionMutation) {
 		var (
 			err   error
@@ -9608,9 +9614,15 @@ func (m RecordingVersionMutation) Tx() (*Tx, error) {
 	return tx, nil
 }
 
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of RecordingVersion entities.
+func (m *RecordingVersionMutation) SetID(id int64) {
+	m.id = &id
+}
+
 // ID returns the ID value in the mutation. Note that the ID is only available
 // if it was provided to the builder or after it was returned from the database.
-func (m *RecordingVersionMutation) ID() (id int, exists bool) {
+func (m *RecordingVersionMutation) ID() (id int64, exists bool) {
 	if m.id == nil {
 		return
 	}
@@ -9621,12 +9633,12 @@ func (m *RecordingVersionMutation) ID() (id int, exists bool) {
 // That means, if the mutation is applied within a transaction with an isolation level such
 // as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
 // or updated by the mutation.
-func (m *RecordingVersionMutation) IDs(ctx context.Context) ([]int, error) {
+func (m *RecordingVersionMutation) IDs(ctx context.Context) ([]int64, error) {
 	switch {
 	case m.op.Is(OpUpdateOne | OpDeleteOne):
 		id, exists := m.ID()
 		if exists {
-			return []int{id}, nil
+			return []int64{id}, nil
 		}
 		fallthrough
 	case m.op.Is(OpUpdate | OpDelete):
@@ -11007,7 +11019,7 @@ type SyncRunMutation struct {
 	config
 	op                      Op
 	typ                     string
-	id                      *int
+	id                      *int64
 	kind                    *string
 	started_at              *time.Time
 	finished_at             *time.Time
@@ -11044,7 +11056,7 @@ func newSyncRunMutation(c config, op Op, opts ...syncrunOption) *SyncRunMutation
 }
 
 // withSyncRunID sets the ID field of the mutation.
-func withSyncRunID(id int) syncrunOption {
+func withSyncRunID(id int64) syncrunOption {
 	return func(m *SyncRunMutation) {
 		var (
 			err   error
@@ -11094,9 +11106,15 @@ func (m SyncRunMutation) Tx() (*Tx, error) {
 	return tx, nil
 }
 
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of SyncRun entities.
+func (m *SyncRunMutation) SetID(id int64) {
+	m.id = &id
+}
+
 // ID returns the ID value in the mutation. Note that the ID is only available
 // if it was provided to the builder or after it was returned from the database.
-func (m *SyncRunMutation) ID() (id int, exists bool) {
+func (m *SyncRunMutation) ID() (id int64, exists bool) {
 	if m.id == nil {
 		return
 	}
@@ -11107,12 +11125,12 @@ func (m *SyncRunMutation) ID() (id int, exists bool) {
 // That means, if the mutation is applied within a transaction with an isolation level such
 // as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
 // or updated by the mutation.
-func (m *SyncRunMutation) IDs(ctx context.Context) ([]int, error) {
+func (m *SyncRunMutation) IDs(ctx context.Context) ([]int64, error) {
 	switch {
 	case m.op.Is(OpUpdateOne | OpDeleteOne):
 		id, exists := m.ID()
 		if exists {
-			return []int{id}, nil
+			return []int64{id}, nil
 		}
 		fallthrough
 	case m.op.Is(OpUpdate | OpDelete):

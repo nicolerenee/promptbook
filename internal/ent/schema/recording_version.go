@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -18,16 +19,23 @@ type RecordingVersion struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `recording_versions`.
+// Annotations sets the table name to `recording_versions`. Versions
+// are reachable through the `Recording.versions` Relay connection.
 func (RecordingVersion) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "recording_versions"},
+		entgql.RelayConnection(),
 	}
 }
 
 // Fields of RecordingVersion.
+//
+// The auto-increment `id` is declared explicitly as Int64 so it shares
+// the same Go type as Recording/Show/Performer IDs — entgql refuses to
+// generate a Relay schema with mixed PK Go types.
 func (RecordingVersion) Fields() []ent.Field {
 	return []ent.Field{
+		field.Int64("id"),
 		field.Int64("recording_id"),
 		field.Text("file_path"),
 		field.Int64("file_size_bytes").Default(0),

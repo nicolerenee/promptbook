@@ -22,14 +22,17 @@ import (
 // RecordingQuery is the builder for querying Recording entities.
 type RecordingQuery struct {
 	config
-	ctx             *QueryContext
-	order           []recording.OrderOption
-	inters          []Interceptor
-	predicates      []predicate.Recording
-	withShow        *ShowQuery
-	withCastEntries *CastEntryQuery
-	withVersions    *RecordingVersionQuery
-	modifiers       []func(*sql.Selector)
+	ctx                  *QueryContext
+	order                []recording.OrderOption
+	inters               []Interceptor
+	predicates           []predicate.Recording
+	withShow             *ShowQuery
+	withCastEntries      *CastEntryQuery
+	withVersions         *RecordingVersionQuery
+	loadTotal            []func(context.Context, []*Recording) error
+	modifiers            []func(*sql.Selector)
+	withNamedCastEntries map[string]*CastEntryQuery
+	withNamedVersions    map[string]*RecordingVersionQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -492,6 +495,25 @@ func (_q *RecordingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Re
 			return nil, err
 		}
 	}
+	for name, query := range _q.withNamedCastEntries {
+		if err := _q.loadCastEntries(ctx, query, nodes,
+			func(n *Recording) { n.appendNamedCastEntries(name) },
+			func(n *Recording, e *CastEntry) { n.appendNamedCastEntries(name, e) }); err != nil {
+			return nil, err
+		}
+	}
+	for name, query := range _q.withNamedVersions {
+		if err := _q.loadVersions(ctx, query, nodes,
+			func(n *Recording) { n.appendNamedVersions(name) },
+			func(n *Recording, e *RecordingVersion) { n.appendNamedVersions(name, e) }); err != nil {
+			return nil, err
+		}
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -679,6 +701,34 @@ func (_q *RecordingQuery) sqlQuery(ctx context.Context) *sql.Selector {
 func (_q *RecordingQuery) Modify(modifiers ...func(s *sql.Selector)) *RecordingSelect {
 	_q.modifiers = append(_q.modifiers, modifiers...)
 	return _q.Select()
+}
+
+// WithNamedCastEntries tells the query-builder to eager-load the nodes that are connected to the "cast_entries"
+// edge with the given name. The optional arguments are used to configure the query builder of the edge.
+func (_q *RecordingQuery) WithNamedCastEntries(name string, opts ...func(*CastEntryQuery)) *RecordingQuery {
+	query := (&CastEntryClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	if _q.withNamedCastEntries == nil {
+		_q.withNamedCastEntries = make(map[string]*CastEntryQuery)
+	}
+	_q.withNamedCastEntries[name] = query
+	return _q
+}
+
+// WithNamedVersions tells the query-builder to eager-load the nodes that are connected to the "versions"
+// edge with the given name. The optional arguments are used to configure the query builder of the edge.
+func (_q *RecordingQuery) WithNamedVersions(name string, opts ...func(*RecordingVersionQuery)) *RecordingQuery {
+	query := (&RecordingVersionClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	if _q.withNamedVersions == nil {
+		_q.withNamedVersions = make(map[string]*RecordingVersionQuery)
+	}
+	_q.withNamedVersions[name] = query
+	return _q
 }
 
 // RecordingGroupBy is the group-by builder for Recording entities.

@@ -11,7 +11,7 @@ import (
 var (
 	// CastEntriesColumns holds the columns for the "cast_entries" table.
 	CastEntriesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "performer_id", Type: field.TypeInt64},
 		{Name: "performer_name", Type: field.TypeString, Size: 2147483647},
 		{Name: "performer_slug", Type: field.TypeString, Size: 2147483647, Default: ""},
@@ -304,7 +304,7 @@ var (
 	}
 	// RecordingVersionsColumns holds the columns for the "recording_versions" table.
 	RecordingVersionsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "file_path", Type: field.TypeString, Size: 2147483647},
 		{Name: "file_size_bytes", Type: field.TypeInt64, Default: 0},
 		{Name: "container", Type: field.TypeString, Size: 2147483647, Default: ""},
@@ -358,7 +358,7 @@ var (
 	}
 	// SyncRunsColumns holds the columns for the "sync_runs" table.
 	SyncRunsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "kind", Type: field.TypeString, Size: 2147483647},
 		{Name: "started_at", Type: field.TypeTime, SchemaType: map[string]string{"sqlite3": "datetime"}},
 		{Name: "finished_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"sqlite3": "datetime"}},

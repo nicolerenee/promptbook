@@ -22,6 +22,7 @@ type SyncRunQuery struct {
 	order      []syncrun.OrderOption
 	inters     []Interceptor
 	predicates []predicate.SyncRun
+	loadTotal  []func(context.Context, []*SyncRun) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -83,8 +84,8 @@ func (_q *SyncRunQuery) FirstX(ctx context.Context) *SyncRun {
 
 // FirstID returns the first SyncRun ID from the query.
 // Returns a *NotFoundError when no SyncRun ID was found.
-func (_q *SyncRunQuery) FirstID(ctx context.Context) (id int, err error) {
-	var ids []int
+func (_q *SyncRunQuery) FirstID(ctx context.Context) (id int64, err error) {
+	var ids []int64
 	if ids, err = _q.Limit(1).IDs(setContextOp(ctx, _q.ctx, ent.OpQueryFirstID)); err != nil {
 		return
 	}
@@ -96,7 +97,7 @@ func (_q *SyncRunQuery) FirstID(ctx context.Context) (id int, err error) {
 }
 
 // FirstIDX is like FirstID, but panics if an error occurs.
-func (_q *SyncRunQuery) FirstIDX(ctx context.Context) int {
+func (_q *SyncRunQuery) FirstIDX(ctx context.Context) int64 {
 	id, err := _q.FirstID(ctx)
 	if err != nil && !IsNotFound(err) {
 		panic(err)
@@ -134,8 +135,8 @@ func (_q *SyncRunQuery) OnlyX(ctx context.Context) *SyncRun {
 // OnlyID is like Only, but returns the only SyncRun ID in the query.
 // Returns a *NotSingularError when more than one SyncRun ID is found.
 // Returns a *NotFoundError when no entities are found.
-func (_q *SyncRunQuery) OnlyID(ctx context.Context) (id int, err error) {
-	var ids []int
+func (_q *SyncRunQuery) OnlyID(ctx context.Context) (id int64, err error) {
+	var ids []int64
 	if ids, err = _q.Limit(2).IDs(setContextOp(ctx, _q.ctx, ent.OpQueryOnlyID)); err != nil {
 		return
 	}
@@ -151,7 +152,7 @@ func (_q *SyncRunQuery) OnlyID(ctx context.Context) (id int, err error) {
 }
 
 // OnlyIDX is like OnlyID, but panics if an error occurs.
-func (_q *SyncRunQuery) OnlyIDX(ctx context.Context) int {
+func (_q *SyncRunQuery) OnlyIDX(ctx context.Context) int64 {
 	id, err := _q.OnlyID(ctx)
 	if err != nil {
 		panic(err)
@@ -179,7 +180,7 @@ func (_q *SyncRunQuery) AllX(ctx context.Context) []*SyncRun {
 }
 
 // IDs executes the query and returns a list of SyncRun IDs.
-func (_q *SyncRunQuery) IDs(ctx context.Context) (ids []int, err error) {
+func (_q *SyncRunQuery) IDs(ctx context.Context) (ids []int64, err error) {
 	if _q.ctx.Unique == nil && _q.path != nil {
 		_q.Unique(true)
 	}
@@ -191,7 +192,7 @@ func (_q *SyncRunQuery) IDs(ctx context.Context) (ids []int, err error) {
 }
 
 // IDsX is like IDs, but panics if an error occurs.
-func (_q *SyncRunQuery) IDsX(ctx context.Context) []int {
+func (_q *SyncRunQuery) IDsX(ctx context.Context) []int64 {
 	ids, err := _q.IDs(ctx)
 	if err != nil {
 		panic(err)
@@ -357,6 +358,11 @@ func (_q *SyncRunQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Sync
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -373,7 +379,7 @@ func (_q *SyncRunQuery) sqlCount(ctx context.Context) (int, error) {
 }
 
 func (_q *SyncRunQuery) querySpec() *sqlgraph.QuerySpec {
-	_spec := sqlgraph.NewQuerySpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
+	_spec := sqlgraph.NewQuerySpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt64))
 	_spec.From = _q.sql
 	if unique := _q.ctx.Unique; unique != nil {
 		_spec.Unique = *unique

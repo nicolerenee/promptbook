@@ -9,47 +9,47 @@ import (
 )
 
 // ID filters vertices based on their ID field.
-func ID(id int) predicate.CastEntry {
+func ID(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldEQ(FieldID, id))
 }
 
 // IDEQ applies the EQ predicate on the ID field.
-func IDEQ(id int) predicate.CastEntry {
+func IDEQ(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldEQ(FieldID, id))
 }
 
 // IDNEQ applies the NEQ predicate on the ID field.
-func IDNEQ(id int) predicate.CastEntry {
+func IDNEQ(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldNEQ(FieldID, id))
 }
 
 // IDIn applies the In predicate on the ID field.
-func IDIn(ids ...int) predicate.CastEntry {
+func IDIn(ids ...int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldIn(FieldID, ids...))
 }
 
 // IDNotIn applies the NotIn predicate on the ID field.
-func IDNotIn(ids ...int) predicate.CastEntry {
+func IDNotIn(ids ...int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldNotIn(FieldID, ids...))
 }
 
 // IDGT applies the GT predicate on the ID field.
-func IDGT(id int) predicate.CastEntry {
+func IDGT(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldGT(FieldID, id))
 }
 
 // IDGTE applies the GTE predicate on the ID field.
-func IDGTE(id int) predicate.CastEntry {
+func IDGTE(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldGTE(FieldID, id))
 }
 
 // IDLT applies the LT predicate on the ID field.
-func IDLT(id int) predicate.CastEntry {
+func IDLT(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldLT(FieldID, id))
 }
 
 // IDLTE applies the LTE predicate on the ID field.
-func IDLTE(id int) predicate.CastEntry {
+func IDLTE(id int64) predicate.CastEntry {
 	return predicate.CastEntry(sql.FieldLTE(FieldID, id))
 }
 

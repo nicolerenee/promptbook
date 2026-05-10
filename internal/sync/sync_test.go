@@ -177,7 +177,7 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 
 	t.Run("sync_run_logged", func(t *testing.T) {
 		t.Parallel()
-		row, lerr := db.SyncRun.Get(t.Context(), int(res.RunID))
+		row, lerr := db.SyncRun.Get(t.Context(), res.RunID)
 		require.NoError(t, lerr)
 		assert.Equal(t, promptbookSync.SyncKindAll, row.Kind)
 		assert.False(t, row.StartedAt.IsZero())

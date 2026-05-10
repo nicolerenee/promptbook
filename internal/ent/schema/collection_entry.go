@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -17,10 +18,14 @@ type CollectionEntry struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `collection`.
+// Annotations sets the table name to `collection`. Reachable through
+// the top-level `collectionEntries` Relay connection so the SPA can
+// query collection state without joining through Recording.
 func (CollectionEntry) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "collection"},
+		entgql.RelayConnection(),
+		entgql.QueryField(),
 	}
 }
 

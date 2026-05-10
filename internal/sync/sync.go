@@ -754,7 +754,7 @@ func insertSyncRun(
 	if err != nil {
 		return 0, err
 	}
-	return int64(row.ID), nil
+	return row.ID, nil
 }
 
 func updateSyncRun(
@@ -765,7 +765,7 @@ func updateSyncRun(
 	okCount, errorCount, rateLimitRemaining int,
 	errorText string,
 ) error {
-	_, err := client.SyncRun.UpdateOneID(int(runID)).
+	_, err := client.SyncRun.UpdateOneID(runID).
 		SetFinishedAt(finishedAt).
 		SetOkCount(okCount).
 		SetErrorCount(errorCount).

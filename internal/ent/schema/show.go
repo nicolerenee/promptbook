@@ -6,6 +6,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -20,10 +21,13 @@ type Show struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `shows`.
+// Annotations sets the table name to `shows` and exposes the type to
+// GraphQL with a `show(id:)` query field plus a Relay `shows` connection.
 func (Show) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "shows"},
+		entgql.RelayConnection(),
+		entgql.QueryField(),
 	}
 }
 
@@ -33,7 +37,8 @@ func (Show) Fields() []ent.Field {
 		field.Int64("id").
 			StorageKey("show_id").
 			Immutable(),
-		field.Text("name"),
+		field.Text("name").
+			Annotations(entgql.OrderField("NAME")),
 		field.Text("description_html").
 			Default(""),
 		field.Time("last_seen_at").
@@ -46,6 +51,7 @@ func (Show) Fields() []ent.Field {
 // Edges of Show.
 func (Show) Edges() []ent.Edge {
 	return []ent.Edge{
-		edge.To("recordings", Recording.Type),
+		edge.To("recordings", Recording.Type).
+			Annotations(entgql.RelayConnection()),
 	}
 }

@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -17,10 +18,13 @@ type HistoryEvent struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `history`.
+// Annotations sets the table name to `history`. The type is hidden
+// from GraphQL — its default `int` PK would clash with the `int64` IDs
+// on the in-scope nodes; the history surface stays REST-only.
 func (HistoryEvent) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "history"},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 

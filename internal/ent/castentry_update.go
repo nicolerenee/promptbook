@@ -291,7 +291,7 @@ func (_u *CastEntryUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if err := _u.check(); err != nil {
 		return _node, err
 	}
-	_spec := sqlgraph.NewUpdateSpec(castentry.Table, castentry.Columns, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt))
+	_spec := sqlgraph.NewUpdateSpec(castentry.Table, castentry.Columns, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
@@ -673,7 +673,7 @@ func (_u *CastEntryUpdateOne) sqlSave(ctx context.Context) (_node *CastEntry, er
 	if err := _u.check(); err != nil {
 		return _node, err
 	}
-	_spec := sqlgraph.NewUpdateSpec(castentry.Table, castentry.Columns, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt))
+	_spec := sqlgraph.NewUpdateSpec(castentry.Table, castentry.Columns, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
 	if !ok {
 		return nil, &ValidationError{Name: "id", err: errors.New(`ent: missing "CastEntry.id" for update`)}

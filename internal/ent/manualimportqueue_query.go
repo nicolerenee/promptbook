@@ -22,6 +22,7 @@ type ManualImportQueueQuery struct {
 	order      []manualimportqueue.OrderOption
 	inters     []Interceptor
 	predicates []predicate.ManualImportQueue
+	loadTotal  []func(context.Context, []*ManualImportQueue) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -356,6 +357,11 @@ func (_q *ManualImportQueueQuery) sqlAll(ctx context.Context, hooks ...queryHook
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
 	}
 	return nodes, nil
 }

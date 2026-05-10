@@ -22,6 +22,7 @@ type PerformerQuery struct {
 	order      []performer.OrderOption
 	inters     []Interceptor
 	predicates []predicate.Performer
+	loadTotal  []func(context.Context, []*Performer) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -356,6 +357,11 @@ func (_q *PerformerQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Pe
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
 	}
 	return nodes, nil
 }

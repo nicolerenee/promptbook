@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -16,10 +17,13 @@ type WantsEntry struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `wants`.
+// Annotations sets the table name to `wants` and exposes the type to
+// GraphQL with a Relay `wantsEntries` connection.
 func (WantsEntry) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "wants"},
+		entgql.RelayConnection(),
+		entgql.QueryField(),
 	}
 }
 
@@ -32,7 +36,10 @@ func (WantsEntry) Fields() []ent.Field {
 		field.Time("last_synced_at").
 			Default(time.Now).
 			SchemaType(sqliteSchema(typeDatetime)).
-			Annotations(entsql.Default("CURRENT_TIMESTAMP")),
+			Annotations(
+				entsql.Default("CURRENT_TIMESTAMP"),
+				entgql.OrderField("LAST_SYNCED_AT"),
+			),
 	}
 }
 

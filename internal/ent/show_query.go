@@ -20,12 +20,14 @@ import (
 // ShowQuery is the builder for querying Show entities.
 type ShowQuery struct {
 	config
-	ctx            *QueryContext
-	order          []show.OrderOption
-	inters         []Interceptor
-	predicates     []predicate.Show
-	withRecordings *RecordingQuery
-	modifiers      []func(*sql.Selector)
+	ctx                 *QueryContext
+	order               []show.OrderOption
+	inters              []Interceptor
+	predicates          []predicate.Show
+	withRecordings      *RecordingQuery
+	loadTotal           []func(context.Context, []*Show) error
+	modifiers           []func(*sql.Selector)
+	withNamedRecordings map[string]*RecordingQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -405,6 +407,18 @@ func (_q *ShowQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Show, e
 			return nil, err
 		}
 	}
+	for name, query := range _q.withNamedRecordings {
+		if err := _q.loadRecordings(ctx, query, nodes,
+			func(n *Show) { n.appendNamedRecordings(name) },
+			func(n *Show, e *Recording) { n.appendNamedRecordings(name, e) }); err != nil {
+			return nil, err
+		}
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -530,6 +544,20 @@ func (_q *ShowQuery) sqlQuery(ctx context.Context) *sql.Selector {
 func (_q *ShowQuery) Modify(modifiers ...func(s *sql.Selector)) *ShowSelect {
 	_q.modifiers = append(_q.modifiers, modifiers...)
 	return _q.Select()
+}
+
+// WithNamedRecordings tells the query-builder to eager-load the nodes that are connected to the "recordings"
+// edge with the given name. The optional arguments are used to configure the query builder of the edge.
+func (_q *ShowQuery) WithNamedRecordings(name string, opts ...func(*RecordingQuery)) *ShowQuery {
+	query := (&RecordingClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	if _q.withNamedRecordings == nil {
+		_q.withNamedRecordings = make(map[string]*RecordingQuery)
+	}
+	_q.withNamedRecordings[name] = query
+	return _q
 }
 
 // ShowGroupBy is the group-by builder for Show entities.

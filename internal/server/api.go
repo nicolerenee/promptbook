@@ -176,6 +176,15 @@ func (s *Server) routes() {
 	api.GET("/jobs/queue", s.handleListJobQueue)
 	api.POST("/jobs/scheduled/:name/run", s.handleRunJob)
 
+	// GraphQL endpoint (Phase 3). POST /graphql for queries, GET for
+	// CORS preflight + Apollo GET, GET /graphql/playground for the
+	// interactive sandbox. Registered before the SPA catch-all so Echo
+	// routes /graphql to the gqlgen handler instead of the Mithril
+	// shell. The schema covers Recording / Show / Performer /
+	// CollectionEntry / WantsEntry / SyncRun; non-catalog surfaces
+	// (jobs, history, settings, image picker) stay REST-only.
+	s.registerGraphQL()
+
 	// SPA catch-all. Echo prefers more-specific matches, so /api/v1/*
 	// (registered above) and /static/* (registered in server.New) win
 	// over this for their respective prefixes. Every other GET — `/`,
@@ -490,7 +499,7 @@ func (s *Server) handleSyncRuns(c echo.Context) error {
 	out := make([]runRow, 0, len(rows))
 	for _, r := range rows {
 		row := runRow{
-			ID:                 int64(r.ID),
+			ID:                 r.ID,
 			Kind:               r.Kind,
 			StartedAt:          r.StartedAt.Format("2006-01-02 15:04:05"),
 			OkCount:            r.OkCount,

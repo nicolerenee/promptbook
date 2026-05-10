@@ -30,6 +30,12 @@ tasks:
       - task: clean
       - task: build
 
+  # Codegen tasks
+  generate:
+    desc: Regenerate ent + entgql + gqlgen artifacts
+    cmds:
+      - go generate ./internal/...
+
   # Test tasks
   test:
     desc: Run tests

@@ -193,7 +193,7 @@ func (_u *SyncRunUpdate) Modify(modifiers ...func(u *sql.UpdateBuilder)) *SyncRu
 }
 
 func (_u *SyncRunUpdate) sqlSave(ctx context.Context) (_node int, err error) {
-	_spec := sqlgraph.NewUpdateSpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
+	_spec := sqlgraph.NewUpdateSpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt64))
 	if ps := _u.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
@@ -433,7 +433,7 @@ func (_u *SyncRunUpdateOne) Modify(modifiers ...func(u *sql.UpdateBuilder)) *Syn
 }
 
 func (_u *SyncRunUpdateOne) sqlSave(ctx context.Context) (_node *SyncRun, err error) {
-	_spec := sqlgraph.NewUpdateSpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
+	_spec := sqlgraph.NewUpdateSpec(syncrun.Table, syncrun.Columns, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt64))
 	id, ok := _u.mutation.ID()
 	if !ok {
 		return nil, &ValidationError{Name: "id", err: errors.New(`ent: missing "SyncRun.id" for update`)}

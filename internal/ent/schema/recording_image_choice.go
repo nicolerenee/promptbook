@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -15,10 +16,14 @@ type RecordingImageChoice struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `recording_image_choices`.
+// Annotations sets the table name to `recording_image_choices`. The
+// type is hidden from the GraphQL surface for now — overlay edits stay
+// behind the dedicated REST endpoints in Wave 12. Phase 4 can lift
+// this once a mutation surface is on the menu.
 func (RecordingImageChoice) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "recording_image_choices"},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 

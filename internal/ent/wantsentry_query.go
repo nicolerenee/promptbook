@@ -22,6 +22,7 @@ type WantsEntryQuery struct {
 	order      []wantsentry.OrderOption
 	inters     []Interceptor
 	predicates []predicate.WantsEntry
+	loadTotal  []func(context.Context, []*WantsEntry) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -356,6 +357,11 @@ func (_q *WantsEntryQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*W
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
 	}
 	return nodes, nil
 }

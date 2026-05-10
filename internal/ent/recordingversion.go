@@ -17,7 +17,7 @@ import (
 type RecordingVersion struct {
 	config `json:"-"`
 	// ID of the ent.
-	ID int `json:"id,omitempty"`
+	ID int64 `json:"id,omitempty"`
 	// RecordingID holds the value of the "recording_id" field.
 	RecordingID int64 `json:"recording_id,omitempty"`
 	// FilePath holds the value of the "file_path" field.
@@ -53,6 +53,8 @@ type RecordingVersionEdges struct {
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
 	loadedTypes [1]bool
+	// totalCount holds the count of the edges above.
+	totalCount [1]map[string]int
 }
 
 // RecordingOrErr returns the Recording value or an error if the edge
@@ -97,7 +99,7 @@ func (_m *RecordingVersion) assignValues(columns []string, values []any) error {
 			if !ok {
 				return fmt.Errorf("unexpected type %T for field id", value)
 			}
-			_m.ID = int(value.Int64)
+			_m.ID = int64(value.Int64)
 		case recordingversion.FieldRecordingID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field recording_id", values[i])

@@ -119,12 +119,10 @@ func upsertVersion(
 
 // DeleteVersion removes a single recording_versions row by primary key.
 // Missing rows are not an error — callers reconciling against on-disk
-// state may issue deletes optimistically. id is taken as int64 for
-// caller convenience; the ent ID column is a smaller int but the cache
-// would require a billion rows before truncation matters.
+// state may issue deletes optimistically.
 func DeleteVersion(ctx context.Context, client *ent.Client, id int64) error {
 	_, err := client.RecordingVersion.Delete().
-		Where(recordingversion.IDEQ(int(id))).
+		Where(recordingversion.IDEQ(id)).
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("delete recording_version %d: %w", id, err)
@@ -182,7 +180,7 @@ func (v RecordingVersion) lastSeenOrNow() time.Time {
 // JSON-wire shape stays decoupled from the ORM.
 func recordingVersionFromEnt(r *ent.RecordingVersion) RecordingVersion {
 	return RecordingVersion{
-		ID:            int64(r.ID),
+		ID:            r.ID,
 		RecordingID:   r.RecordingID,
 		FilePath:      r.FilePath,
 		FileSizeBytes: r.FileSizeBytes,

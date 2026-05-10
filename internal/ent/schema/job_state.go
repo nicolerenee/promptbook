@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -13,10 +14,13 @@ type JobState struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `job_state`.
+// Annotations sets the table name to `job_state`. The type is hidden
+// from GraphQL — its `string` PK would clash with the `int64` IDs on
+// the in-scope nodes; the jobs surface stays REST-only.
 func (JobState) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "job_state"},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 

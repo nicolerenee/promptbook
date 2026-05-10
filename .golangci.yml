@@ -459,6 +459,12 @@ linters:
       - '\.claude/'
       - 'internal/ent/[^/]+\.go$'
       - 'internal/ent/(castentry|character|collectionentry|enttest|historyevent|hook|jobrun|jobstate|manualimportqueue|migrate|performer|predicate|profile|recording|recordingimagechoice|recordingversion|runtime|show|syncrun|wantsentry)/'
+      # gqlgen-managed files. generated.go is fully generated; the
+      # *.resolvers.go skeletons are regenerated whenever the schema
+      # changes (gqlgen overwrites the formatting), so trying to keep
+      # them tidy with goimports/golines is a losing battle.
+      - 'internal/server/graph/generated\.go$'
+      - 'internal/server/graph/.*\.resolvers\.go$'
     # Excluding configuration per-path, per-linter, per-text and per-source.
     rules:
       - path: '_test\.go'

@@ -29,23 +29,23 @@ func init() {
 	castentryFields := schema.CastEntry{}.Fields()
 	_ = castentryFields
 	// castentryDescPerformerSlug is the schema descriptor for performer_slug field.
-	castentryDescPerformerSlug := castentryFields[3].Descriptor()
+	castentryDescPerformerSlug := castentryFields[4].Descriptor()
 	// castentry.DefaultPerformerSlug holds the default value on creation for the performer_slug field.
 	castentry.DefaultPerformerSlug = castentryDescPerformerSlug.Default.(string)
 	// castentryDescPerformerURL is the schema descriptor for performer_url field.
-	castentryDescPerformerURL := castentryFields[4].Descriptor()
+	castentryDescPerformerURL := castentryFields[5].Descriptor()
 	// castentry.DefaultPerformerURL holds the default value on creation for the performer_url field.
 	castentry.DefaultPerformerURL = castentryDescPerformerURL.Default.(string)
 	// castentryDescCharacterSlug is the schema descriptor for character_slug field.
-	castentryDescCharacterSlug := castentryFields[7].Descriptor()
+	castentryDescCharacterSlug := castentryFields[8].Descriptor()
 	// castentry.DefaultCharacterSlug holds the default value on creation for the character_slug field.
 	castentry.DefaultCharacterSlug = castentryDescCharacterSlug.Default.(string)
 	// castentryDescCharacterURL is the schema descriptor for character_url field.
-	castentryDescCharacterURL := castentryFields[8].Descriptor()
+	castentryDescCharacterURL := castentryFields[9].Descriptor()
 	// castentry.DefaultCharacterURL holds the default value on creation for the character_url field.
 	castentry.DefaultCharacterURL = castentryDescCharacterURL.Default.(string)
 	// castentryDescCharacterOrder is the schema descriptor for character_order field.
-	castentryDescCharacterOrder := castentryFields[9].Descriptor()
+	castentryDescCharacterOrder := castentryFields[10].Descriptor()
 	// castentry.DefaultCharacterOrder holds the default value on creation for the character_order field.
 	castentry.DefaultCharacterOrder = castentryDescCharacterOrder.Default.(int)
 	characterFields := schema.Character{}.Fields()
@@ -305,39 +305,39 @@ func init() {
 	recordingversionFields := schema.RecordingVersion{}.Fields()
 	_ = recordingversionFields
 	// recordingversionDescFileSizeBytes is the schema descriptor for file_size_bytes field.
-	recordingversionDescFileSizeBytes := recordingversionFields[2].Descriptor()
+	recordingversionDescFileSizeBytes := recordingversionFields[3].Descriptor()
 	// recordingversion.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
 	recordingversion.DefaultFileSizeBytes = recordingversionDescFileSizeBytes.Default.(int64)
 	// recordingversionDescContainer is the schema descriptor for container field.
-	recordingversionDescContainer := recordingversionFields[3].Descriptor()
+	recordingversionDescContainer := recordingversionFields[4].Descriptor()
 	// recordingversion.DefaultContainer holds the default value on creation for the container field.
 	recordingversion.DefaultContainer = recordingversionDescContainer.Default.(string)
 	// recordingversionDescQuality is the schema descriptor for quality field.
-	recordingversionDescQuality := recordingversionFields[4].Descriptor()
+	recordingversionDescQuality := recordingversionFields[5].Descriptor()
 	// recordingversion.DefaultQuality holds the default value on creation for the quality field.
 	recordingversion.DefaultQuality = recordingversionDescQuality.Default.(string)
 	// recordingversionDescVideoCodec is the schema descriptor for video_codec field.
-	recordingversionDescVideoCodec := recordingversionFields[5].Descriptor()
+	recordingversionDescVideoCodec := recordingversionFields[6].Descriptor()
 	// recordingversion.DefaultVideoCodec holds the default value on creation for the video_codec field.
 	recordingversion.DefaultVideoCodec = recordingversionDescVideoCodec.Default.(string)
 	// recordingversionDescAudioCodec is the schema descriptor for audio_codec field.
-	recordingversionDescAudioCodec := recordingversionFields[6].Descriptor()
+	recordingversionDescAudioCodec := recordingversionFields[7].Descriptor()
 	// recordingversion.DefaultAudioCodec holds the default value on creation for the audio_codec field.
 	recordingversion.DefaultAudioCodec = recordingversionDescAudioCodec.Default.(string)
 	// recordingversionDescFormatLabel is the schema descriptor for format_label field.
-	recordingversionDescFormatLabel := recordingversionFields[7].Descriptor()
+	recordingversionDescFormatLabel := recordingversionFields[8].Descriptor()
 	// recordingversion.DefaultFormatLabel holds the default value on creation for the format_label field.
 	recordingversion.DefaultFormatLabel = recordingversionDescFormatLabel.Default.(string)
 	// recordingversionDescNotes is the schema descriptor for notes field.
-	recordingversionDescNotes := recordingversionFields[8].Descriptor()
+	recordingversionDescNotes := recordingversionFields[9].Descriptor()
 	// recordingversion.DefaultNotes holds the default value on creation for the notes field.
 	recordingversion.DefaultNotes = recordingversionDescNotes.Default.(string)
 	// recordingversionDescAddedAt is the schema descriptor for added_at field.
-	recordingversionDescAddedAt := recordingversionFields[9].Descriptor()
+	recordingversionDescAddedAt := recordingversionFields[10].Descriptor()
 	// recordingversion.DefaultAddedAt holds the default value on creation for the added_at field.
 	recordingversion.DefaultAddedAt = recordingversionDescAddedAt.Default.(func() time.Time)
 	// recordingversionDescLastSeenAt is the schema descriptor for last_seen_at field.
-	recordingversionDescLastSeenAt := recordingversionFields[10].Descriptor()
+	recordingversionDescLastSeenAt := recordingversionFields[11].Descriptor()
 	// recordingversion.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
 	recordingversion.DefaultLastSeenAt = recordingversionDescLastSeenAt.Default.(func() time.Time)
 	showFields := schema.Show{}.Fields()
@@ -353,19 +353,19 @@ func init() {
 	syncrunFields := schema.SyncRun{}.Fields()
 	_ = syncrunFields
 	// syncrunDescOkCount is the schema descriptor for ok_count field.
-	syncrunDescOkCount := syncrunFields[3].Descriptor()
+	syncrunDescOkCount := syncrunFields[4].Descriptor()
 	// syncrun.DefaultOkCount holds the default value on creation for the ok_count field.
 	syncrun.DefaultOkCount = syncrunDescOkCount.Default.(int)
 	// syncrunDescErrorCount is the schema descriptor for error_count field.
-	syncrunDescErrorCount := syncrunFields[4].Descriptor()
+	syncrunDescErrorCount := syncrunFields[5].Descriptor()
 	// syncrun.DefaultErrorCount holds the default value on creation for the error_count field.
 	syncrun.DefaultErrorCount = syncrunDescErrorCount.Default.(int)
 	// syncrunDescRateLimitRemaining is the schema descriptor for rate_limit_remaining field.
-	syncrunDescRateLimitRemaining := syncrunFields[5].Descriptor()
+	syncrunDescRateLimitRemaining := syncrunFields[6].Descriptor()
 	// syncrun.DefaultRateLimitRemaining holds the default value on creation for the rate_limit_remaining field.
 	syncrun.DefaultRateLimitRemaining = syncrunDescRateLimitRemaining.Default.(int)
 	// syncrunDescErrorText is the schema descriptor for error_text field.
-	syncrunDescErrorText := syncrunFields[6].Descriptor()
+	syncrunDescErrorText := syncrunFields[7].Descriptor()
 	// syncrun.DefaultErrorText holds the default value on creation for the error_text field.
 	syncrun.DefaultErrorText = syncrunDescErrorText.Default.(string)
 	wantsentryFields := schema.WantsEntry{}.Fields()

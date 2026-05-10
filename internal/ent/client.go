@@ -67,6 +67,8 @@ type Client struct {
 	SyncRun *SyncRunClient
 	// WantsEntry is the client for interacting with the WantsEntry builders.
 	WantsEntry *WantsEntryClient
+	// additional fields for node api
+	tables tables
 }
 
 // NewClient creates a new client configured with the given options.
@@ -382,7 +384,7 @@ func (c *CastEntryClient) UpdateOne(_m *CastEntry) *CastEntryUpdateOne {
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *CastEntryClient) UpdateOneID(id int) *CastEntryUpdateOne {
+func (c *CastEntryClient) UpdateOneID(id int64) *CastEntryUpdateOne {
 	mutation := newCastEntryMutation(c.config, OpUpdateOne, withCastEntryID(id))
 	return &CastEntryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
@@ -399,7 +401,7 @@ func (c *CastEntryClient) DeleteOne(_m *CastEntry) *CastEntryDeleteOne {
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *CastEntryClient) DeleteOneID(id int) *CastEntryDeleteOne {
+func (c *CastEntryClient) DeleteOneID(id int64) *CastEntryDeleteOne {
 	builder := c.Delete().Where(castentry.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
@@ -416,12 +418,12 @@ func (c *CastEntryClient) Query() *CastEntryQuery {
 }
 
 // Get returns a CastEntry entity by its id.
-func (c *CastEntryClient) Get(ctx context.Context, id int) (*CastEntry, error) {
+func (c *CastEntryClient) Get(ctx context.Context, id int64) (*CastEntry, error) {
 	return c.Query().Where(castentry.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *CastEntryClient) GetX(ctx context.Context, id int) *CastEntry {
+func (c *CastEntryClient) GetX(ctx context.Context, id int64) *CastEntry {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)
@@ -1909,7 +1911,7 @@ func (c *RecordingVersionClient) UpdateOne(_m *RecordingVersion) *RecordingVersi
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *RecordingVersionClient) UpdateOneID(id int) *RecordingVersionUpdateOne {
+func (c *RecordingVersionClient) UpdateOneID(id int64) *RecordingVersionUpdateOne {
 	mutation := newRecordingVersionMutation(c.config, OpUpdateOne, withRecordingVersionID(id))
 	return &RecordingVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
@@ -1926,7 +1928,7 @@ func (c *RecordingVersionClient) DeleteOne(_m *RecordingVersion) *RecordingVersi
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *RecordingVersionClient) DeleteOneID(id int) *RecordingVersionDeleteOne {
+func (c *RecordingVersionClient) DeleteOneID(id int64) *RecordingVersionDeleteOne {
 	builder := c.Delete().Where(recordingversion.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
@@ -1943,12 +1945,12 @@ func (c *RecordingVersionClient) Query() *RecordingVersionQuery {
 }
 
 // Get returns a RecordingVersion entity by its id.
-func (c *RecordingVersionClient) Get(ctx context.Context, id int) (*RecordingVersion, error) {
+func (c *RecordingVersionClient) Get(ctx context.Context, id int64) (*RecordingVersion, error) {
 	return c.Query().Where(recordingversion.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *RecordingVersionClient) GetX(ctx context.Context, id int) *RecordingVersion {
+func (c *RecordingVersionClient) GetX(ctx context.Context, id int64) *RecordingVersion {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)
@@ -2207,7 +2209,7 @@ func (c *SyncRunClient) UpdateOne(_m *SyncRun) *SyncRunUpdateOne {
 }
 
 // UpdateOneID returns an update builder for the given id.
-func (c *SyncRunClient) UpdateOneID(id int) *SyncRunUpdateOne {
+func (c *SyncRunClient) UpdateOneID(id int64) *SyncRunUpdateOne {
 	mutation := newSyncRunMutation(c.config, OpUpdateOne, withSyncRunID(id))
 	return &SyncRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
 }
@@ -2224,7 +2226,7 @@ func (c *SyncRunClient) DeleteOne(_m *SyncRun) *SyncRunDeleteOne {
 }
 
 // DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *SyncRunClient) DeleteOneID(id int) *SyncRunDeleteOne {
+func (c *SyncRunClient) DeleteOneID(id int64) *SyncRunDeleteOne {
 	builder := c.Delete().Where(syncrun.ID(id))
 	builder.mutation.id = &id
 	builder.mutation.op = OpDeleteOne
@@ -2241,12 +2243,12 @@ func (c *SyncRunClient) Query() *SyncRunQuery {
 }
 
 // Get returns a SyncRun entity by its id.
-func (c *SyncRunClient) Get(ctx context.Context, id int) (*SyncRun, error) {
+func (c *SyncRunClient) Get(ctx context.Context, id int64) (*SyncRun, error) {
 	return c.Query().Where(syncrun.ID(id)).Only(ctx)
 }
 
 // GetX is like Get, but panics if an error occurs.
-func (c *SyncRunClient) GetX(ctx context.Context, id int) *SyncRun {
+func (c *SyncRunClient) GetX(ctx context.Context, id int64) *SyncRun {
 	obj, err := c.Get(ctx, id)
 	if err != nil {
 		panic(err)

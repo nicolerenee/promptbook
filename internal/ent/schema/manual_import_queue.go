@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -16,10 +17,13 @@ type ManualImportQueue struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `manual_import_queue`.
+// Annotations sets the table name to `manual_import_queue`. The type
+// is hidden from GraphQL — its default `int` PK would clash with the
+// `int64` IDs on the in-scope nodes; the queue surface stays REST-only.
 func (ManualImportQueue) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "manual_import_queue"},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 

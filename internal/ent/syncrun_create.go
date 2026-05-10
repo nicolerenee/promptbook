@@ -104,6 +104,12 @@ func (_c *SyncRunCreate) SetNillableErrorText(v *string) *SyncRunCreate {
 	return _c
 }
 
+// SetID sets the "id" field.
+func (_c *SyncRunCreate) SetID(v int64) *SyncRunCreate {
+	_c.mutation.SetID(v)
+	return _c
+}
+
 // Mutation returns the SyncRunMutation object of the builder.
 func (_c *SyncRunCreate) Mutation() *SyncRunMutation {
 	return _c.mutation
@@ -191,8 +197,10 @@ func (_c *SyncRunCreate) sqlSave(ctx context.Context) (*SyncRun, error) {
 		}
 		return nil, err
 	}
-	id := _spec.ID.Value.(int64)
-	_node.ID = int(id)
+	if _spec.ID.Value != _node.ID {
+		id := _spec.ID.Value.(int64)
+		_node.ID = int64(id)
+	}
 	_c.mutation.id = &_node.ID
 	_c.mutation.done = true
 	return _node, nil
@@ -201,9 +209,13 @@ func (_c *SyncRunCreate) sqlSave(ctx context.Context) (*SyncRun, error) {
 func (_c *SyncRunCreate) createSpec() (*SyncRun, *sqlgraph.CreateSpec) {
 	var (
 		_node = &SyncRun{config: _c.config}
-		_spec = sqlgraph.NewCreateSpec(syncrun.Table, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt))
+		_spec = sqlgraph.NewCreateSpec(syncrun.Table, sqlgraph.NewFieldSpec(syncrun.FieldID, field.TypeInt64))
 	)
 	_spec.OnConflict = _c.conflict
+	if id, ok := _c.mutation.ID(); ok {
+		_node.ID = id
+		_spec.ID.Value = id
+	}
 	if value, ok := _c.mutation.Kind(); ok {
 		_spec.SetField(syncrun.FieldKind, field.TypeString, value)
 		_node.Kind = value
@@ -392,16 +404,24 @@ func (u *SyncRunUpsert) UpdateErrorText() *SyncRunUpsert {
 	return u
 }
 
-// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
 //	client.SyncRun.Create().
 //		OnConflict(
 //			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(syncrun.FieldID)
+//			}),
 //		).
 //		Exec(ctx)
 func (u *SyncRunUpsertOne) UpdateNewValues() *SyncRunUpsertOne {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(syncrun.FieldID)
+		}
+	}))
 	return u
 }
 
@@ -574,7 +594,7 @@ func (u *SyncRunUpsertOne) ExecX(ctx context.Context) {
 }
 
 // Exec executes the UPSERT query and returns the inserted/updated ID.
-func (u *SyncRunUpsertOne) ID(ctx context.Context) (id int, err error) {
+func (u *SyncRunUpsertOne) ID(ctx context.Context) (id int64, err error) {
 	node, err := u.create.Save(ctx)
 	if err != nil {
 		return id, err
@@ -583,7 +603,7 @@ func (u *SyncRunUpsertOne) ID(ctx context.Context) (id int, err error) {
 }
 
 // IDX is like ID, but panics if an error occurs.
-func (u *SyncRunUpsertOne) IDX(ctx context.Context) int {
+func (u *SyncRunUpsertOne) IDX(ctx context.Context) int64 {
 	id, err := u.ID(ctx)
 	if err != nil {
 		panic(err)
@@ -638,9 +658,9 @@ func (_c *SyncRunCreateBulk) Save(ctx context.Context) ([]*SyncRun, error) {
 					return nil, err
 				}
 				mutation.id = &nodes[i].ID
-				if specs[i].ID.Value != nil {
+				if specs[i].ID.Value != nil && nodes[i].ID == 0 {
 					id := specs[i].ID.Value.(int64)
-					nodes[i].ID = int(id)
+					nodes[i].ID = int64(id)
 				}
 				mutation.done = true
 				return nodes[i], nil
@@ -728,10 +748,20 @@ type SyncRunUpsertBulk struct {
 //	client.SyncRun.Create().
 //		OnConflict(
 //			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(syncrun.FieldID)
+//			}),
 //		).
 //		Exec(ctx)
 func (u *SyncRunUpsertBulk) UpdateNewValues() *SyncRunUpsertBulk {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(syncrun.FieldID)
+			}
+		}
+	}))
 	return u
 }
 

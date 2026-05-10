@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -18,10 +19,14 @@ type Recording struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `recordings`.
+// Annotations sets the table name to `recordings` and exposes the
+// type to GraphQL with a `recording(id:)` query field plus a Relay
+// `recordings` connection.
 func (Recording) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "recordings"},
+		entgql.RelayConnection(),
+		entgql.QueryField(),
 	}
 }
 
@@ -32,13 +37,16 @@ func (Recording) Fields() []ent.Field {
 			StorageKey("recording_id").
 			Immutable(),
 		field.Int64("show_id"),
-		field.Text("tour").Default(""),
-		field.Text("date_full").Default(""),
+		field.Text("tour").Default("").
+			Annotations(entgql.OrderField("TOUR")),
+		field.Text("date_full").Default("").
+			Annotations(entgql.OrderField("DATE_FULL")),
 		field.Bool("date_month_known").Default(false),
 		field.Bool("date_day_known").Default(false),
 		field.Text("date_variant").Optional().Nillable(),
 		field.Text("date_time").Default("unknown"),
-		field.Text("master").Default(""),
+		field.Text("master").Default("").
+			Annotations(entgql.OrderField("MASTER")),
 		field.Text("nft_date").Optional().Nillable(),
 		field.Bool("nft_forever").Default(false),
 		field.Text("notes").Default(""),
@@ -62,7 +70,8 @@ func (Recording) Fields() []ent.Field {
 		field.Bool("boot_camp_recommended").Default(false),
 		field.Int("owners_count").Default(0),
 		field.Int("wanters_count").Default(0),
-		field.Text("last_updated").Default(""),
+		field.Text("last_updated").Default("").
+			Annotations(entgql.OrderField("LAST_UPDATED")),
 		// raw_json holds the JSON-encoded encora.Recording. Plain Text
 		// keeps marshaling simple — callers serialize/deserialize at
 		// the package boundary.
@@ -90,9 +99,15 @@ func (Recording) Edges() []ent.Edge {
 			Unique().
 			Required(),
 		edge.To("cast_entries", CastEntry.Type).
-			Annotations(entsql.OnDelete(entsql.Cascade)),
+			Annotations(
+				entsql.OnDelete(entsql.Cascade),
+				entgql.RelayConnection(),
+			),
 		edge.To("versions", RecordingVersion.Type).
-			Annotations(entsql.OnDelete(entsql.Cascade)),
+			Annotations(
+				entsql.OnDelete(entsql.Cascade),
+				entgql.RelayConnection(),
+			),
 	}
 }
 

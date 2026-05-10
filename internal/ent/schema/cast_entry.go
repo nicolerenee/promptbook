@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -17,16 +18,24 @@ type CastEntry struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `cast_entries`.
+// Annotations sets the table name to `cast_entries`. Cast entries are
+// reachable through the `Recording.cast_entries` Relay connection;
+// there is no top-level `castEntries` query.
 func (CastEntry) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "cast_entries"},
+		entgql.RelayConnection(),
 	}
 }
 
 // Fields of CastEntry.
+//
+// The auto-increment `id` is declared explicitly as Int64 so it shares
+// the same Go type as Recording/Show/Performer IDs — entgql refuses to
+// generate a Relay schema with mixed PK Go types.
 func (CastEntry) Fields() []ent.Field {
 	return []ent.Field{
+		field.Int64("id"),
 		field.Int64("recording_id"),
 		field.Int64("performer_id"),
 		field.Text("performer_name"),

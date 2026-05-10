@@ -22,6 +22,7 @@ type RecordingImageChoiceQuery struct {
 	order      []recordingimagechoice.OrderOption
 	inters     []Interceptor
 	predicates []predicate.RecordingImageChoice
+	loadTotal  []func(context.Context, []*RecordingImageChoice) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -356,6 +357,11 @@ func (_q *RecordingImageChoiceQuery) sqlAll(ctx context.Context, hooks ...queryH
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
 	}
 	return nodes, nil
 }

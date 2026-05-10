@@ -22,6 +22,7 @@ type CollectionEntryQuery struct {
 	order      []collectionentry.OrderOption
 	inters     []Interceptor
 	predicates []predicate.CollectionEntry
+	loadTotal  []func(context.Context, []*CollectionEntry) error
 	modifiers  []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -356,6 +357,11 @@ func (_q *CollectionEntryQuery) sqlAll(ctx context.Context, hooks ...queryHook) 
 	}
 	if len(nodes) == 0 {
 		return nodes, nil
+	}
+	for i := range _q.loadTotal {
+		if err := _q.loadTotal[i](ctx, nodes); err != nil {
+			return nil, err
+		}
 	}
 	return nodes, nil
 }

@@ -150,6 +150,12 @@ func (_c *CastEntryCreate) SetNillableStatusAbbrev(v *string) *CastEntryCreate {
 	return _c
 }
 
+// SetID sets the "id" field.
+func (_c *CastEntryCreate) SetID(v int64) *CastEntryCreate {
+	_c.mutation.SetID(v)
+	return _c
+}
+
 // SetRecording sets the "recording" edge to the Recording entity.
 func (_c *CastEntryCreate) SetRecording(v *Recording) *CastEntryCreate {
 	return _c.SetRecordingID(v.ID)
@@ -261,8 +267,10 @@ func (_c *CastEntryCreate) sqlSave(ctx context.Context) (*CastEntry, error) {
 		}
 		return nil, err
 	}
-	id := _spec.ID.Value.(int64)
-	_node.ID = int(id)
+	if _spec.ID.Value != _node.ID {
+		id := _spec.ID.Value.(int64)
+		_node.ID = int64(id)
+	}
 	_c.mutation.id = &_node.ID
 	_c.mutation.done = true
 	return _node, nil
@@ -271,9 +279,13 @@ func (_c *CastEntryCreate) sqlSave(ctx context.Context) (*CastEntry, error) {
 func (_c *CastEntryCreate) createSpec() (*CastEntry, *sqlgraph.CreateSpec) {
 	var (
 		_node = &CastEntry{config: _c.config}
-		_spec = sqlgraph.NewCreateSpec(castentry.Table, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt))
+		_spec = sqlgraph.NewCreateSpec(castentry.Table, sqlgraph.NewFieldSpec(castentry.FieldID, field.TypeInt64))
 	)
 	_spec.OnConflict = _c.conflict
+	if id, ok := _c.mutation.ID(); ok {
+		_node.ID = id
+		_spec.ID.Value = id
+	}
 	if value, ok := _c.mutation.PerformerID(); ok {
 		_spec.SetField(castentry.FieldPerformerID, field.TypeInt64, value)
 		_node.PerformerID = value
@@ -561,16 +573,24 @@ func (u *CastEntryUpsert) ClearStatusAbbrev() *CastEntryUpsert {
 	return u
 }
 
-// UpdateNewValues updates the mutable fields using the new values that were set on create.
+// UpdateNewValues updates the mutable fields using the new values that were set on create except the ID field.
 // Using this option is equivalent to using:
 //
 //	client.CastEntry.Create().
 //		OnConflict(
 //			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(castentry.FieldID)
+//			}),
 //		).
 //		Exec(ctx)
 func (u *CastEntryUpsertOne) UpdateNewValues() *CastEntryUpsertOne {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		if _, exists := u.create.mutation.ID(); exists {
+			s.SetIgnore(castentry.FieldID)
+		}
+	}))
 	return u
 }
 
@@ -820,7 +840,7 @@ func (u *CastEntryUpsertOne) ExecX(ctx context.Context) {
 }
 
 // Exec executes the UPSERT query and returns the inserted/updated ID.
-func (u *CastEntryUpsertOne) ID(ctx context.Context) (id int, err error) {
+func (u *CastEntryUpsertOne) ID(ctx context.Context) (id int64, err error) {
 	node, err := u.create.Save(ctx)
 	if err != nil {
 		return id, err
@@ -829,7 +849,7 @@ func (u *CastEntryUpsertOne) ID(ctx context.Context) (id int, err error) {
 }
 
 // IDX is like ID, but panics if an error occurs.
-func (u *CastEntryUpsertOne) IDX(ctx context.Context) int {
+func (u *CastEntryUpsertOne) IDX(ctx context.Context) int64 {
 	id, err := u.ID(ctx)
 	if err != nil {
 		panic(err)
@@ -884,9 +904,9 @@ func (_c *CastEntryCreateBulk) Save(ctx context.Context) ([]*CastEntry, error) {
 					return nil, err
 				}
 				mutation.id = &nodes[i].ID
-				if specs[i].ID.Value != nil {
+				if specs[i].ID.Value != nil && nodes[i].ID == 0 {
 					id := specs[i].ID.Value.(int64)
-					nodes[i].ID = int(id)
+					nodes[i].ID = int64(id)
 				}
 				mutation.done = true
 				return nodes[i], nil
@@ -974,10 +994,20 @@ type CastEntryUpsertBulk struct {
 //	client.CastEntry.Create().
 //		OnConflict(
 //			sql.ResolveWithNewValues(),
+//			sql.ResolveWith(func(u *sql.UpdateSet) {
+//				u.SetIgnore(castentry.FieldID)
+//			}),
 //		).
 //		Exec(ctx)
 func (u *CastEntryUpsertBulk) UpdateNewValues() *CastEntryUpsertBulk {
 	u.create.conflict = append(u.create.conflict, sql.ResolveWithNewValues())
+	u.create.conflict = append(u.create.conflict, sql.ResolveWith(func(s *sql.UpdateSet) {
+		for _, b := range u.create.builders {
+			if _, exists := b.mutation.ID(); exists {
+				s.SetIgnore(castentry.FieldID)
+			}
+		}
+	}))
 	return u
 }
 

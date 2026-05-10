@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -15,10 +16,14 @@ type Character struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `characters`.
+// Annotations sets the table name to `characters`. Hidden from the
+// GraphQL surface — cast_entries already denormalize the character
+// name/slug/url fields callers need, so a top-level Character node
+// would just be noise.
 func (Character) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "characters"},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 

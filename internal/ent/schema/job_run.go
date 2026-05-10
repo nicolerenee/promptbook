@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"entgo.io/contrib/entgql"
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -15,10 +16,13 @@ type JobRun struct {
 	ent.Schema
 }
 
-// Annotations sets the table name to `job_runs`.
+// Annotations sets the table name to `job_runs`. The type is hidden
+// from GraphQL — its default `int` PK would clash with the `int64` IDs
+// on Recording/Show/Performer; the jobs surface stays REST-only.
 func (JobRun) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "job_runs"},
+		entgql.Skip(entgql.SkipAll),
 	}
 }
 
