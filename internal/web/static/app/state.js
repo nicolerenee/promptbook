@@ -155,6 +155,12 @@ export const state = {
     error: null,
     importingItem:  null,
     importingLocal: null,
+    // rescanning is true while the Re-scan button has fired the
+    // scan-incoming job and is waiting for the refetch. rescanError
+    // carries a short inline message when the trigger fails (jobs
+    // not configured, scan already running, etc.).
+    rescanning:  false,
+    rescanError: null,
   },
   // history mirrors the legacy /static/history.js view-model. kind is
   // the active filter tab; recordingID, when set, scopes the list to

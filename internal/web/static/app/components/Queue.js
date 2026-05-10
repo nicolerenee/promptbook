@@ -23,12 +23,14 @@
 // snake_case to match the rest of the row shape.
 //
 // Behavior parity notes:
-//   - Re-scan + Import-all-auto-resolved are cosmetic stubs (legacy
-//     behavior). They stay disabled until a future wave wires them.
+//   - Re-scan triggers the scan-incoming scheduled job + refetches
+//     the queue after a brief delay. Import-all-auto-resolved stays
+//     a cosmetic stub until a future wave wires it.
 //   - Items are sorted newest-first by discovered_at, matching the
 //     legacy display order.
 
 import m from 'https://esm.sh/mithril@2.2.2';
+import api from '../api.js';
 import graphql from '../graphql.js';
 import state from '../state.js';
 import { humanSize, smartDate, relativeTime, errorMessage } from '../utils/format.js';
@@ -124,6 +126,40 @@ function mapQueueItem(node) {
     out.suggested_recording_id = null;
   }
   return out;
+}
+
+// triggerRescan POSTs the scan-incoming job + refetches the queue
+// once the run has had a moment to land. The job is async — RunNow
+// returns immediately with a run_id — so we wait briefly before
+// refetching so a typical small-incoming-dir scan has time to write
+// its rows. The button enters a busy state for the duration so a
+// rapid double-click is a no-op.
+function triggerRescan() {
+  const q = state.queue;
+  if (q.rescanning) return;
+  q.rescanning = true;
+  q.rescanError = null;
+  m.redraw();
+
+  api.post('/jobs/scheduled/scan-incoming/run', {})
+    .then(() => new Promise((resolve) => setTimeout(resolve, 1500)))
+    .then(() => loadQueue())
+    .catch((err) => {
+      // 503 (jobs not configured) and 409 (already running) get a
+      // brief inline message rather than an alert; everything else
+      // surfaces the underlying error text the same way.
+      if (err && err.status === 409) {
+        q.rescanError = 'A scan is already running.';
+      } else if (err && err.status === 503) {
+        q.rescanError = 'Scanner is not configured.';
+      } else {
+        q.rescanError = errorMessage(err);
+      }
+    })
+    .then(() => {
+      q.rescanning = false;
+      m.redraw();
+    });
 }
 
 // loadQueue fetches the queue list and stores it in shared state. Items
@@ -303,14 +339,22 @@ const Queue = {
           m('h1', { class: 'text-3xl font-semibold' }, 'Queue'),
           m('p', { class: 'text-sm opacity-70 mt-1' }, subText),
         ]),
-        // Action buttons — both cosmetic stubs (legacy behavior).
+        // Action buttons. Re-scan triggers the scan-incoming job +
+        // refetches; Import-all-auto-resolved is still a stub.
         m('div', { class: 'flex items-center gap-2' }, [
+          state.queue.rescanError
+            ? m('span', { class: 'text-xs text-error mr-2' },
+                state.queue.rescanError)
+            : null,
           m('button', {
             type: 'button',
             class: 'btn btn-ghost btn-sm',
-            disabled: true,
-            title: '(coming soon)',
-          }, 'Re-scan'),
+            disabled: !!state.queue.rescanning,
+            onclick: triggerRescan,
+          }, state.queue.rescanning
+            ? [m('span', { class: 'loading loading-spinner loading-xs' }),
+               'Re-scanning…']
+            : 'Re-scan'),
           m('button', {
             type: 'button',
             class: 'btn btn-primary btn-sm',
