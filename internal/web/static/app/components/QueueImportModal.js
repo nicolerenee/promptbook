@@ -399,15 +399,22 @@ const QueueImportModal = {
     // browser-managed open state doesn't fight a stale render.
     if (!item || !local) {
       return m('dialog', { class: 'modal' },
-        m('div', { class: 'modal-box max-w-2xl' }, ' '));
+        m('div', { class: 'modal-box max-w-4xl' }, ' '));
     }
 
     const canImport = !!(local.match && local.match.id) && !local.importing;
     const filePath  = item.file_path || '';
     const size      = humanSize(item.file_size_bytes);
+    // Split the path so the filename gets prominent rendering and the
+    // directory hangs out underneath in muted text. The user looks at
+    // the filename a lot when verifying a match — burying it inside a
+    // truncated full path with hover-to-reveal was friction.
+    const slashIdx  = filePath.lastIndexOf('/');
+    const fileName  = slashIdx >= 0 ? filePath.substring(slashIdx + 1) : filePath;
+    const dirPath   = slashIdx >= 0 ? filePath.substring(0, slashIdx) : '';
 
     return m('dialog', { class: 'modal' }, [
-      m('div', { class: 'modal-box max-w-2xl' }, [
+      m('div', { class: 'modal-box max-w-4xl' }, [
         // Close button at the corner.
         m('form', { method: 'dialog' },
           m('button', {
@@ -417,18 +424,19 @@ const QueueImportModal = {
           }, '✕')),
         m('h3', { class: 'font-bold text-lg mb-2 pr-8' }, 'Import file'),
 
-        // File path + size header. extras_count surfaces alongside the
-        // path so the user is reminded that the folder also holds
-        // companion files; only the main file moves on import.
+        // Filename + size + directory header. The filename gets the
+        // prominent line because the user reads it most when verifying
+        // a match. extras_count surfaces alongside so the user is
+        // reminded the folder also holds companion files — only the
+        // main file moves on import.
         m('div', { class: 'space-y-1 mb-4' }, [
-          m('div', { class: 'flex items-center gap-2 min-w-0' }, [
+          m('div', { class: 'flex items-start gap-2 min-w-0' }, [
             m('div', {
-              class: 'font-mono text-sm truncate',
-              title: filePath,
-            }, filePath),
+              class: 'font-mono text-sm break-all flex-1',
+            }, fileName),
             item.extras_count > 0
               ? m('span', {
-                  class: 'badge badge-ghost badge-sm shrink-0',
+                  class: 'badge badge-ghost badge-sm shrink-0 mt-0.5',
                   title: 'Other media files in the same folder. ' +
                          'Only the main file imports; extras stay in place.',
                 }, '+' + item.extras_count + ' extra' +
@@ -436,6 +444,11 @@ const QueueImportModal = {
               : null,
           ]),
           m('div', { class: 'text-xs opacity-60 font-mono' }, size),
+          dirPath
+            ? m('div', {
+                class: 'text-xs opacity-60 font-mono break-all',
+              }, dirPath)
+            : null,
         ]),
 
         // Match section.
