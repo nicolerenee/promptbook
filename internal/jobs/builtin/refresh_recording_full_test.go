@@ -135,7 +135,7 @@ func newFullJobFixture(t *testing.T) *fullJobFixture {
 	cacheRoot := filepath.Join(tmp, "image-cache")
 	require.NoError(t, os.MkdirAll(cacheRoot, 0o755))
 	cache := imagecache.New(cacheRoot, nil, zerolog.Nop())
-	nfoSvc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	nfoSvc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 
 	// The Encora "fresh" payload differs in Notes + Tour so the upsert
 	// is observable via storage.LoadRecording after the job runs.

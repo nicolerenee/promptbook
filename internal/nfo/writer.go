@@ -21,6 +21,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/rename"
 )
@@ -378,6 +379,14 @@ type WriteOptions struct {
 	// and /images/actors/<id>.jpg URLs in place of (or alongside) the
 	// local cache paths. A trailing slash is tolerated and stripped.
 	PublicURL string
+	// ExternalIDs, when non-empty, replaces FromRecording's default
+	// single Encora UniqueID with one <uniqueid> per provider. The
+	// Encora entry stays default="true" (Jellyfin treats it as the
+	// canonical key); other providers map straight to their type
+	// strings ("tmdb", "imdb", …). When nil / empty the writer falls
+	// back to the legacy single-Encora shape so callers that don't
+	// yet thread external_ids through preserve their wire format.
+	ExternalIDs []externalids.ExternalID
 }
 
 // WriteRecordingFile renders the NFO for rec into folder. When
@@ -405,12 +414,64 @@ func WriteRecordingFile(
 	opts WriteOptions,
 ) (string, error) {
 	model := FromRecording(rec)
+	if len(opts.ExternalIDs) > 0 {
+		model.UniqueIDs = uniqueIDsFromExternalIDs(opts.ExternalIDs, rec.ID)
+	}
 	if base := strings.TrimSuffix(opts.PublicURL, "/"); base != "" {
 		applyPublicURLImages(&model, rec, base, opts.Cache)
 	} else {
 		applyLocalImages(&model, rec, folder, opts.Cache)
 	}
 	return WriteFile(folder, model)
+}
+
+// uniqueIDsFromExternalIDs converts the supplied external_ids list
+// into the NFO's <uniqueid> elements. The encora row stays
+// default="true" (Jellyfin keys recording identity on the default
+// entry); other providers map straight to their type strings.
+//
+// Ordering: encora first (so default="true" surfaces at the top of
+// the file), then the remaining providers in their input order. A
+// caller-supplied list that omits encora still falls back to the
+// recording's int64 id under the encora type — every Jellyfin scan
+// needs at least one default uniqueid to deduplicate, so this
+// invariant is preserved even for purely-non-Encora inputs.
+//
+// Providers without a corresponding rec id at all (the unusual case
+// where opts.ExternalIDs is set without an Encora row AND the caller
+// passes recordingID=0) get a fallback encora entry of "0", which
+// Jellyfin happily ignores but keeps the file shape stable.
+func uniqueIDsFromExternalIDs(
+	ids []externalids.ExternalID, recordingID int64,
+) []UniqueID {
+	out := make([]UniqueID, 0, len(ids)+1)
+	var encora *externalids.ExternalID
+	others := make([]externalids.ExternalID, 0, len(ids))
+	for i, id := range ids {
+		if id.Provider == externalids.ProviderEncora {
+			cp := ids[i]
+			encora = &cp
+			continue
+		}
+		others = append(others, id)
+	}
+	if encora == nil {
+		// Fallback so the file always carries an Encora default.
+		out = append(out, UniqueID{
+			Type: string(externalids.ProviderEncora), Default: true,
+			Value: strconv.FormatInt(recordingID, 10),
+		})
+	} else {
+		out = append(out, UniqueID{
+			Type: string(encora.Provider), Default: true, Value: encora.ExternalID,
+		})
+	}
+	for _, id := range others {
+		out = append(out, UniqueID{
+			Type: string(id.Provider), Value: id.ExternalID,
+		})
+	}
+	return out
 }
 
 // applyPublicURLImages mutates model to reference absolute http(s)

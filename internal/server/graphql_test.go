@@ -1067,7 +1067,7 @@ func recordingRenameTestServer(t *testing.T) (*server.Server, *ent.Client, strin
 
 	cache := imagecache.New(imageRoot, nil, zerolog.New(io.Discard))
 	logger := zerolog.New(io.Discard)
-	refresh := nforefresh.New(db, cache, "", logger)
+	refresh := nforefresh.New(db, nil, cache, "", logger)
 
 	srv, err := server.New(server.Options{
 		DB:         db,

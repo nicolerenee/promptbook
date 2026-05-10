@@ -25,6 +25,7 @@ package nforefresh
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -34,6 +35,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -43,7 +45,12 @@ import (
 // All fields are required — construct via New so a misconfigured
 // Service never silently degrades to a no-op.
 type Service struct {
-	db        *ent.Client
+	db *ent.Client
+	// sqlDB shares db's connection pool. Read by the rewrite path so
+	// the regenerated NFO carries one <uniqueid> per external_ids row
+	// (encora + tmdb + imdb + …). Optional: nil falls back to the
+	// writer's legacy single-Encora shape.
+	sqlDB     *sql.DB
 	cache     *imagecache.Cache
 	publicURL string
 	logger    zerolog.Logger
@@ -52,19 +59,41 @@ type Service struct {
 // New constructs a Service. publicURL may be empty — the rewrite still
 // runs but the resulting NFO falls back to local-sibling-path mode,
 // which is the right behaviour for an installation that doesn't expose
-// an external URL. db is required; nil aborts the call.
+// an external URL. db is required; nil aborts the call. sqlDB is
+// optional — when nil the rewritten NFO carries only the legacy
+// single-Encora <uniqueid>; when set it emits one entry per row in
+// external_ids.
 func New(
 	db *ent.Client,
+	sqlDB *sql.DB,
 	cache *imagecache.Cache,
 	publicURL string,
 	logger zerolog.Logger,
 ) *Service {
 	return &Service{
 		db:        db,
+		sqlDB:     sqlDB,
 		cache:     cache,
 		publicURL: publicURL,
 		logger:    logger,
 	}
+}
+
+// loadExternalIDs returns the recording's external_ids rows for the
+// rewrite path's <uniqueid> emission. Nil sqlDB skips the call so
+// callers without the handle wired (legacy tests) keep working —
+// the writer's encora fallback covers that mode.
+func (s *Service) loadExternalIDs(
+	ctx context.Context, recordingID int64,
+) ([]externalids.ExternalID, error) {
+	if s.sqlDB == nil {
+		return nil, nil
+	}
+	rows, err := externalids.ListForRecording(ctx, s.sqlDB, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("list external_ids: %w", err)
+	}
+	return rows, nil
 }
 
 // RewriteForRecording loads the recording's destination folder from
@@ -101,14 +130,20 @@ func (s *Service) RewriteForRecording(ctx context.Context, recordingID int64) er
 		return nil
 	}
 
+	extIDs, extIDsErr := s.loadExternalIDs(ctx, recordingID)
+	if extIDsErr != nil {
+		s.logger.Warn().Err(extIDsErr).Int64("recording_id", recordingID).
+			Msg("nforefresh: failed to load external_ids; falling back to legacy shape")
+	}
 	written, err := nfo.WriteRecordingFile(
 		ctx,
 		folder,
 		loaded.Recording,
 		nfo.WriteOptions{
-			DB:        s.db,
-			Cache:     s.cache,
-			PublicURL: s.publicURL,
+			DB:          s.db,
+			Cache:       s.cache,
+			PublicURL:   s.publicURL,
+			ExternalIDs: extIDs,
 		},
 	)
 	if err != nil {

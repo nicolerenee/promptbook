@@ -2,6 +2,7 @@ package nfo_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/nfo"
 )
@@ -467,6 +469,59 @@ func TestWriteFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(got), `<?xml version="1.0"`)
 	assert.Contains(t, string(got), `<uniqueid type="encora" default="true">90100222</uniqueid>`)
+}
+
+// TestWriteRecordingFileEmitsOneUniqueIDPerExternalID covers commit
+// 4's framework hook: when WriteOptions.ExternalIDs is set, the
+// writer emits one <uniqueid> per row instead of the legacy
+// single-Encora shape. The Encora row stays default="true" so
+// Jellyfin keys dedupe on it; other providers carry their type
+// strings verbatim.
+func TestWriteRecordingFileEmitsOneUniqueIDPerExternalID(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	rec := loadMarigold(t)
+	_, err := nfo.WriteRecordingFile(
+		context.Background(),
+		dir,
+		rec,
+		nfo.WriteOptions{
+			ExternalIDs: []externalids.ExternalID{
+				{Provider: externalids.ProviderEncora, ExternalID: "90100222"},
+				{Provider: externalids.ProviderTMDB, ExternalID: "90181637"},
+				{Provider: externalids.ProviderIMDB, ExternalID: "tt99999999"},
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(filepath.Join(dir, "movie.nfo"))
+	require.NoError(t, err)
+	body := string(got)
+	assert.Contains(t, body, `<uniqueid type="encora" default="true">90100222</uniqueid>`)
+	assert.Contains(t, body, `<uniqueid type="tmdb" default="false">90181637</uniqueid>`)
+	assert.Contains(t, body, `<uniqueid type="imdb" default="false">tt99999999</uniqueid>`)
+}
+
+// TestWriteRecordingFileFallbackEncoraWhenListEmpty asserts the legacy
+// single-Encora shape stays intact when the caller doesn't supply
+// ExternalIDs — preserves the wire format for every existing
+// consumer that hasn't been re-wired yet.
+func TestWriteRecordingFileFallbackEncoraWhenListEmpty(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	rec := loadMarigold(t)
+	_, err := nfo.WriteRecordingFile(context.Background(), dir, rec, nfo.WriteOptions{})
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(filepath.Join(dir, "movie.nfo"))
+	require.NoError(t, err)
+	body := string(got)
+	assert.Contains(t, body, `<uniqueid type="encora" default="true">90100222</uniqueid>`)
+	assert.NotContains(t, body, `<uniqueid type="tmdb"`)
+	assert.NotContains(t, body, `<uniqueid type="imdb"`)
 }
 
 // TestFormatRolePrefixesStatus asserts the role string carries the

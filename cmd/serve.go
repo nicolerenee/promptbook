@@ -146,7 +146,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// NFO-refresh service is shared with the per-entity image-refresh
 	// jobs so the cascade fires both off the upload-handler triggers
 	// (Server constructs its own copy) and off background job writes.
-	nfoRefresh := buildNFORefresh(db, imgCache)
+	nfoRefresh := buildNFORefresh(db, sqlDB, imgCache)
 
 	runner := buildJobRunner(ctx, db, sqlDB, encClient, smClient, imgCache, imgRenderer, nfoRefresh)
 
@@ -192,11 +192,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 // buildNFORefresh returns the NFO-refresh service, or nil when image
 // caching is off. Pulled out of runServe so the function stays under
 // the funlen ceiling without disabling the lint outright.
-func buildNFORefresh(db *ent.Client, imgCache *imagecache.Cache) *nforefresh.Service {
+func buildNFORefresh(
+	db *ent.Client, sqlDB *sql.DB, imgCache *imagecache.Cache,
+) *nforefresh.Service {
 	if imgCache == nil || imgCache.Disabled() {
 		return nil
 	}
-	return nforefresh.New(db, imgCache, appConfig.Server.PublicURL, log.Logger)
+	return nforefresh.New(db, sqlDB, imgCache, appConfig.Server.PublicURL, log.Logger)
 }
 
 // buildIngestEngine returns the queue-import ingest.Engine — wired

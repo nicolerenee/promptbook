@@ -174,7 +174,7 @@ func TestRewriteForRecording(t *testing.T) {
 	posterMtime := int64(1_700_001_001)
 	writeImageWithMtime(t, cache.RecordingPosterPath(recID), posterMtime)
 
-	svc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	svc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 	require.NoError(t, svc.RewriteForRecording(ctx, recID))
 
 	nfoPath := filepath.Join(recFolder, "movie.nfo")
@@ -198,7 +198,7 @@ func TestRewriteForRecording_NoVersion(t *testing.T) {
 	seedRecording(ctx, t, db, recID, 12345, nil)
 
 	cache := imagecache.New(t.TempDir(), nil, zerolog.Nop())
-	svc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	svc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 
 	// Should silently succeed — no version row → no folder → no work.
 	require.NoError(t, svc.RewriteForRecording(ctx, recID))
@@ -213,7 +213,7 @@ func TestRewriteForRecording_NotFound(t *testing.T) {
 	ctx, db := openTestDB(t)
 
 	cache := imagecache.New(t.TempDir(), nil, zerolog.Nop())
-	svc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	svc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 
 	require.NoError(t, svc.RewriteForRecording(ctx, 99999))
 }
@@ -244,7 +244,7 @@ func TestRewriteForShow(t *testing.T) {
 	bannerMtime := int64(1_700_002_002)
 	writeImageWithMtime(t, cache.ShowBannerPath(showID), bannerMtime)
 
-	svc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	svc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 	require.NoError(t, svc.RewriteForShow(ctx, showID))
 
 	// Every recording's NFO carries the banner URL with the new mtime.
@@ -297,7 +297,7 @@ func TestRewriteForPerformer(t *testing.T) {
 	headshotMtime := int64(1_700_003_003)
 	writeImageWithMtime(t, cache.HeadshotPath(performerID), headshotMtime)
 
-	svc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	svc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 	require.NoError(t, svc.RewriteForPerformer(ctx, performerID))
 
 	// recA + recB carry an NFO referencing the new headshot mtime.
@@ -340,7 +340,7 @@ func TestRewriteForRecording_MtimeAdvancesContent(t *testing.T) {
 	cache := imagecache.New(cacheRoot, nil, zerolog.Nop())
 	writeImageWithMtime(t, cache.RecordingFanartPath(recID), 1_700_000_100)
 
-	svc := nforefresh.New(db, cache, "https://promptbook.example.com", zerolog.Nop())
+	svc := nforefresh.New(db, nil, cache, "https://promptbook.example.com", zerolog.Nop())
 	require.NoError(t, svc.RewriteForRecording(ctx, recID))
 	first, err := os.ReadFile(filepath.Join(recFolder, "movie.nfo"))
 	require.NoError(t, err)

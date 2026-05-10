@@ -255,6 +255,12 @@ type ItemResult struct {
 	// fetches; it still probes media info and writes the .encora-id
 	// + sentinel sidecars next to the source file.
 	ExternallyManaged bool
+	// ExternalIDs mirrors Options.ExternalIDs onto the per-item state
+	// so the NFO writer (in applyPlan) can emit one <uniqueid> per
+	// provider without re-threading Options through every callee.
+	// Empty for callers that didn't supply ids; the writer falls back
+	// to the legacy single-Encora shape in that case.
+	ExternalIDs []externalids.ExternalID
 }
 
 // AppliedExtra is one extras row written during a multi-file ingest.
@@ -394,6 +400,7 @@ func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemRe
 		Source:            src,
 		SourceFolder:      opts.SourceFolder,
 		ExternallyManaged: opts.ExternallyManaged,
+		ExternalIDs:       opts.ExternalIDs,
 	})
 }
 
@@ -411,6 +418,11 @@ func (e *Engine) ingestOneWithSeed(
 	// forgot to set it doesn't accidentally drop into the
 	// move-the-file flow.
 	item.ExternallyManaged = opts.ExternallyManaged
+	// ExternalIDs are an Options-level value shared across all parts
+	// of a multi-file ingest, but the NFO writer reads them off the
+	// per-item state. Stamp them here so the multi-file path
+	// (assignments.go) doesn't need to pre-populate the seed.
+	item.ExternalIDs = opts.ExternalIDs
 
 	if !e.resolveID(src, opts, &item) {
 		e.recordIngestEvent(ctx, opts, &item)
@@ -574,9 +586,10 @@ func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
 		item.Plan.AbsoluteFolder(),
 		*item.Recording,
 		nfo.WriteOptions{
-			DB:        e.DB,
-			Cache:     e.ImageCache,
-			PublicURL: e.PublicURL,
+			DB:          e.DB,
+			Cache:       e.ImageCache,
+			PublicURL:   e.PublicURL,
+			ExternalIDs: item.ExternalIDs,
 		},
 	)
 	if nfoErr != nil {

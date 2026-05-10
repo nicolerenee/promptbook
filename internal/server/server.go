@@ -324,7 +324,7 @@ func New(opts Options) (*Server, error) {
 		srv.nfoRefresh = opts.NFORefresh
 	case opts.ImageCache != nil && !opts.ImageCache.Disabled():
 		srv.nfoRefresh = nforefresh.New(
-			opts.DB, opts.ImageCache, opts.Config.Server.PublicURL, opts.Logger,
+			opts.DB, opts.SQLDB, opts.ImageCache, opts.Config.Server.PublicURL, opts.Logger,
 		)
 	}
 	srv.routes()
