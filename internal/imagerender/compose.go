@@ -284,14 +284,17 @@ const (
 	eyebrowSlotCap = 0.20
 	titleSlotCap   = 0.34
 	captionSlotCap = 0.28
-	// Per-row vertical centers as fractions of band height. Slot 1
-	// at 0.15 (centered in the band's top quarter), slot 2 at 0.50
-	// (band middle), slot 3 at 0.82 (a hair higher than 0.85 so the
-	// taller caption cap doesn't push the row off the bottom edge).
-	// Empty rows still consume their slot so a 2-row recording aligns
-	// to the same Y coordinates as a 3-row one.
+	// Per-row vertical centers as fractions of band height. The
+	// title sits at the visual midpoint of its neighbors (0.15 + 0.82
+	// → 0.485) rather than the band's geometric center (0.50). At
+	// 0.50 the title visibly crowds the caption below it because the
+	// caption slot reaches up further than the eyebrow reaches down.
+	// Caption sits at 0.82 (a hair higher than 0.85) so the taller
+	// caption cap doesn't push the row off the bottom edge. Empty
+	// rows still consume their slot so a 2-row recording aligns to
+	// the same Y coordinates as a 3-row one.
 	eyebrowSlotCenter = 0.15
-	titleSlotCenter   = 0.50
+	titleSlotCenter   = 0.48
 	captionSlotCenter = 0.82
 	// Minimum character widths. The renderer sizes each row's font
 	// against max(minChars, len(text)) characters, so the row's type
