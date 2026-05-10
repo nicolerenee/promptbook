@@ -880,42 +880,126 @@ function renderPickerTab(loaded, kind) {
   });
 }
 
-// renderBannerLayoutSelectors draws the position + image-region
-// dropdowns above the Current/Preview tile pair on the poster tab.
-// Selecting a value updates state.recording.banner* and triggers a
-// redraw so the Preview URL re-builds with the new query params.
+// renderBannerLayoutSelectors draws icon-button radio groups for the
+// banner position + image-region choices, above the Current/Preview
+// tile pair on the poster tab. Clicking an icon updates
+// state.recording.banner* and triggers a redraw so the Preview URL
+// re-builds with the new query params. Each group is a DaisyUI .join
+// (segmented control) so the buttons read as one unit.
 function renderBannerLayoutSelectors(position, region) {
-  return m('div', { class: 'flex flex-wrap gap-3 mb-2' }, [
-    m('label', { class: 'form-control' }, [
-      m('div', { class: 'label py-1' },
-        m('span', { class: 'label-text text-xs' }, 'Banner position')),
-      m('select', {
-        class: 'select select-sm select-bordered',
+  return m('div', { class: 'flex flex-wrap gap-6 mb-2' }, [
+    m('div', { class: 'flex flex-col gap-1' }, [
+      m('span', { class: 'text-xs opacity-60' }, 'Banner position'),
+      iconRadioGroup({
         value: position,
-        onchange: (ev) => {
-          state.recording.bannerPosition = ev.target.value;
-        },
-      }, [
-        m('option', { value: 'bottom' }, 'Bottom'),
-        m('option', { value: 'top' }, 'Top'),
-      ]),
+        onChoose: (v) => { state.recording.bannerPosition = v; },
+        options: [
+          { value: 'top',    tip: 'Top',    icon: positionIcon('top') },
+          { value: 'bottom', tip: 'Bottom', icon: positionIcon('bottom') },
+        ],
+      }),
     ]),
-    m('label', { class: 'form-control' }, [
-      m('div', { class: 'label py-1' },
-        m('span', { class: 'label-text text-xs' },
-          'Image area (which 80% to keep)')),
-      m('select', {
-        class: 'select select-sm select-bordered',
+    m('div', { class: 'flex flex-col gap-1' }, [
+      m('span', { class: 'text-xs opacity-60' },
+        'Image area (which 80% to keep)'),
+      iconRadioGroup({
         value: region,
-        onchange: (ev) => {
-          state.recording.bannerImageRegion = ev.target.value;
-        },
-      }, [
-        m('option', { value: 'middle' }, 'Middle (default)'),
-        m('option', { value: 'top' }, 'Top (cut bottom 20%)'),
-        m('option', { value: 'bottom' }, 'Bottom (cut top 20%)'),
-      ]),
+        onChoose: (v) => { state.recording.bannerImageRegion = v; },
+        // Order matches the user's mental model: cut-top, cut-both,
+        // cut-bottom. The kept-region enum names invert (the icon
+        // showing "top shaded out" means we KEEP the bottom).
+        options: [
+          { value: 'bottom', tip: 'Cut top 20%',
+            icon: regionIcon('bottom') },
+          { value: 'middle', tip: 'Cut top + bottom 10% each',
+            icon: regionIcon('middle') },
+          { value: 'top',    tip: 'Cut bottom 20%',
+            icon: regionIcon('top') },
+        ],
+      }),
     ]),
+  ]);
+}
+
+// iconRadioGroup renders a horizontal join of icon buttons; the
+// option whose value matches `value` gets primary styling, the
+// others fall back to ghost. Each button has a tooltip surfacing
+// the human-readable label so the icon-only UI stays accessible.
+function iconRadioGroup(attrs) {
+  const { value, onChoose, options } = attrs;
+  return m('div', { role: 'radiogroup', class: 'join' },
+    options.map((opt) => {
+      const active = opt.value === value;
+      const cls = 'btn btn-sm join-item ' +
+        (active ? 'btn-primary' : 'btn-ghost') + ' tooltip';
+      return m('button', {
+        type: 'button',
+        class: cls,
+        'data-tip': opt.tip,
+        'aria-pressed': active ? 'true' : 'false',
+        'aria-label': opt.tip,
+        onclick: () => { if (!active) onChoose(opt.value); },
+      }, opt.icon);
+    }));
+}
+
+// positionIcon draws a small poster-shaped rectangle with a band
+// stripe at the top or bottom — visually mirroring how the band
+// will sit in the rendered poster.
+function positionIcon(variant) {
+  // Frame: 20×28 viewBox, ~3:4 aspect to read as a poster shape.
+  const bandTop = variant === 'top' ? 1 : 22; // band y0
+  return m('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: 22, height: 28, viewBox: '0 0 20 28',
+    fill: 'none', 'aria-hidden': 'true',
+  }, [
+    // Image rectangle outline.
+    m('rect', {
+      x: 1, y: 1, width: 18, height: 26, rx: 2,
+      fill: 'currentColor', 'fill-opacity': 0.15,
+      stroke: 'currentColor', 'stroke-width': 1.4,
+    }),
+    // Band stripe — thicker fill at the chosen edge.
+    m('rect', {
+      x: 1, y: bandTop, width: 18, height: 5,
+      fill: 'currentColor', 'fill-opacity': 0.85,
+    }),
+  ]);
+}
+
+// regionIcon draws a small poster-shaped rectangle with the CUT
+// portion shaded heavily and the kept portion light. variant names
+// match the kept-region enum (top / middle / bottom), so the icon
+// shows the COMPLEMENT — what gets cut by the band.
+function regionIcon(variant) {
+  // Cut bands are 5 px tall (≈20% of the 26-px tall image rect).
+  // For "middle" we draw two 2.5-px bands at top + bottom.
+  let cuts;
+  if (variant === 'top') {
+    // Keep top 80% → cut bottom 20%.
+    cuts = [{ y: 22, h: 5 }];
+  } else if (variant === 'bottom') {
+    // Keep bottom 80% → cut top 20%.
+    cuts = [{ y: 1, h: 5 }];
+  } else {
+    // Keep middle 80% → cut top + bottom 10% each.
+    cuts = [{ y: 1, h: 2.6 }, { y: 24.4, h: 2.6 }];
+  }
+  return m('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: 22, height: 28, viewBox: '0 0 20 28',
+    fill: 'none', 'aria-hidden': 'true',
+  }, [
+    m('rect', {
+      x: 1, y: 1, width: 18, height: 26, rx: 2,
+      fill: 'currentColor', 'fill-opacity': 0.15,
+      stroke: 'currentColor', 'stroke-width': 1.4,
+    }),
+    ...cuts.map((c) => m('rect', {
+      x: 1, y: c.y, width: 18, height: c.h,
+      fill: 'currentColor', 'fill-opacity': 0.85,
+    })),
   ]);
 }
 
