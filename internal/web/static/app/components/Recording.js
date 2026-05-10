@@ -1397,8 +1397,8 @@ function renderHeader(loaded) {
                  'text-sm font-mono',
         }, 'no poster'),
     m('div', { class: 'card-body' }, [
-      m('div', { class: 'flex items-start justify-between gap-3 flex-wrap' }, [
-        m('div', { class: 'min-w-0 space-y-1' }, [
+      m('div', { class: 'flex items-start justify-between gap-3 flex-nowrap' }, [
+        m('div', { class: 'flex-1 min-w-0 space-y-1' }, [
           m('div', {
             class: 'text-xs uppercase tracking-wider opacity-60',
           }, 'Recording · enc-' + String(id)),
