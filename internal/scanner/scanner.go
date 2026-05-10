@@ -255,19 +255,20 @@ func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result)
 		return
 	}
 	if len(media) == 0 {
-		// Folder has no media — nothing to do, including no error.
-		// This skips per-show poster-only drops and similar scaffolding
-		// the user may have left in incoming/.
+		// Folder has no files at all — nothing to do, including no
+		// error. (Doesn't really happen on healthy filesystems but the
+		// guard is cheap.)
 		e.Logger.Debug().Str("folder", folder).Msg("scanner: empty folder, skipping")
 		return
 	}
 	cls := classifyFolder(folder, media)
 	if len(cls.Parts) == 0 {
-		// Defensive: classifier returns at least one part when media is
-		// non-empty. If we got here without a Parts entry something is
-		// off — log and skip rather than enqueue a row with no main.
-		e.Logger.Warn().Str("folder", folder).
-			Msg("scanner: classification returned no parts; skipping folder")
+		// classifyFolder returns no Parts when the folder has files
+		// but none are video / audio — a photos-only or
+		// scaffolding-only directory. Skip silently; this is normal,
+		// not an error condition.
+		e.Logger.Debug().Str("folder", folder).
+			Msg("scanner: folder has no video / audio, skipping")
 		return
 	}
 	mainPath := cls.Parts[0].Path
@@ -285,7 +286,10 @@ func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result)
 }
 
 // mediaFile is a single hit from collectMediaFiles — the absolute
-// path + size of one video/audio file inside a folder-as-unit.
+// path + size of one file inside a folder-as-unit. Covers every
+// extension (image, subtitle, document, …) so nothing in the source
+// folder gets dropped on import; isVideo / isAudio still gate which
+// entries are eligible to BE the recording vs. always-an-extra.
 type mediaFile struct {
 	path string
 	size int64
@@ -294,17 +298,28 @@ type mediaFile struct {
 	// so a recording at the folder root wins over a similarly-sized
 	// track in audio/.
 	rootLevel bool
+	// isAudio is true when the file's extension is in audioExtensions.
+	// Audio files are eligible main candidates (audio-only recordings
+	// exist) but lose to video on close-band ties.
+	isAudio bool
 	// isVideo is true when the file's extension is in VideoExtensions.
 	// Used by the classifier to bias toward video formats when sizes
 	// are close.
 	isVideo bool
 }
 
-// collectMediaFiles walks folder recursively and returns every video
-// + audio file it finds. Non-media files (jpg, txt, srt, nfo, …) are
-// skipped — they're never main-file candidates. Per-entry errors are
-// silently absorbed so a single permission glitch can't drop the
-// whole folder; only a fatal walker error reaches the caller.
+// collectMediaFiles walks folder recursively and returns every file
+// it finds (video, audio, image, subtitle, document, …) so the
+// classifier and the eventual extras-mover can preserve everything
+// in the source folder. The struct's isVideo flag still drives the
+// main-candidate heuristic — only video / audio rows are eligible
+// to be the recording itself; everything else is automatically an
+// extra. Hidden / dot-prefixed files (.DS_Store, ._meta, .encora-id)
+// are filtered out as OS scaffolding the user doesn't care about.
+//
+// Per-entry errors are silently absorbed so a single permission
+// glitch can't drop the whole folder; only a fatal walker error
+// reaches the caller.
 func collectMediaFiles(folder string) ([]mediaFile, error) {
 	var out []mediaFile
 	walkErr := filepath.WalkDir(folder, func(path string, d os.DirEntry, walkErr error) error {
@@ -315,12 +330,17 @@ func collectMediaFiles(folder string) ([]mediaFile, error) {
 		if d.IsDir() {
 			return nil
 		}
+		base := d.Name()
+		if strings.HasPrefix(base, ".") {
+			// Skip hidden / OS-scaffolding files. The user explicitly
+			// asked for "every file" preserved on import, but .DS_Store
+			// and .encora-id are noise the user wouldn't keep around
+			// even if asked.
+			return nil
+		}
 		ext := strings.ToLower(filepath.Ext(path))
 		_, isVideo := ingest.VideoExtensions[ext]
 		_, isAudio := audioExtensions[ext]
-		if !isVideo && !isAudio {
-			return nil
-		}
 		info, infoErr := d.Info()
 		if infoErr != nil {
 			//nolint:nilerr // intentional: same rationale — keep walking past entry-level info errors.
@@ -331,6 +351,7 @@ func collectMediaFiles(folder string) ([]mediaFile, error) {
 			size:      info.Size(),
 			rootLevel: filepath.Dir(path) == folder,
 			isVideo:   isVideo,
+			isAudio:   isAudio,
 		})
 		return nil
 	})

@@ -256,8 +256,10 @@ func TestScanIgnoresNonVideo(t *testing.T) {
 // TestScanTreatsFolderAsUnit covers the canonical drop pattern: a
 // folder with one main video + a sibling audio/ subdir of per-track
 // rips + a photos/ subdir. The scanner must produce exactly one queue
-// entry pointing at the main video, with extras_count covering the
-// audio tracks. Photos / non-media are ignored.
+// entry pointing at the main video, with extras_count covering EVERY
+// non-main file (audio tracks + photos). The user explicitly asked
+// for every file in a folder-as-unit drop to be tracked + preserved
+// on import; the only filter is hidden / dot-prefixed OS files.
 func TestScanTreatsFolderAsUnit(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -290,8 +292,8 @@ func TestScanTreatsFolderAsUnit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, main, got[0].FilePath, "FilePath = the main video")
-	assert.Equal(t, 3, got[0].ExtrasCount,
-		"three audio tracks counted as extras; photos ignored")
+	assert.Equal(t, 5, got[0].ExtrasCount,
+		"all five non-main files counted as extras (3 audio + 2 photos)")
 }
 
 // TestScanFolderUnitPicksLargestVideo verifies the largest-file

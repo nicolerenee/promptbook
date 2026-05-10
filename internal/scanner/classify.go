@@ -113,33 +113,49 @@ func classifyFolder(folder string, media []mediaFile) Classification {
 		return cls
 	}
 
-	parts := detectParts(media)
+	// Split into eligible-main candidates (video + audio) and always-
+	// extras (images, subtitles, documents, anything else). The
+	// classification heuristic only runs over the eligible set; the
+	// always-extras list gets concatenated onto Extras at the end so
+	// every file in the folder is preserved in the queue row.
+	candidates, alwaysExtras := splitCandidates(media)
+	if len(candidates) == 0 {
+		// No video / audio in the folder — no recording to anchor an
+		// import on. Skip rather than enqueue a photo-only folder.
+		return cls
+	}
+
+	parts := detectParts(candidates)
 	if len(parts) > 0 {
 		cls.Parts = parts
-		// Everything not in parts becomes an extra.
+		// Everything not in parts (other media + always-extras) becomes
+		// an extra.
 		partPaths := make(map[string]bool, len(parts))
 		for _, p := range parts {
 			partPaths[p.Path] = true
 		}
-		for _, m := range media {
+		for _, m := range candidates {
 			if partPaths[m.path] {
 				continue
 			}
 			cls.Extras = append(cls.Extras, classifyExtra(folder, m))
 		}
+		for _, m := range alwaysExtras {
+			cls.Extras = append(cls.Extras, classifyExtra(folder, m))
+		}
 		return cls
 	}
 
-	// No part markers — split media into root-level videos and the rest.
-	rootVideos, others := splitRootVideos(media)
+	// No part markers — split candidates into root-level videos + rest.
+	rootVideos, others := splitRootVideos(candidates)
 
 	switch len(rootVideos) {
 	case 0:
 		// No top-level videos. Fall back to the legacy mainFile
-		// heuristic: largest media file wins, with a root-over-nested
+		// heuristic: largest candidate wins, with a root-over-nested
 		// tie-breaker inside the 10% close band so a tiny teaser.mp3
 		// at the root still beats a slightly-bigger track in audio/.
-		main, rest := pickLargestWithRootTiebreak(media)
+		main, rest := pickLargestWithRootTiebreak(candidates)
 		cls.Parts = []ClassifiedFile{{
 			Path:          main.path,
 			SizeBytes:     main.size,
@@ -162,7 +178,27 @@ func classifyFolder(folder string, media []mediaFile) Classification {
 	default:
 		cls = classifyAmbiguousRootVideos(folder, rootVideos, others)
 	}
+	for _, m := range alwaysExtras {
+		cls.Extras = append(cls.Extras, classifyExtra(folder, m))
+	}
 	return cls
+}
+
+// splitCandidates partitions media into "eligible main candidates"
+// (video + audio) and "always extras" (everything else — images,
+// subtitles, documents, …). Used by classifyFolder so the heuristic
+// only runs over files that could actually BE the recording, while
+// non-media files still get tracked + moved alongside.
+func splitCandidates(media []mediaFile) ([]mediaFile, []mediaFile) {
+	var candidates, others []mediaFile
+	for _, m := range media {
+		if m.isVideo || m.isAudio {
+			candidates = append(candidates, m)
+			continue
+		}
+		others = append(others, m)
+	}
+	return candidates, others
 }
 
 // classifyAmbiguousRootVideos handles the "multiple top-level videos,
@@ -339,10 +375,17 @@ func betterTiebreakMain(candidate, current mediaFile) bool {
 const closeBandPct = 10
 
 // classifyExtra returns the ClassifiedFile for one extras-bucket
-// hit. The kind is derived from either the deepest subfolder name
-// (case 4) or — for top-level files — a filename keyword scan
-// (case 5). Image files under photos/pictures land on extra-photo;
-// other top-level non-video files default to extra-other.
+// hit. Kind precedence (most specific wins):
+//  1. Subfolder keyword (audio/, photos/, behindthescenes/, …).
+//  2. File extension class (image → photo, anything else falls
+//     through to step 3).
+//  3. Filename keyword scan (bows → featurette, trailer, …).
+//  4. ExtraKindOther fallback.
+//
+// The extension step is what lets a top-level `.jpg` get tagged as
+// extra-photo without a matching subfolder name; without it the
+// filename-keyword scan would default to extra-other for every
+// image at the folder root.
 func classifyExtra(folder string, m mediaFile) ClassifiedFile {
 	out := ClassifiedFile{
 		Path:      m.path,
@@ -354,8 +397,29 @@ func classifyExtra(folder string, m mediaFile) ClassifiedFile {
 		out.SuggestedKind = ingest.AssignmentKindExtra(kindFromSubfolder(dir))
 		return out
 	}
+	if k := kindFromExtension(filepath.Ext(m.path)); k != "" {
+		out.SuggestedKind = ingest.AssignmentKindExtra(k)
+		return out
+	}
 	out.SuggestedKind = ingest.AssignmentKindExtra(kindFromFilename(filepath.Base(m.path)))
 	return out
+}
+
+// kindFromExtension maps a file extension to an extras kind. Audio
+// extensions are intentionally excluded — those are eligible main
+// candidates and should never reach this code path through the
+// classifier; they're listed here only as a safety net for
+// hand-built mediaFile slices in tests. Returns "" when the
+// extension doesn't have a typed mapping so the caller falls
+// through to the filename-keyword scan.
+func kindFromExtension(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif":
+		return ingest.ExtraKindPhoto
+	case ".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg", ".opus":
+		return ingest.ExtraKindAudio
+	}
+	return ""
 }
 
 // relativePath returns m relative to folder using filepath.Rel.
