@@ -531,6 +531,13 @@ export function makeLocalState(item) {
       error:   null,
     },
   };
+  // Pre-fill case: kick off the destination preview immediately so
+  // the user sees the planned path on first paint instead of an empty
+  // panel. pickRecording handles the same kick-off when the user
+  // picks a match via the typeahead.
+  if (hasSuggestion && item && item.id && local.match && local.match.id) {
+    runPreview(local, item.id, local.match.id);
+  }
   return local;
 }
 
