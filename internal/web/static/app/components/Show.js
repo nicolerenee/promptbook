@@ -84,6 +84,9 @@ function loadShow(id) {
 
 // runBannerUpload uploads a chosen file to the show's banner slot and
 // re-loads the detail so local_banner_url picks up the new image.
+// Uploads commit immediately because the file picker IS the explicit
+// confirmation gesture; the staged-then-Save flow only applies to
+// upstream URL picks (which are easier to mis-click).
 function runBannerUpload(file) {
   if (!file) return;
   if (state.show.imageBusy) return;
@@ -100,6 +103,10 @@ function runBannerUpload(file) {
         m.redraw();
         return null;
       }
+      // Bump the version counter so every <img src> downstream gets a
+      // fresh ?v=… and the browser refetches instead of serving the
+      // pre-upload bytes from cache.
+      state.show.imageVersion = (state.show.imageVersion || 0) + 1;
       return loadShow(id);
     })
     .catch((err) => {
@@ -165,7 +172,7 @@ function sortRows(rows, sort) {
 // right-aligned "Edit images" action that opens the poster picker
 // modal.
 function renderHeader(detail) {
-  const posterURL = detail.local_banner_url || '';
+  const posterURL = withImageVersion(detail.local_banner_url || '');
   const span = yearSpanText(detail);
   const stateCounts = detail.state_counts || {};
   const badges = Object.keys(stateCounts)
@@ -283,10 +290,22 @@ function loadShowOptions(id) {
     });
 }
 
-// runShowPick POSTs /shows/:id/banner-from-url with the chosen
-// upstream URL; on success re-fetches the detail so local_banner_url
-// picks up the new slot.
-function runShowPick(id, url) {
+// stagePickerSelection records the URL the user clicked. Click-to-stage
+// (rather than click-to-submit) means a misclick on a thumbnail is
+// reversible — the user clicks Save in the footer to actually commit.
+function stagePickerSelection(url) {
+  state.show.pickerStaged = url || null;
+}
+
+// commitPickerSelection POSTs /shows/:id/banner-from-url with the
+// currently staged URL; on success bumps imageVersion + re-fetches the
+// detail so local_banner_url picks up the new slot AND the cache-bust
+// suffix forces the browser to refetch the image bytes (the path is
+// stable, so without ?v= the same <img src> would render the cached
+// pre-pick image).
+function commitPickerSelection(id) {
+  const url = state.show.pickerStaged;
+  if (!url) return;
   if (state.show.imageBusy) return;
   state.show.imageBusy = true;
   state.show.imageError = null;
@@ -295,6 +314,8 @@ function runShowPick(id, url) {
     .then((resp) => {
       state.show.imageBusy = false;
       if (resp && resp.ok) {
+        state.show.imageVersion = (state.show.imageVersion || 0) + 1;
+        state.show.pickerStaged = null;
         return loadShow(id);
       }
       state.show.imageError = (resp && resp.error) || 'unknown error';
@@ -345,12 +366,13 @@ function runShowRefreshFromUpstream(id) {
 }
 
 // renderPosterPicker is the show-banner tab body. Single slot under
-// v2 — clicking an upstream thumbnail downloads it into
-// shows/<id>/banner.jpg via /shows/:id/banner-from-url.
+// v2 — clicking an upstream thumbnail STAGES it (a primary ring marks
+// the selection); the modal footer's "Save" button commits the staged
+// URL via /shows/:id/banner-from-url.
 function renderPosterPicker(detail) {
   const id = detail.id;
   return renderUpstreamPicker({
-    currentURL: detail.local_banner_url || '',
+    currentURL: withImageVersion(detail.local_banner_url || ''),
     currentLabel: 'Current banner',
     currentAlt: (detail.name || 'show') + ' banner',
     aspect: 'poster',
@@ -359,11 +381,23 @@ function renderPosterPicker(detail) {
     error: state.show.pickerOptionsError || null,
     busy: !!state.show.imageBusy,
     loadGen: state.show.pickerOptionsGen || 0,
-    onPick: (url) => runShowPick(id, url),
+    staged: state.show.pickerStaged || null,
+    onPick: stagePickerSelection,
     onUpload: runBannerUpload,
     onRefetch: () => loadShowOptions(id),
     uploadLabel: 'Upload banner',
   });
+}
+
+// withImageVersion appends the current state.show.imageVersion as
+// ?v=<n> to a /images/... URL so a save-and-refresh re-fetches the
+// bytes. Without this the browser sees the same canonical path and
+// serves the pre-save image from cache.
+function withImageVersion(url) {
+  if (!url) return url;
+  const v = state.show.imageVersion || 0;
+  if (!v) return url;
+  return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + v;
 }
 
 // renderImagePickerModal mounts the <dialog>-based modal that hosts
@@ -371,19 +405,32 @@ function renderPosterPicker(detail) {
 // "Edit images" header button. Single-section variant (no tabs) since
 // shows don't get burned-in backdrops or overlay text.
 function renderImagePickerModal(detail) {
+  const staged = state.show.pickerStaged || null;
+  const busy = !!state.show.imageBusy;
   const footerActions = [
     {
-      label: 'Refresh from upstream',
+      label: 'Save selection',
       primary: true,
-      disabled: !!state.show.imageBusy,
+      disabled: !staged || busy,
+      onClick: () => commitPickerSelection(detail.id),
+    },
+    {
+      label: 'Refresh from upstream',
+      primary: false,
+      disabled: busy,
       onClick: () => runShowRefreshFromUpstream(detail.id),
     },
   ];
   return m(ImagePickerModal, {
     open: !!state.show.pickerOpen,
-    onClose: () => { state.show.pickerOpen = false; },
+    onClose: () => {
+      state.show.pickerOpen = false;
+      // Drop the staged URL on close so re-opening the modal doesn't
+      // resurrect a half-applied selection from a prior session.
+      state.show.pickerStaged = null;
+    },
     title: 'Edit images',
-    busy: !!state.show.imageBusy,
+    busy,
     render: () => renderPosterPicker(detail),
     footerActions,
   });

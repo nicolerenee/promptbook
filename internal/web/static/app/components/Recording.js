@@ -242,6 +242,42 @@ function postPickerChoice(path, body, onSuccess) {
     });
 }
 
+// stagePickerChoice records the URL the user clicked on for the given
+// kind ('poster' | 'fanart'). The footer's Save button reads this back
+// and runs commitPickerChoice to actually write the slot.
+function stagePickerChoice(kind, url) {
+  if (!state.recording.pickerStaged) state.recording.pickerStaged = {};
+  state.recording.pickerStaged[kind] = url || null;
+}
+
+// commitPickerChoice POSTs the staged URL for kind into the matching
+// from-url endpoint, bumps imageVersion on success, and re-loads the
+// recording detail so local_*_url + the version cache-buster surface
+// the new image without a manual page refresh.
+function commitPickerChoice(id, kind) {
+  const staged = (state.recording.pickerStaged || {})[kind];
+  if (!staged) return;
+  const fromURLPath = '/recordings/' + id + '/' + kind + '-from-url';
+  postPickerChoice(fromURLPath, { url: staged }, () => {
+    state.recording.imageVersion =
+      (state.recording.imageVersion || 0) + 1;
+    if (state.recording.pickerStaged) {
+      state.recording.pickerStaged[kind] = null;
+    }
+    loadRecording(id);
+  });
+}
+
+// withImageVersion appends ?v=<state.recording.imageVersion> so a
+// just-saved image isn't masked by Safari's cached pre-save bytes at
+// the same canonical /images/... path.
+function withImageVersion(url) {
+  if (!url) return url;
+  const v = state.recording.imageVersion || 0;
+  if (!v) return url;
+  return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + v;
+}
+
 // runUpload pipes a picked File through the supplied upload endpoint,
 // then (on success) re-fetches the recording detail so local_*_url
 // fields pick up the newly-saved slot. Under the v2 layout the slot
@@ -265,7 +301,11 @@ function runUpload(path, id, file) {
         m.redraw();
         return null;
       }
-      // Re-fetch so local_*_url picks up the new slot.
+      // Re-fetch so local_*_url picks up the new slot. Bump the
+      // version counter so withImageVersion forces a fresh fetch
+      // instead of serving the pre-upload bytes from cache.
+      state.recording.imageVersion =
+        (state.recording.imageVersion || 0) + 1;
       return loadRecording(id);
     })
     .catch((err) => {
@@ -459,7 +499,7 @@ function renderHeader(loaded) {
 // browser always gets a valid image. Empty url means image caching
 // is disabled at the server level — show a "caching disabled" card.
 function renderPosterCard(loaded) {
-  const url = (loaded && loaded.local_poster_url) || '';
+  const url = withImageVersion((loaded && loaded.local_poster_url) || '');
   const figure = url
     ? m('figure', m('img', {
         src: url,
@@ -766,6 +806,11 @@ function runRefreshFromUpstream(id) {
 // renderPickerTab renders one of the live picker tabs. kind is
 // 'poster' or 'fanart'; the helper resolves the right local URL,
 // upstream-options endpoint, and from-url POST path off the kind.
+//
+// Click-to-stage: a thumbnail click sets state.recording.pickerStaged[kind]
+// and the modal footer's "Save selection" button is what actually
+// commits the choice. Uploads bypass staging because the file picker
+// IS the explicit confirmation.
 function renderPickerTab(loaded, kind) {
   const id = loaded.Recording.id;
   const localURL = kind === 'fanart'
@@ -773,15 +818,15 @@ function renderPickerTab(loaded, kind) {
     : (loaded.local_poster_url || '');
   const aspect = kind === 'fanart' ? 'fanart' : 'poster';
   const uploadPath = '/api/v1/recordings/' + id + '/' + kind + '-upload';
-  const fromURLPath = '/recordings/' + id + '/' + kind + '-from-url';
 
   const optionsByKind = state.recording.pickerOptions || {};
   const loadingByKind = state.recording.pickerOptionsLoading || {};
   const errorByKind = state.recording.pickerOptionsError || {};
   const genByKind = state.recording.pickerOptionsGen || {};
+  const stagedByKind = state.recording.pickerStaged || {};
 
   return renderUpstreamPicker({
-    currentURL: localURL,
+    currentURL: withImageVersion(localURL),
     currentLabel: kind === 'fanart' ? 'Current fanart' : 'Current poster',
     currentAlt: (loaded.Recording.show || 'recording') + ' ' + kind,
     aspect,
@@ -790,8 +835,8 @@ function renderPickerTab(loaded, kind) {
     error: errorByKind[kind] || null,
     busy: !!state.recording.imageBusy,
     loadGen: genByKind[kind] || 0,
-    onPick: (url) => postPickerChoice(fromURLPath, { url },
-      () => loadRecording(id)),
+    staged: stagedByKind[kind] || null,
+    onPick: (url) => stagePickerChoice(kind, url),
     onUpload: (file) => runUpload(uploadPath, id, file),
     onRefetch: () => loadOptions(id, kind),
     uploadLabel: kind === 'fanart' ? 'Upload fanart' : 'Upload poster',
@@ -914,24 +959,41 @@ function renderImagePickerModal(loaded) {
     { key: 'overlay',  label: 'Overlay text',
       render: () => renderOverlayEditor(loaded) },
   ];
-  // The footer's Refresh-from-upstream action is only meaningful on
-  // the picker tabs (poster/fanart). The overlay tab gets a no-op
-  // footer so the button doesn't shift position when the user
-  // switches tabs — it's just disabled.
+  // Footer composition:
+  //   - "Save selection" appears on the poster + fanart tabs and
+  //     commits the staged URL (disabled when nothing is staged).
+  //     Hidden on the overlay tab — that surface has its own inline
+  //     Save / Reset buttons next to the textarea.
+  //   - "Refresh from upstream" is always visible; it kicks the
+  //     refresh-images job and is independent of the staged URL.
   const activeTab = state.recording.pickerTab || 'poster';
-  const footerActions = [
-    {
-      label: 'Refresh from upstream',
+  const stagedByKind = state.recording.pickerStaged || {};
+  const busy = !!state.recording.imageBusy;
+  const footerActions = [];
+  if (activeTab === 'poster' || activeTab === 'fanart') {
+    footerActions.push({
+      label: 'Save selection',
       primary: true,
-      disabled: !!state.recording.imageBusy,
-      onClick: () => runRefreshFromUpstream(id),
-    },
-  ];
+      disabled: !stagedByKind[activeTab] || busy,
+      onClick: () => commitPickerChoice(id, activeTab),
+    });
+  }
+  footerActions.push({
+    label: 'Refresh from upstream',
+    primary: false,
+    disabled: busy,
+    onClick: () => runRefreshFromUpstream(id),
+  });
   return m(ImagePickerModal, {
     open: !!state.recording.pickerOpen,
-    onClose: () => { state.recording.pickerOpen = false; },
+    onClose: () => {
+      state.recording.pickerOpen = false;
+      // Drop staged selections on close so reopening the modal doesn't
+      // resurrect a half-applied choice from a previous session.
+      state.recording.pickerStaged = {};
+    },
     title: 'Edit images',
-    busy: !!state.recording.imageBusy,
+    busy,
     tabs,
     activeTab,
     onTabChange: (key) => {
@@ -993,6 +1055,7 @@ const Recording = {
     state.recording.pickerOptions = {};
     state.recording.pickerOptionsLoading = {};
     state.recording.pickerOptionsError = {};
+    state.recording.pickerStaged = {};
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.recording.loading = false;

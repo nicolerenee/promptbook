@@ -102,10 +102,15 @@ export function renderImageErrorToast({ error, onDismiss }) {
 // renderUpstreamPicker is the shared picker tab body used by both
 // Recording.js (poster + fanart) and Show.js (banner). It renders:
 //   1. The current local image (the chosen slot under v2).
-//   2. A live-fetched strip of upstream thumbnails. Click one ->
-//      POST the chosen URL into the slot.
+//   2. A live-fetched strip of upstream thumbnails. Click one to
+//      stage it (a primary-color ring marks the selection); the
+//      parent's footer "Save" button is responsible for committing
+//      the choice via the matching from-url endpoint. Two-step gesture
+//      because picking the wrong thumbnail and accidentally writing
+//      the slot is a poor UX.
 //   3. An Upload button for "the upstream options aren't what I want"
-//      override.
+//      override. Uploads are immediate — picking a file IS the
+//      explicit confirmation.
 //   4. A "Re-fetch upstream options" footer button so the user can
 //      re-pull the strip without closing the modal — useful right
 //      after firing the refresh-images job.
@@ -121,7 +126,11 @@ export function renderImageErrorToast({ error, onDismiss }) {
 //   loading       — true while the options fetch is in flight.
 //   error         — string error from the options fetch (e.g. 503).
 //   busy          — disables every action button while a POST runs.
+//   staged        — URL string of the currently staged selection, or
+//                   null/'' when nothing is staged. Matched against
+//                   each option's URL to draw the ring highlight.
 //   onPick(url)   — fired when the user clicks an upstream thumbnail.
+//                   Parent stages the URL; modal footer's Save commits.
 //   onUpload(file)— fired when the user picks a file via Upload.
 //   onRefetch()   — fired when the user hits "Re-fetch upstream options".
 //   uploadLabel   — Upload button label ("Upload poster", etc.).
@@ -131,7 +140,7 @@ export function renderImageErrorToast({ error, onDismiss }) {
 export function renderUpstreamPicker(attrs) {
   const {
     currentURL, currentLabel, currentAlt,
-    aspect, options, loading, error, busy, loadGen,
+    aspect, options, loading, error, busy, loadGen, staged,
     onPick, onUpload, onRefetch, uploadLabel,
   } = attrs;
 
@@ -192,6 +201,7 @@ export function renderUpstreamPicker(attrs) {
       ]),
       renderUpstreamStrip({
         options, loading, error, busy, onPick, thumbClass, onRefetch, loadGen,
+        staged,
       }),
     ]),
   ]);
@@ -202,7 +212,7 @@ export function renderUpstreamPicker(attrs) {
 // an empty-state message when upstream had nothing, otherwise a
 // horizontally-scrollable strip of clickable thumbnails.
 function renderUpstreamStrip(attrs) {
-  const { options, loading, error, busy, onPick, thumbClass } = attrs;
+  const { options, loading, error, busy, onPick, thumbClass, staged } = attrs;
   if (loading && !Array.isArray(options)) {
     // Skeleton placeholders — three rectangles matching the picker's
     // expected aspect so the layout doesn't jump on resolution.
@@ -242,23 +252,32 @@ function renderUpstreamStrip(attrs) {
   // failure.
   const gen = attrs.loadGen || 0;
   return m('div', { class: 'flex gap-3 overflow-x-auto py-2' },
-    options.map((opt, idx) => m('button', {
-      key: opt.url + '-' + idx + '-' + gen,
-      type: 'button',
-      class: 'shrink-0 rounded overflow-hidden bg-base-200 ' +
-             'border-2 border-transparent hover:border-primary ' +
-             'focus:outline-none focus:border-primary ' +
-             'disabled:opacity-50 disabled:cursor-not-allowed ' +
-             thumbClass,
-      title: opt.source ? 'from ' + opt.source : '',
-      disabled: busy,
-      onclick: () => onPick(opt.url),
-    }, m('img', {
-      src: proxyURL(opt.url, gen),
-      alt: opt.source || 'upstream option ' + (idx + 1),
-      class: 'w-full h-full object-cover',
-      loading: 'lazy',
-    }))));
+    options.map((opt, idx) => {
+      const isStaged = staged && opt.url === staged;
+      // Staged thumbnail gets a 4px primary ring + persistent border;
+      // unstaged uses the hover/focus border like before. Two layers
+      // (border + ring) so the cue is visible even on light images.
+      const stagedCls = isStaged
+        ? ' border-primary ring-2 ring-primary ring-offset-2 ring-offset-base-100'
+        : ' border-transparent hover:border-primary focus:border-primary';
+      return m('button', {
+        key: opt.url + '-' + idx + '-' + gen,
+        type: 'button',
+        class: 'shrink-0 rounded overflow-hidden bg-base-200 ' +
+               'border-2 focus:outline-none ' +
+               'disabled:opacity-50 disabled:cursor-not-allowed ' +
+               thumbClass + stagedCls,
+        title: opt.source ? 'from ' + opt.source : '',
+        'aria-pressed': isStaged ? 'true' : 'false',
+        disabled: busy,
+        onclick: () => onPick(opt.url),
+      }, m('img', {
+        src: proxyURL(opt.url, gen),
+        alt: opt.source || 'upstream option ' + (idx + 1),
+        class: 'w-full h-full object-cover',
+        loading: 'lazy',
+      }));
+    }));
 }
 
 // proxyURL wraps an upstream URL in /api/v1/upstream-image so the
@@ -272,30 +291,39 @@ function proxyURL(url, gen) {
   return out;
 }
 
-// uploadButton mirrors the renderUploadButton helper from
-// utils/uploadPicker.js but is inlined here to avoid coupling the
-// modal to the helper's exact interface. The picker passes the file
-// straight through to onUpload(file).
+// uploadButton wraps a hidden <input type="file"> in a <label> so the
+// label-click → input-click delegation is browser-native (no JS
+// coordination). The previous implementation captured the input ref
+// in a closure via oncreate, but oncreate only fires on first mount —
+// every subsequent re-render created a fresh closure with inputEl=null,
+// so any click after the first redraw silently no-op'd. The picker
+// re-renders frequently (busy state, options loading, gen counter
+// bumping), so the closure-captured ref was almost always stale by
+// the time the user clicked. Label-wrapping sidesteps the issue
+// entirely.
+let _uploadInputSeq = 0;
 function uploadButton(opts) {
-  let inputEl = null;
-  return m('div', { class: 'inline-flex items-center' }, [
+  _uploadInputSeq += 1;
+  const id = 'pb-upload-' + _uploadInputSeq;
+  const disabled = !!opts.disabled;
+  return m('label', {
+    for: id,
+    class: 'btn btn-sm btn-ghost' + (disabled ? ' btn-disabled' : ''),
+    'aria-disabled': disabled ? 'true' : 'false',
+  }, [
     m('input', {
+      id,
       type: 'file',
       accept: 'image/*',
       class: 'hidden',
-      oncreate: (vn) => { inputEl = vn.dom; },
+      disabled,
       onchange: (ev) => {
         const f = ev.target.files && ev.target.files[0];
         ev.target.value = '';
         if (f && typeof opts.onSelect === 'function') opts.onSelect(f);
       },
     }),
-    m('button', {
-      type: 'button',
-      class: 'btn btn-sm btn-ghost',
-      disabled: !!opts.disabled,
-      onclick: () => { if (inputEl) inputEl.click(); },
-    }, opts.label || 'Upload'),
+    opts.label || 'Upload',
   ]);
 }
 
