@@ -198,6 +198,43 @@ func TestClassifyAmbiguousVideos(t *testing.T) {
 	assert.Equal(t, 1, entry.ExtrasCount)
 }
 
+// TestClassifyIgnoresMetadataSidecars pins the re-scan-existing-
+// library contract: when a folder already carries movie.nfo,
+// poster.jpg, fanart.jpg etc. at the root (because promptbook or
+// another tool wrote them on a prior pass), the scanner must NOT
+// surface those files as importable extras. Subfolder content
+// keeps its original treatment — a `photos/backdrop.jpg` inside
+// the drop is real user content and lands in Extras.
+func TestClassifyIgnoresMetadataSidecars(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Greenwich Beacon - existing library folder")
+	main := filepath.Join(folder, "Greenwich Beacon.mkv")
+	writeFile(t, main, 8*1024*1024)
+	// Sidecars at the root: movie.nfo + poster + fanart. None of
+	// these should land in Extras.
+	writeFile(t, filepath.Join(folder, "movie.nfo"), 1024)
+	writeFile(t, filepath.Join(folder, "poster.jpg"), 256*1024)
+	writeFile(t, filepath.Join(folder, "fanart.jpg"), 512*1024)
+	// Real user content in a subfolder named photos/ — gets the
+	// extra-photo kind from the subfolder mapping.
+	userPhoto := filepath.Join(folder, "photos", "curtain.jpg")
+	writeFile(t, userPhoto, 2*1024)
+
+	cls, entry := f.loadClassification(t)
+
+	assert.False(t, cls.Ambiguous)
+	require.Len(t, cls.Parts, 1)
+	assert.Equal(t, main, cls.Parts[0].Path)
+
+	require.Len(t, cls.Extras, 1,
+		"sidecars at the folder root must be skipped; only the photos/ entry remains")
+	assert.Equal(t, userPhoto, cls.Extras[0].Path)
+	assert.Equal(t, 1, entry.ExtrasCount,
+		"extras_count counts only the real user extra, not the sidecars")
+}
+
 // TestClassifyEmptyFolder pins the contract that a folder with no
 // media files (only photos / readmes / etc.) produces no queue row
 // and no classification — preserves the legacy "skip empty" shape.

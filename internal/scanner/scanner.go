@@ -325,6 +325,45 @@ type mediaFile struct {
 	isVideo bool
 }
 
+// metadataSidecarBasenames is the lowercase set of filenames the
+// scanner treats as media-server-managed sidecars rather than user
+// content. Same effect as the dot-file skip: the classifier never
+// sees these so they don't show up as importable extras in the
+// queue modal. Currently covers Kodi/Jellyfin/Plex's common image
+// sidecars; the .nfo-suffix check below handles any flavour of
+// metadata file (movie.nfo, tvshow.nfo, episode-nfos, etc.).
+//
+//nolint:gochecknoglobals // immutable lookup table.
+var metadataSidecarBasenames = map[string]struct{}{
+	"poster.jpg":    {},
+	"poster.png":    {},
+	"fanart.jpg":    {},
+	"fanart.png":    {},
+	"backdrop.jpg":  {},
+	"backdrop.png":  {},
+	"clearart.png":  {},
+	"clearlogo.png": {},
+	"disc.png":      {},
+	"landscape.jpg": {},
+	"thumb.jpg":     {},
+	"banner.jpg":    {},
+}
+
+// isMetadataSidecar reports whether the basename is a media-server
+// metadata file (.nfo of any flavor or one of the well-known image
+// sidecar names) the scanner should ignore. Lets a re-scan of a
+// folder where promptbook (or another tool) already wrote a
+// movie.nfo + poster.jpg avoid re-queuing those files as importable
+// extras.
+func isMetadataSidecar(base string) bool {
+	low := strings.ToLower(base)
+	if strings.HasSuffix(low, ".nfo") {
+		return true
+	}
+	_, ok := metadataSidecarBasenames[low]
+	return ok
+}
+
 // collectMediaFiles walks folder recursively and returns every file
 // it finds (video, audio, image, subtitle, document, …) so the
 // classifier and the eventual extras-mover can preserve everything
@@ -353,6 +392,16 @@ func collectMediaFiles(folder string) ([]mediaFile, error) {
 			// asked for "every file" preserved on import, but .DS_Store
 			// and .encora-id are noise the user wouldn't keep around
 			// even if asked.
+			return nil
+		}
+		if filepath.Dir(path) == folder && isMetadataSidecar(base) {
+			// Skip media-server metadata sidecars (movie.nfo,
+			// poster.jpg, fanart.jpg, etc.) that sit at the root of
+			// the recording folder so a re-scan of a folder where
+			// promptbook or another tool already wrote those files
+			// doesn't surface them as importable extras. Only filter
+			// at the folder root — a `photos/backdrop.jpg` inside the
+			// drop is real user content, not a sidecar.
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
