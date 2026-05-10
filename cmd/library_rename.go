@@ -3,10 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
+	"github.com/nicolerenee/promptbook/internal/match"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -70,12 +73,21 @@ func runLibraryRename(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load recording: %w", err)
 	}
 
+	prober := probe.FFProbe{Path: appConfig.Library.FFProbePath}
+	info, err := prober.Probe(ctx, src)
+	if err != nil {
+		return fmt.Errorf("probe %s: %w", src, err)
+	}
+	parsed := match.Parse(filepath.Base(src))
+
 	plan, err := rename.BuildPlan(rename.PlanInputs{
 		Recording:      loaded.Recording,
 		Source:         src,
 		LibraryRoot:    appConfig.Library.Root,
 		FolderTemplate: appConfig.Library.FolderTemplate,
 		FileTemplate:   appConfig.Library.FileTemplate,
+		MediaInfo:      info,
+		Part:           parsed.PartIndex,
 	})
 	if err != nil {
 		return fmt.Errorf("build plan: %w", err)

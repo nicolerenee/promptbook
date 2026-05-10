@@ -15,6 +15,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/probe"
 )
 
 // IngestRunner is the slice of *ingest.Engine the importQueueEntry
@@ -29,19 +30,28 @@ type IngestRunner interface {
 }
 
 // LibraryPlan carries the rename Plan inputs the previewQueueImport
-// resolver needs (LibraryRoot + the two templates). The IngestRunner
-// interface deliberately doesn't expose these — Plan-side previews
-// are a separate read surface from the engine's Apply path. Pass the
-// zero value when no library is configured; the resolver returns a
-// "library not configured" error in that mode.
+// resolver needs (LibraryRoot + the two templates + a Prober for the
+// new media-info tokens). The IngestRunner interface deliberately
+// doesn't expose these — Plan-side previews are a separate read
+// surface from the engine's Apply path. Pass the zero value when no
+// library is configured; the resolver returns a "library not
+// configured" error in that mode.
+//
+// Prober may be nil when the resolver is exercised in tests that don't
+// care about probe-derived tokens; the helper degrades to an empty
+// MediaInfo in that case so the optional-segment grammar collapses
+// the absent fields rather than failing.
 type LibraryPlan struct {
 	Root           string
 	FolderTemplate string
 	FileTemplate   string
+	Prober         probe.Prober
 }
 
 // Configured reports whether the LibraryPlan carries enough to drive
-// rename.BuildPlan. All three fields must be non-empty.
+// rename.BuildPlan. Root + both templates must be non-empty; Prober
+// is optional (the resolver passes an empty MediaInfo when nil so
+// previews still render before ffprobe is wired up).
 func (p LibraryPlan) Configured() bool {
 	return p.Root != "" && p.FolderTemplate != "" && p.FileTemplate != ""
 }

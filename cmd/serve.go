@@ -16,6 +16,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/jobs/builtin"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/storage"
@@ -213,6 +214,7 @@ func buildIngestEngine(
 		},
 		Logger:     log.Logger,
 		ImageCache: imgCache,
+		Prober:     probe.FFProbe{Path: appConfig.Library.FFProbePath},
 	}
 }
 

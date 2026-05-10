@@ -52,6 +52,22 @@ func fixtureSync(t *testing.T) string {
 	return dbPath
 }
 
+// fakeFFProbeScript writes a tiny shell script that emulates ffprobe's
+// JSON output for the wrapper. Lets the cmd-level smoke test stay
+// hermetic — no dependency on a system ffprobe binary at `go test`
+// time. The script ignores its input and emits a fixed 1080p/h264
+// stream descriptor.
+func fakeFFProbeScript(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ffprobe")
+	body := "#!/bin/sh\n" +
+		`echo '{"streams":[{"codec_name":"h264","width":1920,"height":1080}]}'` +
+		"\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o755))
+	return path
+}
+
 // TestLibraryScanCommand verifies the cobra wiring: pointing
 // `library scan` at a video file with a recognized encora id surfaces a
 // "would-move" line in the output. Not Parallel — exercises global
@@ -64,12 +80,14 @@ func TestLibraryScanCommand(t *testing.T) {
 	require.NoError(t, os.WriteFile(src, []byte("video"), 0o644))
 
 	libraryRoot := filepath.Join(t.TempDir(), "library")
+	ffprobe := fakeFFProbeScript(t)
 
 	// Configure via env vars so cmd.Execute pulls them through viper.
 	t.Setenv("PROMPTBOOK_STORAGE_DATABASEPATH", dbPath)
 	t.Setenv("PROMPTBOOK_LIBRARY_ROOT", libraryRoot)
 	t.Setenv("PROMPTBOOK_LIBRARY_FOLDERTEMPLATE", "{Show} - {Tour} - {Date} [encora-{EncoraID}]")
 	t.Setenv("PROMPTBOOK_LIBRARY_FILETEMPLATE", "{Show} - {Tour} - {Date} [{Master}]")
+	t.Setenv("PROMPTBOOK_LIBRARY_FFPROBEPATH", ffprobe)
 	t.Setenv("PROMPTBOOK_ENCORA_APIKEY", "stub")
 
 	var buf bytes.Buffer

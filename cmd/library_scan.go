@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -46,6 +47,7 @@ func runLibraryScan(cmd *cobra.Command, args []string) error {
 		LibraryRoot:    appConfig.Library.Root,
 		FolderTemplate: appConfig.Library.FolderTemplate,
 		FileTemplate:   appConfig.Library.FileTemplate,
+		Prober:         probe.FFProbe{Path: appConfig.Library.FFProbePath},
 	}
 
 	res, err := engine.Ingest(ctx, src, ingest.Options{DryRun: true})

@@ -13,6 +13,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -110,6 +111,7 @@ func runLibraryIngest(cmd *cobra.Command, args []string) error {
 		InteractiveReader: os.Stdin,
 		Logger:            log.Logger,
 		ImageCache:        imgCache,
+		Prober:            probe.FFProbe{Path: appConfig.Library.FFProbePath},
 	}
 
 	res, err := engine.Ingest(ctx, src, ingest.Options{

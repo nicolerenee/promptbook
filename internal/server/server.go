@@ -24,6 +24,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
@@ -292,10 +293,14 @@ func (s *Server) Version() string { return s.version }
 // fallthrough zero value (root="" or empty templates) marks the plan
 // as unconfigured; the resolver returns a typed error in that mode.
 func (s *Server) libraryPlan() graph.LibraryPlan {
+	if s.config.Library.Root == "" {
+		return graph.LibraryPlan{}
+	}
 	return graph.LibraryPlan{
 		Root:           s.config.Library.Root,
 		FolderTemplate: s.config.Library.FolderTemplate,
 		FileTemplate:   s.config.Library.FileTemplate,
+		Prober:         probe.FFProbe{Path: s.config.Library.FFProbePath},
 	}
 }
 

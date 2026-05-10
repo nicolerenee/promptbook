@@ -18,7 +18,9 @@ import (
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/nfo"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	syncpkg "github.com/nicolerenee/promptbook/internal/sync"
@@ -66,6 +68,12 @@ type Engine struct {
 	// those elements omitted — Jellyfin/Plex fall back to upstream
 	// scrapes.
 	ImageCache *imagecache.Cache
+	// Prober extracts codec/resolution metadata from the source file
+	// for the new {Container} / {VideoCodec} / {Quality} rename tokens.
+	// Required: ingest fails the item with a probe error if Prober is
+	// nil or the probe call returns an error. Tests inject a stub;
+	// production wiring is probe.FFProbe{Path: cfg.Library.FFProbePath}.
+	Prober probe.Prober
 }
 
 // Options tunes a single Ingest invocation.
@@ -163,7 +171,7 @@ func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemRe
 		e.recordIngestEvent(ctx, opts, &item)
 		return item
 	}
-	if !e.buildPlan(src, &item) {
+	if !e.buildPlan(ctx, src, &item) {
 		e.recordIngestEvent(ctx, opts, &item)
 		return item
 	}
@@ -214,13 +222,29 @@ func (e *Engine) lookupRecording(ctx context.Context, opts Options, item *ItemRe
 	return true
 }
 
-func (e *Engine) buildPlan(src string, item *ItemResult) bool {
+func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bool {
+	if e.Prober == nil {
+		item.Err = errors.New("ingest: prober not configured")
+		item.SkippedReason = "prober not configured"
+		item.Action = ActionSkipped
+		return false
+	}
+	info, perr := e.Prober.Probe(ctx, src)
+	if perr != nil {
+		item.Err = fmt.Errorf("probe %s: %w", src, perr)
+		item.SkippedReason = "probe failed"
+		item.Action = ActionSkipped
+		return false
+	}
+	parsed := match.Parse(filepath.Base(src))
 	plan, err := rename.BuildPlan(rename.PlanInputs{
 		Recording:      *item.Recording,
 		Source:         src,
 		LibraryRoot:    e.LibraryRoot,
 		FolderTemplate: e.FolderTemplate,
 		FileTemplate:   e.FileTemplate,
+		MediaInfo:      info,
+		Part:           parsed.PartIndex,
 	})
 	if err != nil {
 		item.Err = err

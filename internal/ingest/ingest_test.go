@@ -14,10 +14,34 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	syncpkg "github.com/nicolerenee/promptbook/internal/sync"
 )
+
+// stubProber returns a fixed MediaInfo without shelling out to ffprobe.
+// All ingest tests use this so the suite stays hermetic — no
+// dependency on a system ffprobe at `go test` time.
+type stubProber struct {
+	info probe.MediaInfo
+	err  error
+}
+
+func (s stubProber) Probe(_ context.Context, _ string) (probe.MediaInfo, error) {
+	return s.info, s.err
+}
+
+// defaultStubProber returns a benign 1080p/h264/mkv mediainfo. Tests
+// that care about specific values override .Prober explicitly.
+func defaultStubProber() stubProber {
+	return stubProber{info: probe.MediaInfo{
+		VideoCodec: "h264",
+		Width:      1920,
+		Height:     1080,
+		Container:  "MP4",
+	}}
+}
 
 const fixturesDir = "../encora/testdata"
 
@@ -146,6 +170,7 @@ func TestEngineIngestSingleFileDryRun(t *testing.T) {
 		LibraryRoot:    libRoot,
 		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
 		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{DryRun: true})
@@ -185,6 +210,7 @@ func TestEngineIngestRealMove(t *testing.T) {
 		FolderTemplate:  "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
 		FileTemplate:    "{Show} - {Tour} - {Date} [{Master}]",
 		SubtitleFetcher: fetcher,
+		Prober:          defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
@@ -240,6 +266,7 @@ func TestEngineIngestSkipsUnknownID(t *testing.T) {
 		LibraryRoot:    t.TempDir(),
 		FolderTemplate: "x",
 		FileTemplate:   "y",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
@@ -292,6 +319,7 @@ func TestEngineAddToCollectionMockOnly(t *testing.T) {
 		LibraryRoot:    t.TempDir(),
 		FolderTemplate: "{Show} [encora-{EncoraID}]",
 		FileTemplate:   "{Show}",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{AddToCollection: true})
@@ -332,6 +360,7 @@ func TestEngineIngestAutoAddsUnknownID(t *testing.T) {
 		LibraryRoot:    t.TempDir(),
 		FolderTemplate: "{Show} [encora-{EncoraID}]",
 		FileTemplate:   "{Show}",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
@@ -377,6 +406,7 @@ func TestEngineIngestAutoAddsUnknownIDWithCollection(t *testing.T) {
 		LibraryRoot:    t.TempDir(),
 		FolderTemplate: "{Show} [encora-{EncoraID}]",
 		FileTemplate:   "{Show}",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{AddToCollection: true})
@@ -417,6 +447,7 @@ func TestEngineIngestDirectoryWalk(t *testing.T) {
 		LibraryRoot:    t.TempDir(),
 		FolderTemplate: "{Show} [encora-{EncoraID}]",
 		FileTemplate:   "{Show}",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), srcRoot, ingest.Options{DryRun: true})
@@ -446,6 +477,7 @@ func TestIngestRecordsHistoryOnSuccess(t *testing.T) {
 		LibraryRoot:    libRoot,
 		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
 		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{})
@@ -494,6 +526,7 @@ func TestIngestSkipsHistoryForDryRun(t *testing.T) {
 		LibraryRoot:    libRoot,
 		FolderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
 		FileTemplate:   "{Show} - {Tour} - {Date} [{Master}]",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{DryRun: true})
@@ -523,6 +556,7 @@ func TestIngestSkipsHistoryForNoEncoraIDSkip(t *testing.T) {
 		LibraryRoot:    t.TempDir(),
 		FolderTemplate: "x",
 		FileTemplate:   "y",
+		Prober:         defaultStubProber(),
 	}
 
 	res, err := engine.Ingest(t.Context(), src, ingest.Options{})

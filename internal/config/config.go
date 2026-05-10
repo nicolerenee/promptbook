@@ -19,8 +19,20 @@ const (
 	DefaultDatabasePath        = "./promptbook.db"
 	DefaultListenAddr          = "[::]:8080"
 	DefaultJWKSRefreshInterval = 1 * time.Hour
-	DefaultFolderTemplate      = "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
-	DefaultFileTemplate        = "{Show} - {Tour} - {Date} [{Master}]"
+	// DefaultFolderTemplate uses the new {DateWithVariant} ISO-partial
+	// date token so partial-month / variant-disambiguated recordings
+	// render cleanly in the folder name without dangling brackets.
+	DefaultFolderTemplate = "{Show} ({DateWithVariant}) [encora-{EncoraID}]"
+	// DefaultFileTemplate exercises the optional-segment grammar so
+	// empty Tour / Master / probe results / part index collapse to no
+	// output rather than leaving "[]" or " - " stubs in the filename.
+	DefaultFileTemplate = "{Show} ({DateWithVariant}) [encora-{EncoraID}]" +
+		"{? - {Tour}}{?[{Master}]}{?[{VideoCodec}]}{?[{Quality}]}" +
+		"{? - part-{Part}}"
+	// DefaultFFProbePath points at `ffprobe` on PATH. Override via
+	// library.ffprobePath / PROMPTBOOK_LIBRARY_FFPROBEPATH when the
+	// binary lives elsewhere.
+	DefaultFFProbePath         = "ffprobe"
 	DefaultWatchInterval       = 1 * time.Minute
 	DefaultStagemediaBaseURL   = "https://stagemedia.me"
 	DefaultStagemediaUserAgent = "promptbook/0.0.1"
@@ -67,6 +79,12 @@ type LibraryConfig struct {
 	IncomingDirs   []string      `mapstructure:"incomingDirs"`
 	WatchInterval  time.Duration `mapstructure:"watchInterval"`
 	ImageRoot      string        `mapstructure:"imageRoot"`
+	// FFProbePath is the ffprobe binary used by the rename engine to
+	// extract codec/resolution metadata for the new {Container} /
+	// {VideoCodec} / {Quality} tokens. Empty falls back to "ffprobe"
+	// on PATH; the engine surfaces an error if the binary isn't
+	// reachable at probe time (no silent empty-mediainfo fallback).
+	FFProbePath string `mapstructure:"ffprobePath"`
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).
@@ -153,6 +171,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("library.folderTemplate", DefaultFolderTemplate)
 	v.SetDefault("library.fileTemplate", DefaultFileTemplate)
 	v.SetDefault("library.watchInterval", DefaultWatchInterval)
+	v.SetDefault("library.ffprobePath", DefaultFFProbePath)
 	v.SetDefault("server.listen", DefaultListenAddr)
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
 	v.SetDefault("stagemedia.baseUrl", DefaultStagemediaBaseURL)

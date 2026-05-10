@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
+	"github.com/nicolerenee/promptbook/internal/probe"
 )
 
 // Plan describes the canonical destination for a single recording. It
@@ -34,12 +35,20 @@ func (p Plan) AbsoluteFile() string {
 
 // PlanInputs bundles the rendering inputs for BuildPlan. Keeps the
 // signature small as the call site grows.
+//
+// MediaInfo is sourced from probe.Probe at the call site; an empty
+// MediaInfo causes the {Container}/{VideoCodec}/{Quality} tokens to
+// resolve empty (which the optional-segment grammar turns into a
+// silent collapse, not a dangling bracket pair). Part is the 1-based
+// part index from match.Parse; pass 0 when the source isn't a part.
 type PlanInputs struct {
 	Recording      encora.Recording
 	Source         string
 	LibraryRoot    string
 	FolderTemplate string
 	FileTemplate   string
+	MediaInfo      probe.MediaInfo
+	Part           int
 }
 
 // BuildPlan renders the canonical names from the templates and returns a
@@ -54,7 +63,15 @@ func BuildPlan(in PlanInputs) (*Plan, error) {
 		return nil, errors.New("rename: folder/file templates required")
 	}
 
-	folder, err := Apply(in.FolderTemplate, in.Recording)
+	ctx := templateContext{
+		Recording: in.Recording,
+		Container: in.MediaInfo.Container,
+		Codec:     in.MediaInfo.VideoCodec,
+		Quality:   in.MediaInfo.Quality(),
+		Part:      in.Part,
+	}
+
+	folder, err := ApplyContext(in.FolderTemplate, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("apply folder template: %w", err)
 	}
@@ -62,7 +79,7 @@ func BuildPlan(in PlanInputs) (*Plan, error) {
 		return nil, errors.New("rename: folder template rendered empty")
 	}
 
-	file, err := Apply(in.FileTemplate, in.Recording)
+	file, err := ApplyContext(in.FileTemplate, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("apply file template: %w", err)
 	}

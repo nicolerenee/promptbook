@@ -23,6 +23,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -1316,12 +1317,23 @@ func (r *Resolver) previewQueueImport(
 		return nil, fmt.Errorf(
 			"graphql: load recording %d: %w", input.RecordingID, err)
 	}
+	if r.libraryPlan.Prober == nil {
+		return nil, errors.New("graphql: ingest probe not configured")
+	}
+	info, perr := r.libraryPlan.Prober.Probe(ctx, entry.FilePath)
+	if perr != nil {
+		return nil, fmt.Errorf(
+			"graphql: probe %s: %w", entry.FilePath, perr)
+	}
+	parsed := match.Parse(filepath.Base(entry.FilePath))
 	plan, err := rename.BuildPlan(rename.PlanInputs{
 		Recording:      loaded.Recording,
 		Source:         entry.FilePath,
 		LibraryRoot:    r.libraryPlan.Root,
 		FolderTemplate: r.libraryPlan.FolderTemplate,
 		FileTemplate:   r.libraryPlan.FileTemplate,
+		MediaInfo:      info,
+		Part:           parsed.PartIndex,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("graphql: build plan: %w", err)
