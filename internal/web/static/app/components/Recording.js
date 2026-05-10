@@ -36,7 +36,6 @@ import {
   errorMessageFromUpload,
 } from '../utils/uploadPicker.js';
 import ImagePickerModal, {
-  renderEditImagesButton,
   renderImageErrorToast,
   renderImageInfoToast,
   renderUpstreamPicker,
@@ -714,162 +713,386 @@ function renderNFTCallout(loaded) {
   return null;
 }
 
-// renderHeader is the top page section: status badge, optional NFT
-// badge, show title, the Tour · date · master subtitle, and a small
-// right-aligned action bar carrying the "Edit images" button that
-// opens the picker modal.
-function renderHeader(loaded) {
+// ─── Toolbar icons (Heroicons Outline 24/24, inlined) ─────────────────
+//
+// Each helper returns a small SVG vnode at size-4 so it sits cleanly
+// next to a btn-sm label. Inline rather than imported — the SPA bundle
+// is hand-rolled and we only need a handful of glyphs. stroke uses
+// currentColor so DaisyUI button variants colour them automatically.
+
+function svgIcon(paths) {
+  return m('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    fill: 'none',
+    viewBox: '0 0 24 24',
+    'stroke-width': 1.5,
+    stroke: 'currentColor',
+    'aria-hidden': 'true',
+    class: 'size-4',
+  }, paths);
+}
+
+function refreshIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99',
+    }),
+  ]);
+}
+
+function pencilSquareIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M16.862 4.487 18.549 2.799a2.121 2.121 0 1 1 3 3L19.862 7.487m-3-3L6.34 15.01a4.5 4.5 0 0 0-1.13 1.897l-1.06 3.708 3.71-1.06a4.5 4.5 0 0 0 1.896-1.13L19.862 7.487m-3-3 3 3M9 19.5h6.75',
+    }),
+  ]);
+}
+
+function documentArrowPathIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z',
+    }),
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M9 14.25 7.5 15.75 9 17.25m6-3 1.5 1.5-1.5 1.5',
+    }),
+  ]);
+}
+
+function photoIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'm2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z',
+    }),
+  ]);
+}
+
+function clockIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    }),
+  ]);
+}
+
+function trashIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0',
+    }),
+  ]);
+}
+
+function externalLinkIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25',
+    }),
+  ]);
+}
+
+// stripHTML strips tags from a description blob. Encora's
+// metadata.show_description ships with WYSIWYG-flavoured <p>/<br>/&quot;
+// markup; we only need plain text for the hero's plot block. Mirrors
+// nfo/writer.go's stripHTML on the server side; kept local to avoid a
+// shared utility for one consumer.
+function stripHTML(s) {
+  if (!s) return '';
+  // Replace block-level closes with newlines so paragraph breaks
+  // survive the tag strip; collapse the rest of the markup.
+  let out = String(s)
+    .replace(/<\/(p|div|br|li)\s*>/gi, '\n')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  // Decode the handful of HTML entities Encora actually emits.
+  out = out
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// runRefreshImages POSTs the existing image-refresh endpoint. Phase 3
+// will replace this with the aggregate refresh-recording-full job;
+// for phase 1 we wire the toolbar Refresh button to the existing
+// surface so the affordance is live without a backend change.
+function runRefreshImages(id) {
+  if (state.recording.imageBusy) return;
+  state.recording.imageBusy = true;
+  state.recording.imageError = null;
+  m.redraw();
+  api.post('/recordings/' + encodeURIComponent(id) + '/refresh-images', {})
+    .then(() => {
+      state.recording.imageBusy = false;
+      state.recording.imageInfo =
+        'Refresh queued — page will update when the job completes.';
+      setTimeout(() => {
+        if (state.recording.imageInfo) {
+          state.recording.imageInfo = null;
+          m.redraw();
+        }
+      }, 5000);
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.imageBusy = false;
+      if (err && err.status === 503) {
+        state.recording.imageError =
+          'Background jobs not configured on the server.';
+      } else if (err && err.status === 409) {
+        state.recording.imageError =
+          'A refresh is already in flight — wait for it to finish.';
+      } else {
+        state.recording.imageError = errorMessage(err);
+      }
+      m.redraw();
+    });
+}
+
+// renderToolbar is the Radarr-style horizontal action bar that sits
+// above the hero. Buttons reflow on narrow viewports via flex-wrap.
+// Each button carries an aria-label matching its visible text so
+// screen readers don't only get the icon. The Delete button
+// state-drives off dangerActionFor; we hide it entirely when the
+// resolved action is non-destructive (Add to wants is constructive
+// and lives outside the danger surface).
+function renderToolbar(loaded) {
+  const id = loaded.Recording.id;
+  const action = dangerActionFor(loaded);
+  const showDelete = !!(action && action.destructive);
+  const refreshBusy = !!state.recording.imageBusy;
+  const regenBusy = !!state.recording.regeneratingNFO;
+  const dangerBusy = !!state.recording.dangerBusy;
+
+  const buttons = [
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm gap-2',
+      'aria-label': 'Refresh',
+      disabled: refreshBusy,
+      onclick: () => runRefreshImages(id),
+    }, [
+      refreshBusy
+        ? m('span', { class: 'loading loading-spinner loading-xs' })
+        : refreshIcon(),
+      m('span', 'Refresh'),
+    ]),
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm gap-2',
+      'aria-label': 'Preview rename',
+      onclick: () => {
+        state.recording.renameOpen = true;
+        state.recording.renamePreview = null;
+        state.recording.renameResult = null;
+        state.recording.renameApplyError = null;
+        loadRenamePreview(id);
+      },
+    }, [pencilSquareIcon(), m('span', 'Preview rename')]),
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm gap-2',
+      'aria-label': 'Regenerate NFO',
+      disabled: regenBusy,
+      onclick: () => runRegenerateNFO(id),
+    }, [
+      regenBusy
+        ? m('span', { class: 'loading loading-spinner loading-xs' })
+        : documentArrowPathIcon(),
+      m('span', regenBusy ? 'Regenerating…' : 'Regenerate NFO'),
+    ]),
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm gap-2',
+      'aria-label': 'Edit images',
+      onclick: () => {
+        state.recording.pickerOpen = true;
+        state.recording.pickerTab = 'poster';
+        maybeLoadPickerOptions(id, 'poster');
+      },
+    }, [photoIcon(), m('span', 'Edit')]),
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm gap-2',
+      'aria-label': 'History',
+      onclick: () => {
+        m.route.set('/history', { recording_id: String(id) });
+      },
+    }, [clockIcon(), m('span', 'History')]),
+  ];
+  if (showDelete) {
+    buttons.push(m('button', {
+      type: 'button',
+      class: 'btn btn-sm btn-error btn-outline gap-2',
+      'aria-label': action.label,
+      disabled: dangerBusy,
+      onclick: () => runDangerAction(action, id),
+    }, [
+      dangerBusy
+        ? m('span', { class: 'loading loading-spinner loading-xs' })
+        : trashIcon(),
+      m('span', dangerBusy ? 'Working…' : action.label),
+    ]));
+  }
+  return m('div', { class: 'flex flex-wrap gap-2 items-center' }, [
+    ...buttons,
+    state.recording.dangerError
+      ? m('span', { class: 'text-error text-sm' },
+          state.recording.dangerError)
+      : null,
+  ]);
+}
+
+// linkButton is the small ghost-styled external link used in the hero
+// Links row. Extracted so future links (Stagemedia, IMDB, TMDB, …)
+// drop in via a single helper rather than a copy-pasted button.
+function linkButton(label, href) {
+  if (!href) return null;
+  return m('a', {
+    href,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    class: 'btn btn-xs btn-ghost gap-1',
+  }, [externalLinkIcon(), m('span', label)]);
+}
+
+// renderHero is the Radarr-style hero block: fanart as the background,
+// poster overlaid on the left, title / metadata / Links / plot stacked
+// on the right. Falls through to the placeholder route on missing
+// fanart — the server's /images/* handler emits a generated SVG when
+// the cache has nothing, so the hero never renders empty.
+function renderHero(loaded) {
   const r = loaded.Recording;
-  const status = statusForRecording(loaded);
-  const meta = STATUS_META[status] || STATUS_META.orphan;
+  const id = r.id;
+  const fanartURL = withImageVersion(loaded.local_fanart_url ||
+    '/images/recordings/' + id + '/fanart.jpg');
+  const posterURL = withImageVersion(loaded.local_poster_url ||
+    '/images/recordings/' + id + '/poster.jpg');
+
+  // Title block — Show is a route link, "—" separators are plain text.
+  const showName = r.show || '—';
+  const showID = loaded.showID;
+  const titleParts = [];
+  if (showID && showID > 0) {
+    titleParts.push(m('a', {
+      class: 'link link-hover',
+      href: '#',
+      onclick: (ev) => {
+        ev.preventDefault();
+        m.route.set('/shows/' + encodeURIComponent(String(showID)));
+      },
+    }, showName));
+  } else {
+    titleParts.push(m('span', showName));
+  }
+  if (r.tour) {
+    titleParts.push(m('span', { class: 'opacity-70' }, ' — '));
+    titleParts.push(m('span', r.tour));
+  }
   const date = smartDate(
     r.date && r.date.full_date,
     r.date && r.date.month_known,
     r.date && r.date.day_known,
   );
-  const subParts = [];
-  if (r.tour) subParts.push(r.tour);
-  if (date && date !== '—') subParts.push(date);
-  if (r.master) subParts.push('master ' + r.master);
-  const nft = nftBadge(loaded);
-  return m('header', { class: 'space-y-2' }, [
-    m('div', { class: 'flex items-start justify-between gap-3 flex-wrap' }, [
-      m('div', { class: 'space-y-2 min-w-0' }, [
-        m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-          m('span', { class: 'badge ' + meta.badge }, meta.label),
-          nft,
-          m('span', { class: 'text-sm font-mono opacity-60' },
-            'enc-' + String(r.id)),
-        ]),
-        m('h1', { class: 'text-3xl font-semibold' }, r.show || '—'),
-        subParts.length
-          ? m('p', { class: 'text-sm opacity-70 font-mono' },
-              subParts.join(' · '))
+  if (date && date !== '—') {
+    titleParts.push(m('span', { class: 'opacity-70' }, ' — '));
+    titleParts.push(m('span', date));
+  }
+
+  // Metadata badges + chips.
+  const status = statusForRecording(loaded);
+  const statusMeta = STATUS_META[status] || STATUS_META.orphan;
+  const mi = loaded.media_info;
+  const quality = mi ? qualityFromHeight(mi.height) : '';
+  const runtime = (mi && mi.durationSeconds > 0)
+    ? formatMediaRunTime(mi.durationSeconds) : '';
+  const metaChips = [
+    m('span', { class: 'badge ' + statusMeta.badge }, statusMeta.label),
+    nftBadge(loaded),
+    quality ? m('span', { class: 'badge badge-ghost' }, quality) : null,
+    runtime
+      ? m('span', { class: 'text-sm font-mono opacity-80' }, runtime)
+      : null,
+    r.master
+      ? m('span', { class: 'text-sm opacity-80' }, 'master ' + r.master)
+      : null,
+    loaded.LocalReleaseFormat
+      ? m('span', { class: 'badge badge-outline badge-sm' },
+          loaded.LocalReleaseFormat)
+      : null,
+    m('span', { class: 'text-xs font-mono opacity-60' },
+      'enc-' + String(id)),
+  ];
+
+  // Links row — Encora today, designed to take more pills via
+  // linkButton(). The encora.it canonical pattern is verified against
+  // recording id 90100222 (Marigold) per phase-1 spec.
+  const encoraURL = 'https://encora.it/recordings/' +
+    encodeURIComponent(String(id));
+  const linksRow = m('div', { class: 'flex flex-wrap gap-2 items-center' }, [
+    m('span', {
+      class: 'opacity-70 text-xs uppercase tracking-wide',
+    }, 'Links'),
+    linkButton('Encora', encoraURL),
+  ]);
+
+  // Plot — prefer the parsed metadata.show_description (HTML stripped)
+  // since that's the upstream Encora blurb; legacy NFOs may carry a
+  // plot field too but we only surface upstream copy here.
+  const meta = r.metadata || {};
+  const plot = stripHTML(meta.show_description || '');
+
+  return m('div', {
+    class: 'hero rounded-box overflow-hidden bg-base-300',
+    style: 'background-image: url(' + fanartURL + ');' +
+           'background-size: cover; background-position: center;',
+  }, [
+    m('div', { class: 'hero-overlay bg-black/70' }),
+    m('div', {
+      class: 'hero-content text-neutral-content w-full p-6 sm:p-8',
+    }, m('div', {
+      class: 'flex flex-col sm:flex-row gap-6 w-full max-w-6xl',
+    }, [
+      m('img', {
+        src: posterURL,
+        alt: showName + ' poster',
+        class: 'rounded-box w-48 sm:w-56 self-start shadow-xl',
+        loading: 'lazy',
+      }),
+      m('div', { class: 'flex-1 space-y-3 min-w-0' }, [
+        m('h1', { class: 'text-3xl sm:text-4xl font-bold leading-tight' },
+          titleParts),
+        m('div', { class: 'flex flex-wrap items-center gap-x-3 gap-y-1' },
+          metaChips),
+        linksRow,
+        plot
+          ? m('p', {
+              class: 'text-base sm:text-lg max-w-3xl whitespace-pre-line',
+            }, plot)
           : null,
       ]),
-      m('div', { class: 'flex items-center gap-2 shrink-0 flex-wrap' }, [
-        // Preview rename — opens the modal with a per-version
-        // source → destination plan. The modal itself drives apply.
-        m('button', {
-          type: 'button',
-          class: 'btn btn-sm btn-ghost',
-          onclick: () => {
-            state.recording.renameOpen = true;
-            state.recording.renamePreview = null;
-            state.recording.renameResult = null;
-            state.recording.renameApplyError = null;
-            loadRenamePreview(loaded.Recording.id);
-          },
-        }, 'Preview rename'),
-        // Regenerate NFO — fire-and-forget rewrite at the existing
-        // folder. The toast pair surfaces success / failure.
-        m('button', {
-          type: 'button',
-          class: 'btn btn-sm btn-ghost',
-          disabled: !!state.recording.regeneratingNFO,
-          onclick: () => runRegenerateNFO(loaded.Recording.id),
-        }, [
-          state.recording.regeneratingNFO
-            ? m('span', { class: 'loading loading-spinner loading-xs mr-1' })
-            : null,
-          state.recording.regeneratingNFO ? 'Regenerating…' : 'Regenerate NFO',
-        ]),
-        renderEditImagesButton({
-          onclick: () => {
-            state.recording.pickerOpen = true;
-            state.recording.pickerTab = 'poster';
-            // Kick the upstream options fetch for the default tab so
-            // the picker doesn't render a static skeleton until the
-            // user clicks something.
-            maybeLoadPickerOptions(loaded.Recording.id, 'poster');
-          },
-        }),
-      ]),
-    ]),
+    ])),
   ]);
-}
-
-// renderPosterCard shows the cached poster.jpg (the burned-in render
-// output). Under v2 the chosen image is the only image — no index
-// dance, no upstream fallback. local_poster_url is ALWAYS the
-// canonical /images/... path; the server's /images/* route falls
-// through to the SVG placeholder generator on cache miss, so the
-// browser always gets a valid image. Empty url means image caching
-// is disabled at the server level — show a "caching disabled" card.
-function renderPosterCard(loaded) {
-  const url = withImageVersion((loaded && loaded.local_poster_url) || '');
-  const figure = url
-    ? m('figure', m('img', {
-        src: url,
-        alt: (loaded.Recording.show || 'recording') + ' poster',
-        class: 'w-full h-auto object-cover',
-        loading: 'lazy',
-      }))
-    : m('figure', {
-        class: 'aspect-[2/3] flex items-center justify-center ' +
-               'bg-base-200 text-base-content/40 text-sm font-mono',
-      }, 'image caching disabled');
-  return m('div', { class: 'card bg-base-100 shadow-sm overflow-hidden' },
-    figure);
-}
-
-// metaRow renders one definition-list-style line in the metadata card.
-function metaRow(label, value) {
-  return m('div', { class: 'flex justify-between gap-4 py-1 text-sm' }, [
-    m('span', { class: 'opacity-60' }, label),
-    m('span', { class: 'font-mono text-right break-all' }, value || '—'),
-  ]);
-}
-
-// renderMetadataCard summarises the recording's primary fields. Folder
-// derives from the first version's path so mismatched files surface a
-// recognisable parent directory.
-function renderMetadataCard(loaded) {
-  const r = loaded.Recording;
-  const meta = r.metadata || {};
-  const date = smartDate(
-    r.date && r.date.full_date,
-    r.date && r.date.month_known,
-    r.date && r.date.day_known,
-  );
-  // Release format reads the locally-derived string off
-  // localReleaseFormat — built from each version's MediaInfo blob
-  // by the releaseformat package on the server. Replaces the legacy
-  // encora.release_format display: that field is still on disk in
-  // raw_json but no longer surfaced through GraphQL.
-  const releaseFormat = loaded.LocalReleaseFormat || '—';
-  const cataloged = loaded.InCollection && loaded.CollectedAt
-    ? formatNFTDate(loaded.CollectedAt) || loaded.CollectedAt
-    : '—';
-  const folder = (loaded.Versions && loaded.Versions.length > 0)
-    ? (dirname(loaded.Versions[0].FilePath) || '—')
-    : '—';
-  const encoraURL = 'https://encora.it/recordings/' +
-    encodeURIComponent(String(r.id));
-  return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body' }, [
-      m('h2', { class: 'card-title text-base' }, 'Metadata'),
-      m('div', { class: 'divide-y divide-base-200' }, [
-        metaRow('Show', r.show),
-        metaRow('Tour', r.tour),
-        metaRow('Date', date),
-        metaRow('Master', r.master),
-        metaRow('Release format', releaseFormat),
-        metaRow('Gifting', meta.gifting_status),
-        metaRow('Owners', meta.owners_count != null ? String(meta.owners_count) : '—'),
-        metaRow('Wanters', meta.wanters_count != null ? String(meta.wanters_count) : '—'),
-        metaRow('Cataloged', cataloged),
-        metaRow('Folder', folder),
-      ]),
-      m('div', { class: 'card-actions justify-end' }, [
-        m('a', {
-          class: 'btn btn-sm btn-ghost',
-          href: encoraURL,
-          target: '_blank',
-          rel: 'noopener noreferrer',
-        }, 'Open on encora.it'),
-      ]),
-    ]));
 }
 
 // renderCastCard lists every performer with their role + per-recording
@@ -1180,41 +1403,6 @@ function renderNFOCard(loaded) {
         class: 'bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
       }, content),
     ]));
-}
-
-// renderDangerZone renders the bottom card. State-driven: which button
-// shows depends on the recording's current Encora membership. The
-// destructive pair use btn-error styling; "Add to wants" is
-// constructive and stays neutral.
-function renderDangerZone(loaded) {
-  const action = dangerActionFor(loaded);
-  if (!action) return null;
-  const id = loaded.Recording.id;
-  const busy = state.recording.dangerBusy;
-  const error = state.recording.dangerError;
-  const btnClass = action.destructive
-    ? 'btn btn-sm btn-error btn-outline'
-    : 'btn btn-sm';
-  return m('div', { class: 'space-y-3' }, [
-    m('div', { class: 'divider my-2' }),
-    m('section', { class: 'space-y-2' }, [
-      m('h2', {
-        class: 'text-xs uppercase tracking-wide opacity-60 font-semibold',
-      }, 'Danger zone'),
-      m('p', { class: 'text-sm opacity-80 max-w-2xl' }, action.description),
-      m('div', { class: 'flex items-center gap-3' }, [
-        m('button', {
-          type: 'button',
-          class: btnClass,
-          disabled: busy,
-          onclick: () => runDangerAction(action, id),
-        }, busy ? 'Working…' : action.label),
-        error
-          ? m('span', { class: 'text-error text-sm' }, error)
-          : null,
-      ]),
-    ]),
-  ]);
 }
 
 // loadOptions fetches /api/v1/<entity>/<id>/<kind>-options and parks
@@ -1656,29 +1844,23 @@ function maybeLoadPickerOptions(id, tab) {
   loadOptions(id, tab);
 }
 
-// renderBody composes the two-column main grid. Left column gathers
-// the visual + reference cards (poster, metadata, NFT callout, NFO);
-// right column carries the bigger informational surfaces (cast,
-// versions). Falls back to a single column on small screens. The
-// image-picker UI is no longer inline — it lives behind the
-// "Edit images" button in the header and renders as a modal mounted
-// at the page root from view().
+// renderBody composes the post-hero stack. The hero already carries
+// the poster, status, metadata, and plot; the body section lists the
+// recording's local files (versions), the Sonarr-style Media Info
+// table, the on-disk NFO, the cast tideflyer, and the NFT callout when
+// the recording is gated. Phase 2 will fold Media Info into a
+// per-version drilldown, but we keep the existing cards intact for
+// this pass so file restructure is a separate diff.
 function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
   const nfoCard = renderNFOCard(loaded);
   const mediaInfoCard = renderMediaInfoCard(loaded);
-  return m('div', { class: 'grid gap-6 lg:grid-cols-3' }, [
-    m('div', { class: 'lg:col-span-1 space-y-6' }, [
-      renderPosterCard(loaded),
-      callout,
-      renderMetadataCard(loaded),
-    ]),
-    m('div', { class: 'lg:col-span-2 space-y-6' }, [
-      renderCastCard(loaded),
-      renderVersionsCard(loaded),
-      mediaInfoCard,
-      nfoCard,
-    ]),
+  return m('div', { class: 'space-y-6' }, [
+    callout,
+    renderVersionsCard(loaded),
+    mediaInfoCard,
+    nfoCard,
+    renderCastCard(loaded),
   ]);
 }
 
@@ -1771,9 +1953,9 @@ const Recording = {
       return m('div', { class: 'p-8 opacity-60' }, 'No recording data.');
     }
     return m('div', { class: 'space-y-6' }, [
-      renderHeader(loaded),
+      renderToolbar(loaded),
+      renderHero(loaded),
       renderBody(loaded),
-      renderDangerZone(loaded),
       renderImagePickerModal(loaded),
       m(RecordingRenameModal, {
         open: !!state.recording.renameOpen,
