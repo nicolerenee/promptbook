@@ -293,11 +293,15 @@ const (
 	// against max(minChars, len(text)) characters, so the row's type
 	// stays at a stable scale across recordings: a 4-char date
 	// "2024" and a 10-char date "2024-12-31" render at the same
-	// height because both are sized for the 12-char minimum. Title
-	// runs at a 10-char floor so short tour names like "BROADWAY"
-	// stay prominent — long tour names shrink to fit naturally.
+	// height because both are sized for the 12-char minimum.
+	//
+	// titleMinChars at 8 lets "BROADWAY" (the most common short tour
+	// label, 8 chars) hit the title slot cap so it fills the full
+	// slot height — at 10 the char budget came in below the cap and
+	// the rendered text left visible empty space. Long tour names
+	// still shrink to fit their own length.
 	eyebrowMinChars = 12
-	titleMinChars   = 10
+	titleMinChars   = 8
 	captionMinChars = 25
 	// 9% per side = 18% total horizontal margin. The previous 7%
 	// still read as edge-to-edge once a long date or venue used the
