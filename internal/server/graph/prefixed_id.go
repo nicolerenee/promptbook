@@ -43,6 +43,7 @@ const (
 	prefixCastEntry        = "cast"
 	prefixCollectionEntry  = "collection"
 	prefixPerformer        = "performer"
+	prefixQueue            = "queue"
 	prefixRecording        = "recording"
 	prefixRecordingVersion = "version"
 	prefixShow             = "show"
@@ -71,6 +72,10 @@ const (
 	fkFieldCastEntryID      = "castEntryID"
 	fkFieldPerformerID      = "performerID"
 	fkFieldCharacterID      = "characterID"
+	// fkFieldSuggestedRecordingID is the QueueEntry field that points
+	// at the scanner's best-guess recording. Null when the scanner had
+	// no candidate; non-null values marshal as "recording-N".
+	fkFieldSuggestedRecordingID = "suggestedRecordingID"
 )
 
 // objectName* — GraphQL Object names that show up in two or more
@@ -98,6 +103,8 @@ const (
 	objectNamePersonListItem        = "PersonListItem"
 	objectNamePersonRecording       = "PersonRecording"
 	objectNamePersonDetail          = "PersonDetail"
+	objectNameQueueEntry            = "QueueEntry"
+	objectNameImportQueueEntryInput = "ImportQueueEntryInput"
 )
 
 // objectIDPrefix maps a GraphQL Object name (the type the field
@@ -138,6 +145,12 @@ var objectIDPrefix = map[string]string{
 	// is a recording reference, surfaced via the type-default mapping
 	// here.
 	objectNamePersonRecording: prefixRecording,
+	// Queue surface — QueueEntry.id maps to "queue-N";
+	// ImportQueueEntryInput.queueID is the same prefix (the input's id
+	// is also a queue reference). suggestedRecordingID + recordingID
+	// fields fall through to foreignKeyFieldPrefix.
+	objectNameQueueEntry:            prefixQueue,
+	objectNameImportQueueEntryInput: prefixQueue,
 }
 
 // foreignKeyFieldPrefix maps an ID-typed field name (the foreign-key
@@ -169,6 +182,10 @@ var foreignKeyFieldPrefix = map[string]string{
 	fkFieldCastEntryID: prefixCastEntry,
 	fkFieldPerformerID: prefixPerformer,
 	fkFieldCharacterID: prefixCharacter,
+	// QueueEntry.suggestedRecordingID points at a recording row; the
+	// import-mutation input's recordingID slot is already covered by
+	// fkFieldRecordingID above.
+	fkFieldSuggestedRecordingID: prefixRecording,
 }
 
 // validPrefixes is the set of prefixes Unmarshal accepts when the
@@ -180,6 +197,7 @@ var validPrefixes = map[string]bool{
 	prefixCastEntry:        true,
 	prefixCollectionEntry:  true,
 	prefixPerformer:        true,
+	prefixQueue:            true,
 	prefixRecording:        true,
 	prefixRecordingVersion: true,
 	prefixShow:             true,

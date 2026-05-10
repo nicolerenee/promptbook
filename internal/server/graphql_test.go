@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
 // graphqlPost runs a GraphQL POST against the supplied handler and
@@ -19,6 +23,24 @@ import (
 func graphqlPost(t *testing.T, handler http.Handler, query string) ([]byte, *httptest.ResponseRecorder) {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{"query": query})
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/graphql", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rr, req)
+	return rr.Body.Bytes(), rr
+}
+
+// graphqlPostVars is the variable-aware sibling of graphqlPost. The
+// queue tests use it so the mutation input can flow through the
+// VARIABLES path the SPA actually exercises (string literals would
+// short-circuit the prefixed-id unmarshal-from-variable case).
+func graphqlPostVars(
+	t *testing.T, handler http.Handler, query string, variables map[string]any,
+) ([]byte, *httptest.ResponseRecorder) {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
@@ -499,4 +521,252 @@ func TestGraphQLShowQuery(t *testing.T) {
 	}
 	assert.True(t, found, "expected recording-90100222 under Marigold Junction: %s",
 		strings.Join(ids, ","))
+}
+
+// TestGraphQLQueueEmpty asserts that the queue resolver returns an
+// empty (non-nil) array when no rows have been enqueued. Mirrors the
+// legacy TestAPIQueueEmpty against the same DB fixture path.
+func TestGraphQLQueueEmpty(t *testing.T) {
+	t.Parallel()
+	srv, _ := queueImportTestServer(t, &stubIngestRunner{})
+
+	body, rr := graphqlPost(t, srv.Handler(), `{ queue { id filePath } }`)
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			Queue []map[string]any `json:"queue"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.Empty(t, resp.Data.Queue)
+}
+
+// TestGraphQLQueueLists exercises the queue read against a populated
+// table. Asserts the prefixed-id wire format on both QueueEntry.id
+// (queue-N) and QueueEntry.suggestedRecordingID (recording-N) so a
+// regression in either marshal path surfaces immediately.
+func TestGraphQLQueueLists(t *testing.T) {
+	t.Parallel()
+	srv, db := queueImportTestServer(t, &stubIngestRunner{})
+
+	suggested := int64(90100222)
+	_, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:            "/incoming/marigold.mkv",
+		FileSizeBytes:       1024,
+		SuggestedConfidence: storage.ConfidenceLow,
+		Notes:               "no match",
+	})
+	require.NoError(t, err)
+	_, err = storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FileSizeBytes:        2048,
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	body, rr := graphqlPost(t, srv.Handler(), `{
+		queue {
+			id
+			filePath
+			fileSizeBytes
+			suggestedRecordingID
+			suggestedConfidence
+			notes
+		}
+	}`)
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			Queue []struct {
+				ID                   string  `json:"id"`
+				FilePath             string  `json:"filePath"`
+				FileSizeBytes        int     `json:"fileSizeBytes"`
+				SuggestedRecordingID *string `json:"suggestedRecordingID"`
+				SuggestedConfidence  string  `json:"suggestedConfidence"`
+				Notes                string  `json:"notes"`
+			} `json:"queue"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Data.Queue, 2)
+
+	paths := make(map[string]bool, len(resp.Data.Queue))
+	for _, it := range resp.Data.Queue {
+		paths[it.FilePath] = true
+		assert.True(t, strings.HasPrefix(it.ID, "queue-"),
+			"queue id must carry the queue- prefix: %s", it.ID)
+	}
+	assert.True(t, paths["/incoming/marigold.mkv"])
+	assert.True(t, paths["/incoming/greenwich-beacon.mkv"])
+
+	// Find the greenwich-beacon row and assert its suggestedRecordingID came back
+	// with the recording- prefix.
+	var greenwich-beacon *string
+	for _, it := range resp.Data.Queue {
+		if it.FilePath == "/incoming/greenwich-beacon.mkv" {
+			greenwich-beacon = it.SuggestedRecordingID
+			break
+		}
+	}
+	require.NotNil(t, greenwich-beacon, "greenwich-beacon row missing suggestedRecordingID")
+	assert.Equal(t, "recording-90100222", *greenwich-beacon)
+}
+
+// TestGraphQLImportQueueEntrySuccess covers the happy path: the
+// resolver runs the engine, removes the queue row, and writes a
+// manual_import history event.
+func TestGraphQLImportQueueEntrySuccess(t *testing.T) {
+	t.Parallel()
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	suggested := int64(90100222)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FileSizeBytes:        2048,
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	mutation := `mutation Import($input: ImportQueueEntryInput!) {
+		importQueueEntry(input: $input) {
+			ok
+			action
+			error
+			dest
+		}
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"input": map[string]any{
+			"queueID": "queue-" + strconv.FormatInt(queueID, 10),
+		},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			ImportQueueEntry struct {
+				OK     bool   `json:"ok"`
+				Action string `json:"action"`
+				Error  string `json:"error"`
+				Dest   string `json:"dest"`
+			} `json:"importQueueEntry"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.True(t, resp.Data.ImportQueueEntry.OK)
+	assert.Equal(t, ingest.ActionMoved, resp.Data.ImportQueueEntry.Action)
+
+	// Engine called with the suggested id, source = entry.FilePath.
+	require.Len(t, stub.calls, 1)
+	assert.Equal(t, "/incoming/greenwich-beacon.mkv", stub.calls[0].Src)
+	assert.Equal(t, int(suggested), stub.calls[0].Opts.FlagEncoraID)
+
+	// Queue row removed on success.
+	_, err = storage.LoadQueueEntry(t.Context(), db, queueID)
+	require.ErrorIs(t, err, storage.ErrQueueEntryNotFound)
+
+	// History event recorded with kind=manual_import + recording_id.
+	events, err := storage.ListHistory(t.Context(), db, storage.ListHistoryOptions{
+		Kinds: []string{storage.HistoryKindManualImport},
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, storage.HistoryKindManualImport, events[0].Kind)
+	require.NotNil(t, events[0].RecordingID)
+	assert.Equal(t, suggested, *events[0].RecordingID)
+}
+
+// TestGraphQLImportQueueEntryNotFound covers the resolver's
+// ErrQueueEntryNotFound branch — the GraphQL surface returns a
+// non-nil errors array; the engine must not fire.
+func TestGraphQLImportQueueEntryNotFound(t *testing.T) {
+	t.Parallel()
+	stub := &stubIngestRunner{}
+	srv, _ := queueImportTestServer(t, stub)
+
+	mutation := `mutation Import($input: ImportQueueEntryInput!) {
+		importQueueEntry(input: $input) { ok }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"input": map[string]any{"queueID": "queue-9999"},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.Contains(t, string(body), `"errors":`,
+		"missing queue entry must surface a GraphQL error: %s", string(body))
+	assert.Contains(t, string(body), "not found", string(body))
+	assert.Empty(t, stub.calls, "engine must not run when the queue entry is missing")
+}
+
+// TestGraphQLImportQueueEntryEngineNotConfigured covers the 503-equivalent
+// branch: the resolver was constructed with a nil ingestEngine, so the
+// mutation surfaces an error and the queue row stays in place.
+func TestGraphQLImportQueueEntryEngineNotConfigured(t *testing.T) {
+	t.Parallel()
+	srv, db := queueImportTestServer(t, nil)
+
+	suggested := int64(90100222)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	mutation := `mutation Import($input: ImportQueueEntryInput!) {
+		importQueueEntry(input: $input) { ok }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"input": map[string]any{
+			"queueID": "queue-" + strconv.FormatInt(queueID, 10),
+		},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.Contains(t, string(body), `"errors":`,
+		"missing ingest engine must surface a GraphQL error: %s", string(body))
+	assert.Contains(t, string(body), "ingest not configured", string(body))
+
+	// Queue row preserved.
+	_, err = storage.LoadQueueEntry(t.Context(), db, queueID)
+	require.NoError(t, err)
+}
+
+// TestGraphQLImportQueueEntryExplicitID asserts that a non-nil
+// recordingID input overrides the queue entry's suggestedRecordingID,
+// matching the legacy TestAPIImportQueueExplicitID behavior.
+func TestGraphQLImportQueueEntryExplicitID(t *testing.T) {
+	t.Parallel()
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	suggested := int64(1111)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/greenwich-beacon.mkv",
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceLow,
+	})
+	require.NoError(t, err)
+
+	mutation := `mutation Import($input: ImportQueueEntryInput!) {
+		importQueueEntry(input: $input) { ok action }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"input": map[string]any{
+			"queueID":     "queue-" + strconv.FormatInt(queueID, 10),
+			"recordingID": "recording-9999",
+		},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	require.Len(t, stub.calls, 1)
+	assert.Equal(t, 9999, stub.calls[0].Opts.FlagEncoraID,
+		"explicit recordingID must override the suggested id")
 }

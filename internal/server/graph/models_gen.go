@@ -2,9 +2,25 @@
 
 package graph
 
+import (
+	"time"
+)
+
 type BannerLayout struct {
 	Position    string `json:"position"`
 	ImageRegion string `json:"imageRegion"`
+}
+
+type ImportQueueEntryInput struct {
+	QueueID     int64  `json:"queueID"`
+	RecordingID *int64 `json:"recordingID,omitempty"`
+}
+
+type ImportQueueEntryPayload struct {
+	Ok     bool   `json:"ok"`
+	Action string `json:"action"`
+	Dest   string `json:"dest"`
+	Error  string `json:"error"`
 }
 
 type PersonDetail struct {
@@ -40,6 +56,17 @@ type PersonRecording struct {
 	DateDayKnown   bool   `json:"dateDayKnown"`
 	ShowID         int64  `json:"showID"`
 	State          string `json:"state"`
+}
+
+type QueueEntry struct {
+	ID                   int64     `json:"id"`
+	FilePath             string    `json:"filePath"`
+	FileSizeBytes        int       `json:"fileSizeBytes"`
+	DiscoveredAt         time.Time `json:"discoveredAt"`
+	LastSeenAt           time.Time `json:"lastSeenAt"`
+	SuggestedRecordingID *int64    `json:"suggestedRecordingID,omitempty"`
+	SuggestedConfidence  string    `json:"suggestedConfidence"`
+	Notes                string    `json:"notes"`
 }
 
 type RecordingsListItem struct {

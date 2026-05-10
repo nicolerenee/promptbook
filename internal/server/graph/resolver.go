@@ -7,29 +7,62 @@
 package graph
 
 import (
+	"context"
+
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/rs/zerolog"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/ingest"
 )
+
+// IngestRunner is the slice of *ingest.Engine the importQueueEntry
+// mutation needs. Surfaced here (not in the parent server package) so
+// the graph resolver can hold one without importing server (which
+// imports graph). Callers building a Resolver pass the same
+// *ingest.Engine they pass on Server.Options.IngestEngine; the
+// server-side IngestRunner alias points at this declaration so the
+// satisfaction check stays in one place.
+type IngestRunner interface {
+	Ingest(ctx context.Context, src string, opts ingest.Options) (*ingest.Result, error)
+}
 
 // Resolver is the root resolver. It carries the ent client every
 // generated resolver method calls into, plus the image cache the
 // enrichment resolvers (poster URL, fanart URL, headshot URL) use to
-// derive `/images/...` paths from int64 entity ids.
+// derive `/images/...` paths from int64 entity ids, plus the ingest
+// engine the importQueueEntry mutation drives + a logger for the
+// fire-and-forget cleanup paths.
 //
 // imageCache may be nil — when caching is disabled, the URL helpers
 // return empty strings so the SPA renders its placeholder branch.
+// ingestEngine may be nil — when nil the importQueueEntry resolver
+// returns a "ingest not configured" error so the rest of the read
+// surface stays alive.
 type Resolver struct {
-	client     *ent.Client
-	imageCache *imagecache.Cache
+	client       *ent.Client
+	imageCache   *imagecache.Cache
+	ingestEngine IngestRunner
+	logger       zerolog.Logger
 }
 
 // NewSchema builds an executable GraphQL schema rooted at the supplied
-// ent client + image cache. The image cache is optional; pass nil
-// when image caching is disabled at the server layer.
-func NewSchema(client *ent.Client, cache *imagecache.Cache) graphql.ExecutableSchema {
+// ent client + image cache + ingest runner + logger. The image cache
+// and ingest runner are both optional; pass nil when the surface is
+// not configured at the server layer.
+func NewSchema(
+	client *ent.Client,
+	cache *imagecache.Cache,
+	ingestEngine IngestRunner,
+	logger zerolog.Logger,
+) graphql.ExecutableSchema {
 	return NewExecutableSchema(Config{
-		Resolvers: &Resolver{client: client, imageCache: cache},
+		Resolvers: &Resolver{
+			client:       client,
+			imageCache:   cache,
+			ingestEngine: ingestEngine,
+			logger:       logger,
+		},
 	})
 }

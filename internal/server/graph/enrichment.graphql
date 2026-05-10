@@ -244,3 +244,51 @@ type PersonDetail {
   recordings: [PersonRecording!]!
   localHeadshotURL: String!
 }
+
+# QueueEntry is one row of the manual import queue. Mirrors
+# storage.QueueEntry; the wire id is the prefixed "queue-N" form so
+# the Mithril SPA can route on it without juggling raw int64s.
+# suggestedRecordingID is nullable when the scanner had no candidate.
+type QueueEntry {
+  id: ID!
+  filePath: String!
+  fileSizeBytes: Int!
+  discoveredAt: Time!
+  lastSeenAt: Time!
+  suggestedRecordingID: ID
+  suggestedConfidence: String!
+  notes: String!
+}
+
+extend type Query {
+  # queue returns every row in the manual_import_queue ordered
+  # oldest-first. Empty queue still returns [] so the client can
+  # range over it safely.
+  queue: [QueueEntry!]!
+}
+
+# ImportQueueEntryInput drives the importQueueEntry mutation.
+# recordingID is optional — when null, the queue entry's
+# suggestedRecordingID (which must be set) is used as the target.
+input ImportQueueEntryInput {
+  queueID: ID!
+  recordingID: ID
+}
+
+# ImportQueueEntryPayload mirrors the legacy REST importQueueResponse.
+# ok=true means the file moved + the queue row was deleted +
+# a manual_import history event was written. dest is the moved-to
+# path (or planned path on a dry run). error is set when ok=false.
+type ImportQueueEntryPayload {
+  ok: Boolean!
+  action: String!
+  dest: String!
+  error: String!
+}
+
+# Mutation is the root for write surfaces. importQueueEntry is the
+# first one — moves a queued file into the canonical library tree and
+# clears the queue row on success.
+type Mutation {
+  importQueueEntry(input: ImportQueueEntryInput!): ImportQueueEntryPayload!
+}

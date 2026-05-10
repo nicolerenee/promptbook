@@ -10,6 +10,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
@@ -33,12 +34,20 @@ const graphqlAPQCacheSize = 100
 const websocketKeepAlive = 10 * time.Second
 
 // newGraphQLHandler builds a configured gqlgen server backed by the
-// supplied ent client + image cache. Mirrors gqlgen's deprecated
-// NewDefaultServer (transports + introspection + APQ + LRU query
-// cache) but pinned to the constants defined above. cache may be nil
-// — the enrichment resolvers nil-check before reading.
-func newGraphQLHandler(client *ent.Client, cache *imagecache.Cache) *handler.Server {
-	srv := handler.New(graph.NewSchema(client, cache))
+// supplied ent client + image cache + ingest runner + logger. Mirrors
+// gqlgen's deprecated NewDefaultServer (transports + introspection +
+// APQ + LRU query cache) but pinned to the constants defined above.
+// cache may be nil — the enrichment resolvers nil-check before
+// reading. ingestEngine may be nil — the importQueueEntry mutation
+// returns an "ingest not configured" error in that case so the rest of
+// the schema stays usable.
+func newGraphQLHandler(
+	client *ent.Client,
+	cache *imagecache.Cache,
+	ingestEngine graph.IngestRunner,
+	logger zerolog.Logger,
+) *handler.Server {
+	srv := handler.New(graph.NewSchema(client, cache, ingestEngine, logger))
 	srv.AddTransport(transport.Websocket{KeepAlivePingInterval: websocketKeepAlive})
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
@@ -62,10 +71,11 @@ func newGraphQLHandler(client *ent.Client, cache *imagecache.Cache) *handler.Ser
 // CORS pre-flight handling and Apollo-compatible GET queries). The
 // playground mounts at /graphql/playground so the live endpoint is
 // JSON-only and tooling has a separate URL to bookmark. The image
-// cache is plumbed through so the enrichment resolvers can derive
-// /images/... URLs without re-reading server state.
+// cache + ingest runner + logger are plumbed through so the
+// enrichment resolvers + the importQueueEntry mutation can drive the
+// same surfaces the legacy REST handlers used to.
 func (s *Server) registerGraphQL() {
-	gql := newGraphQLHandler(s.db, s.imageCache)
+	gql := newGraphQLHandler(s.db, s.imageCache, s.ingestEngine, s.logger)
 	s.echo.POST("/graphql", echo.WrapHandler(gql))
 	s.echo.GET("/graphql", echo.WrapHandler(gql))
 	s.echo.GET(

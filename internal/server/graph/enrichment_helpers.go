@@ -22,6 +22,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -929,4 +930,163 @@ func sortPersonList(items []*PersonListItem, sortKey, dir string) {
 		}
 		return items[i].PerformerID < items[j].PerformerID
 	})
+}
+
+// errIngestNotConfigured is the resolver-side analog of the legacy
+// REST 503: returned by importQueueEntry when the server was built
+// without an ingest engine. gqlgen surfaces it in the response's
+// `errors` array; the SPA inspects the message text to map it back
+// onto the legacy "config hint" UX.
+var errIngestNotConfigured = errors.New(
+	"graphql: ingest not configured")
+
+// queue is the resolver body for the queue() field. Loads every row
+// in storage.QueueEntry order (oldest-first) and projects each onto
+// the GraphQL QueueEntry type. Empty queue returns an empty
+// (non-nil) slice so the schema's `[QueueEntry!]!` non-null promise
+// holds.
+func (r *Resolver) queue(ctx context.Context) ([]*QueueEntry, error) {
+	entries, err := storage.ListQueue(ctx, r.client)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: list queue: %w", err)
+	}
+	out := make([]*QueueEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, queueEntryToGraphQL(e))
+	}
+	return out, nil
+}
+
+// queueEntryToGraphQL projects storage.QueueEntry onto the GraphQL
+// type. Pointer fields stay pointers (the GraphQL field is nullable);
+// the wire-format prefix is applied by MarshalPrefixedID at write
+// time. file_size_bytes narrows from int64 to int because GraphQL's
+// `Int` scalar maps to Go int — every catalog file fits comfortably
+// inside int32 so the cast is safe.
+func queueEntryToGraphQL(e storage.QueueEntry) *QueueEntry {
+	out := &QueueEntry{
+		ID:                  e.ID,
+		FilePath:            e.FilePath,
+		FileSizeBytes:       int(e.FileSizeBytes),
+		DiscoveredAt:        e.DiscoveredAt,
+		LastSeenAt:          e.LastSeenAt,
+		SuggestedConfidence: e.SuggestedConfidence,
+		Notes:               e.Notes,
+	}
+	if e.SuggestedRecordingID != nil {
+		v := *e.SuggestedRecordingID
+		out.SuggestedRecordingID = &v
+	}
+	return out
+}
+
+// importQueueEntry is the resolver body for the importQueueEntry
+// mutation. Mirrors the legacy REST handleImportQueue: loads the
+// queue row, resolves the target recording id (explicit override or
+// fallback to the queue entry's suggestion), runs the ingest engine,
+// removes the row + writes a manual_import history event on success.
+//
+// Error mapping (matches the REST surface's HTTP statuses):
+//   - ingestEngine == nil → returned as an error so gqlgen surfaces
+//     it in the `errors` array (legacy 503).
+//   - storage.ErrQueueEntryNotFound → returned as an error (legacy
+//     404). The SPA inspects the message to decide whether to drop
+//     the row optimistically.
+//   - explicit recordingID <= 0 / no fallback → returned as an error
+//     (legacy 400).
+//   - engine returned a result but item.Err != nil → returned as a
+//     successful resolver call with ok=false + error=item.Err.Error()
+//     (matches the legacy 200-with-error-body).
+func (r *Resolver) importQueueEntry(
+	ctx context.Context, input ImportQueueEntryInput,
+) (*ImportQueueEntryPayload, error) {
+	if r.ingestEngine == nil {
+		return nil, errIngestNotConfigured
+	}
+
+	entry, err := storage.LoadQueueEntry(ctx, r.client, input.QueueID)
+	if errors.Is(err, storage.ErrQueueEntryNotFound) {
+		return nil, fmt.Errorf("graphql: %w", err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("graphql: load queue entry %d: %w", input.QueueID, err)
+	}
+
+	recordingID, err := resolveImportRecordingID(input.RecordingID, entry)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := r.ingestEngine.Ingest(ctx, entry.FilePath, ingest.Options{
+		FlagEncoraID: int(recordingID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("graphql: ingest queue entry %d: %w", input.QueueID, err)
+	}
+	if res == nil || len(res.Items) == 0 {
+		return nil, fmt.Errorf("graphql: ingest queue entry %d: no result", input.QueueID)
+	}
+
+	item := res.Items[0]
+	out := &ImportQueueEntryPayload{Action: item.Action}
+	if item.Plan != nil {
+		out.Dest = item.Plan.AbsoluteFile()
+	}
+	if item.Err != nil {
+		out.Error = item.Err.Error()
+	}
+	out.Ok = item.Action == ingest.ActionMoved && item.Err == nil
+
+	if out.Ok {
+		// Best-effort cleanup + audit trail. RemoveQueueEntry is
+		// idempotent; RecordEvent failures are logged and dropped
+		// because the file already moved successfully — losing the
+		// audit row beats surfacing a hard error to the user for a
+		// cosmetic write.
+		if removeErr := storage.RemoveQueueEntry(ctx, r.client, input.QueueID); removeErr != nil {
+			r.logger.Warn().Err(removeErr).Int64("queue_id", input.QueueID).
+				Msg("failed to remove queue entry after import")
+		}
+		event := storage.HistoryEvent{
+			Kind:    storage.HistoryKindManualImport,
+			Summary: fmt.Sprintf("Imported queued file %s", entry.FilePath),
+			Details: map[string]any{
+				"queue_id":  input.QueueID,
+				"source":    entry.FilePath,
+				"encora_id": recordingID,
+				//nolint:goconst // map keys for a single audit event payload; constants would obscure the schema.
+				"dest": out.Dest,
+				//nolint:goconst // see "dest".
+				"action": item.Action,
+			},
+		}
+		rid := recordingID
+		event.RecordingID = &rid
+		if _, recErr := storage.RecordEvent(ctx, r.client, event); recErr != nil {
+			r.logger.Warn().Err(recErr).Int64("queue_id", input.QueueID).
+				Msg("failed to record manual import history event")
+		}
+	}
+
+	return out, nil
+}
+
+// resolveImportRecordingID picks the recording id the ingest pipeline
+// will run with: explicit override on the input wins, otherwise the
+// queue entry's suggested_recording_id (must be non-nil). Returns an
+// error suitable for gqlgen's `errors` array when neither is
+// available or the override is non-positive. Mirrors the legacy
+// REST helper of the same name.
+func resolveImportRecordingID(override *int64, entry *storage.QueueEntry) (int64, error) {
+	if override != nil {
+		if *override <= 0 {
+			return 0, errors.New("graphql: recordingID must be positive")
+		}
+		return *override, nil
+	}
+	if entry.SuggestedRecordingID == nil {
+		return 0, errors.New(
+			"graphql: no recordingID supplied and queue entry has no suggestion")
+	}
+	return *entry.SuggestedRecordingID, nil
 }

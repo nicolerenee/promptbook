@@ -31,6 +31,7 @@ func NewExecutableSchema(cfg Config) graphql.ExecutableSchema {
 type Config = graphql.Config[ResolverRoot, DirectiveRoot, ComplexityRoot]
 
 type ResolverRoot interface {
+	Mutation() MutationResolver
 	Performer() PerformerResolver
 	Query() QueryResolver
 	Recording() RecordingResolver
@@ -93,6 +94,17 @@ type ComplexityRoot struct {
 	CollectionEntryEdge struct {
 		Cursor func(childComplexity int) int
 		Node   func(childComplexity int) int
+	}
+
+	ImportQueueEntryPayload struct {
+		Action func(childComplexity int) int
+		Dest   func(childComplexity int) int
+		Error  func(childComplexity int) int
+		Ok     func(childComplexity int) int
+	}
+
+	Mutation struct {
+		ImportQueueEntry func(childComplexity int, input ImportQueueEntryInput) int
 	}
 
 	PageInfo struct {
@@ -166,6 +178,7 @@ type ComplexityRoot struct {
 		Performer         func(childComplexity int, id int64) int
 		Performers        func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.PerformerOrder, where *ent.PerformerWhereInput) int
 		Person            func(childComplexity int, id int64) int
+		Queue             func(childComplexity int) int
 		Recording         func(childComplexity int, id int64) int
 		Recordings        func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
 		RecordingsList    func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
@@ -175,6 +188,17 @@ type ComplexityRoot struct {
 		SyncRuns          func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.SyncRunOrder, where *ent.SyncRunWhereInput) int
 		WantsEntries      func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.WantsEntryOrder, where *ent.WantsEntryWhereInput) int
 		WantsEntry        func(childComplexity int, id int64) int
+	}
+
+	QueueEntry struct {
+		DiscoveredAt         func(childComplexity int) int
+		FilePath             func(childComplexity int) int
+		FileSizeBytes        func(childComplexity int) int
+		ID                   func(childComplexity int) int
+		LastSeenAt           func(childComplexity int) int
+		Notes                func(childComplexity int) int
+		SuggestedConfidence  func(childComplexity int) int
+		SuggestedRecordingID func(childComplexity int) int
 	}
 
 	Recording struct {
@@ -397,6 +421,9 @@ type ComplexityRoot struct {
 	}
 }
 
+type MutationResolver interface {
+	ImportQueueEntry(ctx context.Context, input ImportQueueEntryInput) (*ImportQueueEntryPayload, error)
+}
 type PerformerResolver interface {
 	LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error)
 }
@@ -418,6 +445,7 @@ type QueryResolver interface {
 	ShowsList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*ShowsListPage, error)
 	PeopleList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*PersonListPage, error)
 	Person(ctx context.Context, id int64) (*PersonDetail, error)
+	Queue(ctx context.Context) ([]*QueueEntry, error)
 }
 type RecordingResolver interface {
 	Status(ctx context.Context, obj *ent.Recording) (string, error)
@@ -662,6 +690,43 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CollectionEntryEdge.Node(childComplexity), true
+
+	case "ImportQueueEntryPayload.action":
+		if e.ComplexityRoot.ImportQueueEntryPayload.Action == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportQueueEntryPayload.Action(childComplexity), true
+	case "ImportQueueEntryPayload.dest":
+		if e.ComplexityRoot.ImportQueueEntryPayload.Dest == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportQueueEntryPayload.Dest(childComplexity), true
+	case "ImportQueueEntryPayload.error":
+		if e.ComplexityRoot.ImportQueueEntryPayload.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportQueueEntryPayload.Error(childComplexity), true
+	case "ImportQueueEntryPayload.ok":
+		if e.ComplexityRoot.ImportQueueEntryPayload.Ok == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportQueueEntryPayload.Ok(childComplexity), true
+
+	case "Mutation.importQueueEntry":
+		if e.ComplexityRoot.Mutation.ImportQueueEntry == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_importQueueEntry_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ImportQueueEntry(childComplexity, args["input"].(ImportQueueEntryInput)), true
 
 	case "PageInfo.endCursor":
 		if e.ComplexityRoot.PageInfo.EndCursor == nil {
@@ -988,6 +1053,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Person(childComplexity, args["id"].(int64)), true
+	case "Query.queue":
+		if e.ComplexityRoot.Query.Queue == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Queue(childComplexity), true
 	case "Query.recording":
 		if e.ComplexityRoot.Query.Recording == nil {
 			break
@@ -1087,6 +1158,55 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.WantsEntry(childComplexity, args["id"].(int64)), true
+
+	case "QueueEntry.discoveredAt":
+		if e.ComplexityRoot.QueueEntry.DiscoveredAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.DiscoveredAt(childComplexity), true
+	case "QueueEntry.filePath":
+		if e.ComplexityRoot.QueueEntry.FilePath == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.FilePath(childComplexity), true
+	case "QueueEntry.fileSizeBytes":
+		if e.ComplexityRoot.QueueEntry.FileSizeBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.FileSizeBytes(childComplexity), true
+	case "QueueEntry.id":
+		if e.ComplexityRoot.QueueEntry.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.ID(childComplexity), true
+	case "QueueEntry.lastSeenAt":
+		if e.ComplexityRoot.QueueEntry.LastSeenAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.LastSeenAt(childComplexity), true
+	case "QueueEntry.notes":
+		if e.ComplexityRoot.QueueEntry.Notes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.Notes(childComplexity), true
+	case "QueueEntry.suggestedConfidence":
+		if e.ComplexityRoot.QueueEntry.SuggestedConfidence == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.SuggestedConfidence(childComplexity), true
+	case "QueueEntry.suggestedRecordingID":
+		if e.ComplexityRoot.QueueEntry.SuggestedRecordingID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.SuggestedRecordingID(childComplexity), true
 
 	case "Recording.amountRecorded":
 		if e.ComplexityRoot.Recording.AmountRecorded == nil {
@@ -2070,6 +2190,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputCastEntryWhereInput,
 		ec.unmarshalInputCollectionEntryWhereInput,
+		ec.unmarshalInputImportQueueEntryInput,
 		ec.unmarshalInputPerformerOrder,
 		ec.unmarshalInputPerformerWhereInput,
 		ec.unmarshalInputRecordingOrder,
@@ -2114,6 +2235,21 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 			}
 
 			return &response
+		}
+	case ast.Mutation:
+		return func(ctx context.Context) *graphql.Response {
+			if !first {
+				return nil
+			}
+			first = false
+			ctx = graphql.WithUnmarshalerMap(ctx, inputUnmarshalMap)
+			data := ec._Mutation(ctx, opCtx.Operation.SelectionSet)
+			var buf bytes.Buffer
+			data.MarshalGQL(&buf)
+
+			return &graphql.Response{
+				Data: buf.Bytes(),
+			}
 		}
 
 	default:
@@ -2270,6 +2406,20 @@ func (ec *executionContext) childFields_CollectionEntryEdge(ctx context.Context,
 	return nil, fmt.Errorf("no field named %q was found under type CollectionEntryEdge", field.Name)
 }
 
+func (ec *executionContext) childFields_ImportQueueEntryPayload(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "ok":
+		return ec.fieldContext_ImportQueueEntryPayload_ok(ctx, field)
+	case "action":
+		return ec.fieldContext_ImportQueueEntryPayload_action(ctx, field)
+	case "dest":
+		return ec.fieldContext_ImportQueueEntryPayload_dest(ctx, field)
+	case "error":
+		return ec.fieldContext_ImportQueueEntryPayload_error(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ImportQueueEntryPayload", field.Name)
+}
+
 func (ec *executionContext) childFields_PageInfo(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "hasNextPage":
@@ -2392,6 +2542,28 @@ func (ec *executionContext) childFields_PersonRecording(ctx context.Context, fie
 		return ec.fieldContext_PersonRecording_state(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type PersonRecording", field.Name)
+}
+
+func (ec *executionContext) childFields_QueueEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "id":
+		return ec.fieldContext_QueueEntry_id(ctx, field)
+	case "filePath":
+		return ec.fieldContext_QueueEntry_filePath(ctx, field)
+	case "fileSizeBytes":
+		return ec.fieldContext_QueueEntry_fileSizeBytes(ctx, field)
+	case "discoveredAt":
+		return ec.fieldContext_QueueEntry_discoveredAt(ctx, field)
+	case "lastSeenAt":
+		return ec.fieldContext_QueueEntry_lastSeenAt(ctx, field)
+	case "suggestedRecordingID":
+		return ec.fieldContext_QueueEntry_suggestedRecordingID(ctx, field)
+	case "suggestedConfidence":
+		return ec.fieldContext_QueueEntry_suggestedConfidence(ctx, field)
+	case "notes":
+		return ec.fieldContext_QueueEntry_notes(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type QueueEntry", field.Name)
 }
 
 func (ec *executionContext) childFields_Recording(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2947,6 +3119,20 @@ func (ec *executionContext) childFields___Type(ctx context.Context, field graphq
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Mutation_importQueueEntry_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (ImportQueueEntryInput, error) {
+			return ec.unmarshalNImportQueueEntryInput2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportQueueEntryInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
 
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
@@ -4542,6 +4728,142 @@ func (ec *executionContext) _CollectionEntryEdge_cursor(ctx context.Context, fie
 }
 func (ec *executionContext) fieldContext_CollectionEntryEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CollectionEntryEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
+}
+
+func (ec *executionContext) _ImportQueueEntryPayload_ok(ctx context.Context, field graphql.CollectedField, obj *ImportQueueEntryPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportQueueEntryPayload_ok(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Ok, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportQueueEntryPayload_ok(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportQueueEntryPayload", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ImportQueueEntryPayload_action(ctx context.Context, field graphql.CollectedField, obj *ImportQueueEntryPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportQueueEntryPayload_action(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Action, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportQueueEntryPayload_action(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportQueueEntryPayload", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ImportQueueEntryPayload_dest(ctx context.Context, field graphql.CollectedField, obj *ImportQueueEntryPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportQueueEntryPayload_dest(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Dest, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportQueueEntryPayload_dest(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportQueueEntryPayload", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ImportQueueEntryPayload_error(ctx context.Context, field graphql.CollectedField, obj *ImportQueueEntryPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportQueueEntryPayload_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportQueueEntryPayload_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportQueueEntryPayload", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Mutation_importQueueEntry(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_importQueueEntry(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ImportQueueEntry(ctx, fc.Args["input"].(ImportQueueEntryInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ImportQueueEntryPayload) graphql.Marshaler {
+			return ec.marshalNImportQueueEntryPayload2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportQueueEntryPayload(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_importQueueEntry(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ImportQueueEntryPayload(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_importQueueEntry_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _PageInfo_hasNextPage(ctx context.Context, field graphql.CollectedField, obj *entgql.PageInfo[int64]) (ret graphql.Marshaler) {
@@ -6220,6 +6542,38 @@ func (ec *executionContext) fieldContext_Query_person(ctx context.Context, field
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_queue(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_queue(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Queue(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*QueueEntry) graphql.Marshaler {
+			return ec.marshalNQueueEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueEntryᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_queue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_QueueEntry(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6294,6 +6648,190 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _QueueEntry_id(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_id(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_filePath(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_filePath(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FilePath, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_filePath(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_fileSizeBytes(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_fileSizeBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.FileSizeBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_fileSizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_discoveredAt(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_discoveredAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DiscoveredAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_discoveredAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_lastSeenAt(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_lastSeenAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastSeenAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_lastSeenAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_suggestedRecordingID(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_suggestedRecordingID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SuggestedRecordingID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int64) graphql.Marshaler {
+			return ec.marshalOID2ᚖint64(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_suggestedRecordingID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_suggestedConfidence(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_suggestedConfidence(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SuggestedConfidence, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_suggestedConfidence(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_notes(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_notes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Notes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Recording_id(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
@@ -12785,6 +13323,43 @@ func (ec *executionContext) unmarshalInputCollectionEntryWhereInput(ctx context.
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Context, obj any) (ImportQueueEntryInput, error) {
+	var it ImportQueueEntryInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"queueID", "recordingID"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "queueID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("queueID"))
+			data, err := ec.unmarshalNID2int64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.QueueID = data
+		case "recordingID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("recordingID"))
+			data, err := ec.unmarshalOID2ᚖint64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RecordingID = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputPerformerOrder(ctx context.Context, obj any) (ent.PerformerOrder, error) {
 	var it ent.PerformerOrder
 	if obj == nil {
@@ -18118,6 +18693,109 @@ func (ec *executionContext) _CollectionEntryEdge(ctx context.Context, sel ast.Se
 	return out
 }
 
+var importQueueEntryPayloadImplementors = []string{"ImportQueueEntryPayload"}
+
+func (ec *executionContext) _ImportQueueEntryPayload(ctx context.Context, sel ast.SelectionSet, obj *ImportQueueEntryPayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, importQueueEntryPayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ImportQueueEntryPayload")
+		case "ok":
+			out.Values[i] = ec._ImportQueueEntryPayload_ok(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "action":
+			out.Values[i] = ec._ImportQueueEntryPayload_action(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dest":
+			out.Values[i] = ec._ImportQueueEntryPayload_dest(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._ImportQueueEntryPayload_error(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var mutationImplementors = []string{"Mutation"}
+
+func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, mutationImplementors)
+	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
+		Object: "Mutation",
+	})
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		innerCtx := graphql.WithRootFieldContext(ctx, &graphql.RootFieldContext{
+			Object: field.Name,
+			Field:  field,
+		})
+
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Mutation")
+		case "importQueueEntry":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_importQueueEntry(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var pageInfoImplementors = []string{"PageInfo"}
 
 func (ec *executionContext) _PageInfo(ctx context.Context, sel ast.SelectionSet, obj *entgql.PageInfo[int64]) graphql.Marshaler {
@@ -18971,6 +19649,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "queue":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_queue(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -18979,6 +19679,77 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___schema(ctx, field)
 			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var queueEntryImplementors = []string{"QueueEntry"}
+
+func (ec *executionContext) _QueueEntry(ctx context.Context, sel ast.SelectionSet, obj *QueueEntry) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, queueEntryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("QueueEntry")
+		case "id":
+			out.Values[i] = ec._QueueEntry_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "filePath":
+			out.Values[i] = ec._QueueEntry_filePath(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "fileSizeBytes":
+			out.Values[i] = ec._QueueEntry_fileSizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "discoveredAt":
+			out.Values[i] = ec._QueueEntry_discoveredAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastSeenAt":
+			out.Values[i] = ec._QueueEntry_lastSeenAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "suggestedRecordingID":
+			out.Values[i] = ec._QueueEntry_suggestedRecordingID(ctx, field, obj)
+		case "suggestedConfidence":
+			out.Values[i] = ec._QueueEntry_suggestedConfidence(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "notes":
+			out.Values[i] = ec._QueueEntry_notes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -21648,6 +22419,25 @@ func (ec *executionContext) marshalNID2ᚕint64ᚄ(ctx context.Context, sel ast.
 	return ret
 }
 
+func (ec *executionContext) unmarshalNImportQueueEntryInput2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportQueueEntryInput(ctx context.Context, v any) (ImportQueueEntryInput, error) {
+	res, err := ec.unmarshalInputImportQueueEntryInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNImportQueueEntryPayload2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportQueueEntryPayload(ctx context.Context, sel ast.SelectionSet, v ImportQueueEntryPayload) graphql.Marshaler {
+	return ec._ImportQueueEntryPayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNImportQueueEntryPayload2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportQueueEntryPayload(ctx context.Context, sel ast.SelectionSet, v *ImportQueueEntryPayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ImportQueueEntryPayload(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -21803,6 +22593,32 @@ func (ec *executionContext) marshalNPersonRecording2ᚖgithubᚗcomᚋnicolerene
 		return graphql.Null
 	}
 	return ec._PersonRecording(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNQueueEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*QueueEntry) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNQueueEntry2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueEntry(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNQueueEntry2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueEntry(ctx context.Context, sel ast.SelectionSet, v *QueueEntry) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._QueueEntry(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNRecording2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecording(ctx context.Context, sel ast.SelectionSet, v *ent.Recording) graphql.Marshaler {

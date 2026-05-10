@@ -2,20 +2,26 @@
 //
 // Renders the manual import queue (files dropped into
 // library.incomingDirs awaiting ingest). High-confidence rows expose a
-// `Match` button that POSTs /api/v1/queue/{id}/import; lower-confidence
-// rows show a disabled `Resolve…` stub.
+// `Match` button that fires the importQueueEntry GraphQL mutation;
+// lower-confidence rows show a disabled `Resolve…` stub.
+//
+// Wire format: the GraphQL surface returns prefixed string ids
+// (queue-N, recording-N) so the SPA strips them at the boundary +
+// converts the camelCase fields back to snake_case so the existing
+// renderer stays untouched.
 //
 // Behavior parity notes:
 //   - Re-scan + Import-all-auto-resolved are cosmetic stubs (legacy
 //     behavior). They stay disabled until a future wave wires them.
-//   - On 503 from /import we surface the config-hint message; on 404 we
-//     drop the row optimistically (the entry was already imported by a
-//     parallel scan); other errors re-enable the button + alert.
+//   - The legacy 503 / 404 status branches map onto GraphQL error
+//     messages: "ingest not configured" → config hint alert;
+//     "queue entry … not found" → drop the row optimistically.
+//     Other errors re-enable the button + alert with the message.
 //   - Items are sorted newest-first by discovered_at, matching the
 //     legacy display order.
 
 import m from 'https://esm.sh/mithril@2.2.2';
-import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import { humanSize, relativeTime, errorMessage } from '../utils/format.js';
 
@@ -28,14 +34,76 @@ const CONF_META = {
   low:    { label: 'Low',    badge: 'badge-error' },
 };
 
+// QUEUE_QUERY pulls every column the row renderer + sort keys need.
+// The schema's QueueEntry mirrors the legacy REST shape one-to-one.
+const QUEUE_QUERY = `
+  query Queue {
+    queue {
+      id
+      filePath
+      fileSizeBytes
+      discoveredAt
+      lastSeenAt
+      suggestedRecordingID
+      suggestedConfidence
+      notes
+    }
+  }
+`;
+
+// IMPORT_QUEUE_MUTATION drives the per-row `Match` button. recordingID
+// stays null in the input; the resolver falls back to the queue
+// entry's suggestedRecordingID. An explicit override could pass a
+// "recording-N" string here in a future wave (Resolve… picker).
+const IMPORT_QUEUE_MUTATION = `
+  mutation ImportQueueEntry($input: ImportQueueEntryInput!) {
+    importQueueEntry(input: $input) {
+      ok
+      action
+      dest
+      error
+    }
+  }
+`;
+
+// stripIDPrefix turns "queue-1234" / "recording-N" into the bare
+// numeric id the existing renderer + router consume.
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// mapQueueItem rewrites a GraphQL QueueEntry into the snake_case shape
+// the legacy renderer was written against. id + suggested_recording_id
+// fall back to bare integers.
+function mapQueueItem(node) {
+  if (!node) return null;
+  const out = {
+    id:                   Number(stripIDPrefix(node.id)),
+    file_path:            node.filePath || '',
+    file_size_bytes:      node.fileSizeBytes || 0,
+    discovered_at:        node.discoveredAt || '',
+    last_seen_at:         node.lastSeenAt || '',
+    suggested_confidence: node.suggestedConfidence || '',
+    notes:                node.notes || '',
+  };
+  if (node.suggestedRecordingID) {
+    out.suggested_recording_id = Number(stripIDPrefix(node.suggestedRecordingID));
+  } else {
+    out.suggested_recording_id = null;
+  }
+  return out;
+}
+
 // loadQueue fetches the queue list and stores it in shared state. Items
 // are sorted newest-first so the most recent drops show at the top.
 function loadQueue() {
   const q = state.queue;
   q.loading = true;
   q.error = null;
-  return api.get('/queue').then((body) => {
-    const items = (body && body.items) || [];
+  return graphql.query(QUEUE_QUERY).then((data) => {
+    const items = ((data && data.queue) || []).map(mapQueueItem).filter(Boolean);
     items.sort((a, b) =>
       Date.parse(b.discovered_at || 0) - Date.parse(a.discovered_at || 0));
     q.items = items;
@@ -65,8 +133,20 @@ function removeRow(queueID) {
     String(it.id) !== String(queueID));
 }
 
-// handleImport posts to /api/v1/queue/:id/import after a confirm
-// dialog. Mirrors the legacy queue.js handler's status-code branching.
+// importErrorKind maps a GraphQL error message back to the legacy
+// status-branch UX. The resolver writes specific phrases ("ingest not
+// configured", "queue entry … not found") so the SPA can branch on
+// substring without parsing extension codes.
+function importErrorKind(err) {
+  const msg = (err && err.message ? String(err.message) : '').toLowerCase();
+  if (msg.includes('ingest not configured')) return 'unconfigured';
+  if (msg.includes('queue entry') && msg.includes('not found')) return 'gone';
+  return 'other';
+}
+
+// handleImport fires the importQueueEntry mutation after a confirm
+// dialog. Mirrors the legacy REST handler's status-code branching but
+// re-keyed onto GraphQL error messages — see importErrorKind.
 function handleImport(item) {
   const q = state.queue;
   const id = item.id;
@@ -78,28 +158,33 @@ function handleImport(item) {
   q.importing[id] = true;
   m.redraw();
 
-  api.post('/queue/' + encodeURIComponent(id) + '/import', {})
-    .then((resp) => {
-      if (resp && resp.ok) {
+  const variables = {
+    input: { queueID: 'queue-' + id },
+  };
+
+  graphql.query(IMPORT_QUEUE_MUTATION, variables)
+    .then((data) => {
+      const resp = (data && data.importQueueEntry) || {};
+      if (resp.ok) {
         delete q.importing[id];
         removeRow(id);
         return;
       }
       delete q.importing[id];
-      window.alert('Import failed: ' + ((resp && resp.error) || 'unknown error'));
+      window.alert('Import failed: ' + (resp.error || 'unknown error'));
       m.redraw();
     })
     .catch((err) => {
       delete q.importing[id];
-      // 503 (engine unconfigured) and 404 (queue entry already gone)
-      // get bespoke handling per the legacy file.
-      if (err && err.status === 503) {
+      const kind = importErrorKind(err);
+      if (kind === 'unconfigured') {
         window.alert('Queue import is disabled — set library.root and ' +
           'PROMPTBOOK_ENCORA_APIKEY in config to enable.');
         m.redraw();
         return;
       }
-      if (err && err.status === 404) {
+      if (kind === 'gone') {
+        // Entry already imported by a parallel scan; drop it locally.
         removeRow(id);
         return;
       }

@@ -15,6 +15,14 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
+// ImportQueueEntry is the resolver for the importQueueEntry field.
+// Pass-through to the resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *mutationResolver) ImportQueueEntry(ctx context.Context, input ImportQueueEntryInput) (*ImportQueueEntryPayload, error) {
+	return r.Resolver.importQueueEntry(ctx, input)
+}
+
 // LocalHeadshotURL is the resolver for the localHeadshotURL field.
 func (r *performerResolver) LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error) {
 	if r.imageCache == nil || r.imageCache.Disabled() {
@@ -50,6 +58,14 @@ func (r *queryResolver) PeopleList(ctx context.Context, sort *string, dir *strin
 // resolve so the GraphQL field renders as null.
 func (r *queryResolver) Person(ctx context.Context, id int64) (*PersonDetail, error) {
 	return r.Resolver.person(ctx, id)
+}
+
+// Queue is the resolver for the queue field. Pass-through to the
+// resolver-package helper so the body stays in enrichment_helpers.go
+// (gqlgen otherwise sweeps long bodies into "may delete" comment
+// blocks on regeneration).
+func (r *queryResolver) Queue(ctx context.Context) ([]*QueueEntry, error) {
+	return r.Resolver.queue(ctx)
 }
 
 // Status is the resolver for the status field. The reconciler runs
@@ -346,3 +362,8 @@ func (r *showResolver) Description(ctx context.Context, obj *ent.Show) (string, 
 	}
 	return "", nil
 }
+
+// Mutation returns MutationResolver implementation.
+func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
+
+type mutationResolver struct{ *Resolver }

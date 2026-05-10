@@ -24,18 +24,19 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/server/graph"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
 	"github.com/nicolerenee/promptbook/internal/web"
 )
 
 // IngestRunner is the slice of *ingest.Engine the server needs to run a
-// single-file ingest from the manual import queue. Surfaced as an
-// interface so tests can substitute a stub without spinning up the full
-// engine (which would require a real Encora client + library config).
-// The real *ingest.Engine satisfies this interface.
-type IngestRunner interface {
-	Ingest(ctx context.Context, src string, opts ingest.Options) (*ingest.Result, error)
-}
+// single-file ingest from the manual import queue (driven through the
+// importQueueEntry GraphQL mutation). Aliased to graph.IngestRunner so
+// the schema resolver can hold the same interface without importing
+// the parent server package — and the existing `server.IngestRunner`
+// public name keeps production wiring (cmd/serve.go) untouched. The
+// real *ingest.Engine satisfies the underlying interface.
+type IngestRunner = graph.IngestRunner
 
 // Compile-time guard that *ingest.Engine satisfies IngestRunner so
 // production wiring (cmd/serve.go) can pass the real engine on

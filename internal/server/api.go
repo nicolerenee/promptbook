@@ -74,8 +74,6 @@ func (s *Server) routes() {
 	// Encora and let the job's atomic write update the slot files.
 	api.POST("/recordings/:id/refresh-images", s.handleRefreshRecordingImages)
 	api.POST("/shows/:id/refresh-images", s.handleRefreshShowImages)
-	api.GET("/queue", s.handleListQueue)
-	api.POST("/queue/:id/import", s.handleImportQueue)
 	api.GET("/history", s.handleListHistory)
 	api.GET("/mismatches", s.handleListMismatches)
 	api.GET("/settings", s.handleSettings)
