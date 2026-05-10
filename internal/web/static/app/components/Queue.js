@@ -48,7 +48,9 @@ const CONF_META = {
 // QUEUE_QUERY pulls every column the row renderer + sort keys need.
 // suggestedRecording surfaces the rich match summary the table
 // renders inline (show / date / master) so the page is one round-
-// trip per refresh.
+// trip per refresh. classification carries the scanner's per-file
+// role suggestions for folder-as-unit drops so the import modal can
+// render its multi-file picker without a follow-up round-trip.
 const QUEUE_QUERY = `
   query Queue {
     queue {
@@ -70,6 +72,21 @@ const QUEUE_QUERY = `
         dateMonthKnown
         dateDayKnown
         master
+      }
+      classification {
+        ambiguous
+        parts {
+          path
+          sizeBytes
+          suggestedKind
+          partIndex
+        }
+        extras {
+          path
+          sizeBytes
+          suggestedKind
+          partIndex
+        }
       }
     }
   }
@@ -101,12 +118,45 @@ function mapSuggestedRecording(node) {
   };
 }
 
+// mapClassifiedFile rewrites one QueueClassifiedFile into the snake_case
+// shape the modal's multi-file picker consumes. Mirrors the GraphQL
+// type's field set verbatim — path, size, the heuristic-suggested kind
+// token, and (for parts) the 1-based ordinal.
+function mapClassifiedFile(node) {
+  if (!node) return null;
+  return {
+    path:           node.path || '',
+    size_bytes:     node.sizeBytes || 0,
+    suggested_kind: node.suggestedKind || '',
+    part_index:     node.partIndex || 0,
+  };
+}
+
+// mapClassification rewrites the QueueClassification subfield into a
+// flat snake_case object the modal owns. parts/extras are always
+// non-null arrays (server-side guarantee); ambiguous defaults to
+// false. Returns null when the input is null so legacy rows that
+// pre-date the classifier project no classification.
+function mapClassification(node) {
+  if (!node) return null;
+  const parts  = ((node.parts  || []).map(mapClassifiedFile).filter(Boolean));
+  const extras = ((node.extras || []).map(mapClassifiedFile).filter(Boolean));
+  return {
+    ambiguous: !!node.ambiguous,
+    parts,
+    extras,
+  };
+}
+
 // mapQueueItem rewrites a GraphQL QueueEntry into the snake_case shape
 // the legacy renderer was written against. id + suggested_recording_id
 // fall back to bare integers; suggested_recording carries the rich
 // summary (or null) used by the table cell + the modal's pre-fill.
 // extras_count is the number of OTHER media files in the row's source
 // folder (folder-as-unit drops); 0 for loose-file rows.
+// classification carries the scanner's per-file role suggestions for
+// the modal's multi-file picker; null for legacy rows that pre-date
+// phase 2's classifier.
 function mapQueueItem(node) {
   if (!node) return null;
   const out = {
@@ -119,6 +169,7 @@ function mapQueueItem(node) {
     notes:                node.notes || '',
     extras_count:         node.extrasCount || 0,
     suggested_recording:  mapSuggestedRecording(node.suggestedRecording),
+    classification:       mapClassification(node.classification),
   };
   if (node.suggestedRecordingID) {
     out.suggested_recording_id = Number(stripIDPrefix(node.suggestedRecordingID));

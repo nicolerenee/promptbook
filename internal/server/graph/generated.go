@@ -2683,6 +2683,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputCastEntryWhereInput,
 		ec.unmarshalInputCollectionEntryWhereInput,
+		ec.unmarshalInputFileAssignmentInput,
 		ec.unmarshalInputImportQueueEntryInput,
 		ec.unmarshalInputPerformerOrder,
 		ec.unmarshalInputPerformerWhereInput,
@@ -15622,6 +15623,50 @@ func (ec *executionContext) unmarshalInputCollectionEntryWhereInput(ctx context.
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputFileAssignmentInput(ctx context.Context, obj any) (FileAssignmentInput, error) {
+	var it FileAssignmentInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"sourcePath", "kind", "label"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "sourcePath":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourcePath"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourcePath = data
+		case "kind":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("kind"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Kind = data
+		case "label":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("label"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Label = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Context, obj any) (ImportQueueEntryInput, error) {
 	var it ImportQueueEntryInput
 	if obj == nil {
@@ -15633,7 +15678,7 @@ func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Cont
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"queueID", "recordingID", "overwrite"}
+	fieldsInOrder := [...]string{"queueID", "recordingID", "overwrite", "fileAssignments"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -15661,6 +15706,13 @@ func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Cont
 				return it, err
 			}
 			it.Overwrite = data
+		case "fileAssignments":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("fileAssignments"))
+			data, err := ec.unmarshalOFileAssignmentInput2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐFileAssignmentInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.FileAssignments = data
 		}
 	}
 	return it, nil
@@ -25765,6 +25817,11 @@ func (ec *executionContext) marshalNCursor2entgoᚗioᚋcontribᚋentgqlᚐCurso
 	return v
 }
 
+func (ec *executionContext) unmarshalNFileAssignmentInput2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐFileAssignmentInput(ctx context.Context, v any) (*FileAssignmentInput, error) {
+	res, err := ec.unmarshalInputFileAssignmentInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
 	res, err := graphql.UnmarshalFloatContext(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -26820,6 +26877,24 @@ func (ec *executionContext) marshalOCursor2ᚖentgoᚗioᚋcontribᚋentgqlᚐCu
 		return graphql.Null
 	}
 	return v
+}
+
+func (ec *executionContext) unmarshalOFileAssignmentInput2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐFileAssignmentInputᚄ(ctx context.Context, v any) ([]*FileAssignmentInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*FileAssignmentInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNFileAssignmentInput2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐFileAssignmentInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
 }
 
 func (ec *executionContext) unmarshalOID2ᚕint64ᚄ(ctx context.Context, v any) ([]int64, error) {

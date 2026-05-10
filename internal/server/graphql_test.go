@@ -941,6 +941,102 @@ func TestGraphQLImportQueueEntryExplicitID(t *testing.T) {
 		"explicit recordingID must override the suggested id")
 }
 
+// TestGraphQLImportQueueEntryWithFileAssignments asserts that when the
+// modal's multi-file picker forwards explicit fileAssignments, the
+// resolver hands them through to ingest.Options.FileAssignments verbatim
+// — preserving role tokens (main / part-N / extra-{kind}) and any
+// user-supplied label. The legacy single-file flow stays untouched
+// when the slice is omitted (covered by the other tests above).
+func TestGraphQLImportQueueEntryWithFileAssignments(t *testing.T) {
+	t.Parallel()
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	suggested := int64(7777)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/folder/main.mkv",
+		FileSizeBytes:        4096,
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+		ExtrasCount:          2,
+	})
+	require.NoError(t, err)
+
+	mutation := `mutation Import($input: ImportQueueEntryInput!) {
+		importQueueEntry(input: $input) { ok action }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"input": map[string]any{
+			"queueID": "queue-" + strconv.FormatInt(queueID, 10),
+			"fileAssignments": []any{
+				map[string]any{
+					"sourcePath": "/incoming/folder/main.mkv",
+					"kind":       "main",
+				},
+				map[string]any{
+					"sourcePath": "/incoming/folder/bows.mp4",
+					"kind":       "extra-featurette",
+					"label":      "Bows — Baker / Marinerage",
+				},
+				map[string]any{
+					"sourcePath": "/incoming/folder/photos",
+					"kind":       "extra-photo",
+				},
+			},
+		},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	// The resolver must have called the engine exactly once with the
+	// assignments threaded through Options.FileAssignments verbatim.
+	require.Len(t, stub.calls, 1)
+	got := stub.calls[0].Opts.FileAssignments
+	require.Len(t, got, 3, "every assignment must reach the engine")
+	assert.Equal(t, "/incoming/folder/main.mkv", got[0].SourcePath)
+	assert.Equal(t, "main", got[0].Kind)
+	assert.Empty(t, got[0].Label)
+	assert.Equal(t, "/incoming/folder/bows.mp4", got[1].SourcePath)
+	assert.Equal(t, "extra-featurette", got[1].Kind)
+	assert.Equal(t, "Bows — Baker / Marinerage", got[1].Label)
+	assert.Equal(t, "/incoming/folder/photos", got[2].SourcePath)
+	assert.Equal(t, "extra-photo", got[2].Kind)
+}
+
+// TestGraphQLImportQueueEntryEmptyAssignmentsLegacyFlow asserts that
+// omitting fileAssignments preserves today's single-file flow exactly:
+// the engine is still called, but Opts.FileAssignments is nil so the
+// engine routes through the legacy ingestOne pipeline rather than
+// ingestWithAssignments.
+func TestGraphQLImportQueueEntryEmptyAssignmentsLegacyFlow(t *testing.T) {
+	t.Parallel()
+	stub := &stubIngestRunner{}
+	srv, db := queueImportTestServer(t, stub)
+
+	suggested := int64(2345)
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:             "/incoming/loose.mkv",
+		SuggestedRecordingID: &suggested,
+		SuggestedConfidence:  storage.ConfidenceHigh,
+	})
+	require.NoError(t, err)
+
+	mutation := `mutation Import($input: ImportQueueEntryInput!) {
+		importQueueEntry(input: $input) { ok }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), mutation, map[string]any{
+		"input": map[string]any{
+			"queueID": "queue-" + strconv.FormatInt(queueID, 10),
+		},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	require.Len(t, stub.calls, 1)
+	assert.Empty(t, stub.calls[0].Opts.FileAssignments,
+		"omitted fileAssignments must leave Opts.FileAssignments nil")
+}
+
 // stubProber returns the supplied MediaInfo verbatim from every Probe
 // call. Used by the recording-rename tests so the resolver runs
 // without an ffprobe binary on PATH.
