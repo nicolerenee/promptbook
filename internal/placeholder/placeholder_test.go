@@ -19,11 +19,16 @@ func TestRenderHeadshot(t *testing.T) {
 
 	assert.True(t, strings.HasPrefix(body, "<svg"),
 		"output should start with <svg, got %q", body[:min(40, len(body))])
-	assert.Contains(t, body, "<circle ", "headshot must include a circle")
+	// Headshot is a portrait 2:3 rectangle filled with the palette
+	// color — no inner circle. Consumers (Jellyfin's portrait cast
+	// card, our SPA) clip to a circle in CSS when they want the
+	// circular visual.
+	assert.NotContains(t, body, "<circle ",
+		"portrait headshot should be a solid rectangle, not a circle")
 	// Initials: first letter of each of the first two words: "B" + "D".
 	assert.Contains(t, body, ">BD<", "expected initials BD in headshot text node")
-	assert.Contains(t, body, `viewBox="0 0 400 400"`,
-		"headshot viewBox should be 400x400")
+	assert.Contains(t, body, `viewBox="0 0 400 600"`,
+		"headshot viewBox should be 400x600 (2:3 portrait)")
 }
 
 func TestRenderShowBanner(t *testing.T) {
@@ -83,19 +88,19 @@ func TestPaletteStability(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, a, b, "same key + label must render identically")
 
-	colorA := extractCircleFill(t, string(a))
+	colorA := extractRectFill(t, string(a))
 	c, err := placeholder.Render(placeholder.KindHeadshot, 999, "Alice Anderson")
 	require.NoError(t, err)
-	colorC := extractCircleFill(t, string(c))
+	colorC := extractRectFill(t, string(c))
 	assert.NotEqual(t, colorA, colorC,
 		"different keys should usually pick different palette entries")
 }
 
-// extractCircleFill returns the fill="..." attribute of the first
-// <circle ...> element in the SVG. Test-only helper, naive on purpose.
-func extractCircleFill(t *testing.T, svg string) string {
+// extractRectFill returns the fill="..." attribute of the first
+// <rect ...> element in the SVG. Test-only helper, naive on purpose.
+func extractRectFill(t *testing.T, svg string) string {
 	t.Helper()
-	i := strings.Index(svg, "<circle")
+	i := strings.Index(svg, "<rect")
 	require.GreaterOrEqual(t, i, 0)
 	rest := svg[i:]
 	j := strings.Index(rest, `fill="`)

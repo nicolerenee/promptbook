@@ -23,8 +23,14 @@ import (
 type Kind int
 
 const (
-	// KindHeadshot renders a square, ~400x400 placeholder with
-	// initials drawn inside a colored circle.
+	// KindHeadshot renders a portrait 2:3 placeholder (~400x600)
+	// with the entity's initials centered against a solid color
+	// fill. Mirrors the aspect ratio of a real headshot photo so
+	// downstream renderers (Jellyfin's portrait cast card, our
+	// SPA's cast section, etc.) show the placeholder filling the
+	// frame instead of letterboxed inside a square. Consumers that
+	// want a circle visual clip the rendered image with CSS
+	// (border-radius / rounded-full).
 	KindHeadshot Kind = iota
 	// KindShowBanner renders a 16:9 (~960x540) rectangle with the
 	// label centered in serif bold against a solid color fill.
@@ -41,7 +47,8 @@ const (
 // image aspect ratios so the SVG slots into the same layout box as
 // the real cached file would.
 const (
-	headshotSize     = 400
+	headshotWidth    = 400
+	headshotHeight   = 600
 	showBannerWidth  = 960
 	showBannerHeight = 540
 	recordingFanartW = 1920
@@ -52,14 +59,11 @@ const (
 	// halfDivisor centers a square in its container — the geometric
 	// constant deserves a name so mnd doesn't flag the divide.
 	halfDivisor = 2
-	// circleRadiusPercent is the headshot circle radius as a percent
-	// of the SVG side. 45 leaves a ~10 % margin so the rim isn't
-	// flush with the slot's edge.
-	circleRadiusPercent = 45
 	// initialsTwoFontPercent / initialsOneFontPercent size the
-	// initials text relative to headshotSize. One letter gets more
-	// breathing room than two. percentDenom is the divisor that
-	// turns a percent-encoded constant back into a fraction.
+	// initials text relative to the headshot's smaller dimension
+	// (width). One letter gets more breathing room than two.
+	// percentDenom is the divisor that turns a percent-encoded
+	// constant back into a fraction.
 	initialsTwoFontPercent = 38
 	initialsOneFontPercent = 52
 	percentDenom           = 100
@@ -182,7 +186,7 @@ func initialsFor(label string) string {
 	return b.String()
 }
 
-// headshotTmpl renders the circular headshot placeholder. text/template
+// headshotTmpl renders the portrait headshot placeholder. text/template
 // (rather than html/template) is correct here because SVG is its own
 // XML dialect — html/template's escaping confuses CSS-style attributes
 // like font-family. The inputs we interpolate are all server-derived
@@ -192,20 +196,17 @@ func initialsFor(label string) string {
 //
 //nolint:gochecknoglobals // immutable parsed template, lifetime == process.
 var headshotTmpl = template.Must(template.New("headshot").Parse(
-	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{.Size}} {{.Size}}" ` +
-		`width="{{.Size}}" height="{{.Size}}" role="img" aria-label="{{.AriaLabel}}">
-<rect width="{{.Size}}" height="{{.Size}}" fill="#f1f1f1"/>
-<circle cx="{{.Cx}}" cy="{{.Cy}}" r="{{.Radius}}" fill="{{.Color}}"/>
+	`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{.Width}} {{.Height}}" ` +
+		`width="{{.Width}}" height="{{.Height}}" role="img" aria-label="{{.AriaLabel}}">
+<rect width="{{.Width}}" height="{{.Height}}" fill="{{.Color}}"/>
 <text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" ` +
 		`font-family="{{.FontFamily}}" font-weight="700" font-size="{{.FontSize}}" ` +
 		`fill="#ffffff">{{.Initials}}</text>
 </svg>`))
 
 type headshotData struct {
-	Size       int
-	Cx         int
-	Cy         int
-	Radius     int
+	Width      int
+	Height     int
 	FontSize   int
 	Color      string
 	Initials   string
@@ -214,19 +215,17 @@ type headshotData struct {
 }
 
 // renderHeadshot fills headshotTmpl from label/color into bytes. The
-// font-size scales loosely with the letter count so two-letter
-// monograms don't run past the circle's diameter.
+// font-size scales relative to the headshot's narrower dimension
+// (width) so two-letter monograms don't run past the canvas edge.
 func renderHeadshot(color, label string) ([]byte, error) {
 	initials := initialsFor(label)
-	fontSize := headshotSize * initialsTwoFontPercent / percentDenom
+	fontSize := headshotWidth * initialsTwoFontPercent / percentDenom
 	if utf8.RuneCountInString(initials) <= 1 {
-		fontSize = headshotSize * initialsOneFontPercent / percentDenom
+		fontSize = headshotWidth * initialsOneFontPercent / percentDenom
 	}
 	data := headshotData{
-		Size:       headshotSize,
-		Cx:         headshotSize / halfDivisor,
-		Cy:         headshotSize / halfDivisor,
-		Radius:     headshotSize*circleRadiusPercent/percentDenom - 1,
+		Width:      headshotWidth,
+		Height:     headshotHeight,
 		FontSize:   fontSize,
 		Color:      color,
 		Initials:   initials,
