@@ -8,6 +8,7 @@ import (
 	"image/draw"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -51,12 +52,6 @@ type faceKey struct {
 // renderDPI is the DPI fed to opentype.NewFace. 72 DPI means 1 pt == 1
 // pixel, which lets callers think in pixels without a unit dance.
 const renderDPI = 72
-
-// titleShrinkFloor caps how aggressively a row's font may shrink when
-// the text would otherwise overflow the band. 0.5 means we'll go down
-// to 50 % of the configured size; below that pickFittingFace falls
-// back to ellipsis truncation so long tour names + dates still read.
-const titleShrinkFloor = 0.5
 
 // ellipsis is the suffix appended when text won't fit even at the
 // minimum font size. Single character so MeasureString predicts width
@@ -120,23 +115,19 @@ func loadFace(weight string, sizePx int) font.Face {
 }
 
 // compose builds the burned-in image. rows is the per-line text in
-// top-to-bottom order: [date, tour, location]. Empty rows collapse —
-// the rendered band only shows non-empty lines, evenly distributed
-// over the band's vertical space. Returns a *image.RGBA so callers
-// can hand it straight to jpeg.Encode.
+// top-to-bottom order: [date, tour, location]. Each row occupies a
+// FIXED slot at (i+0.5)/3 of the band height — an empty row stays
+// empty (no shifting), so a recording missing the date renders the
+// tour + venue at the same vertical positions as a complete
+// 3-row recording. Per-row font size is driven by character budget
+// (see charBudgetSize) capped by the slot height, so dates always
+// render at the same scale across recordings regardless of length.
+// Returns a *image.RGBA so callers can hand it straight to jpeg.Encode.
 func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.RGBA {
 	bounds := src.Bounds()
 	dst := image.NewRGBA(bounds)
 	draw.Draw(dst, bounds, src, bounds.Min, draw.Src)
 
-	// Build the visible-row list. Each row's font size is fixed by its
-	// position in the input slice (date small, tour large, location
-	// small) — that hierarchy is part of the playbill aesthetic. Row
-	// at index 1 (tour) is the headline; the others are eyebrows.
-	type rowDraw struct {
-		text string
-		face font.Face
-	}
 	resolved := resolveStyle(style, image.Rect(0, 0, bounds.Dx(),
 		max(int(float64(bounds.Dy())*style.BandHeightFraction), 1)))
 	bandH := max(int(float64(bounds.Dy())*style.BandHeightFraction), 1)
@@ -145,42 +136,112 @@ func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.R
 	if maxTextWidth < 1 {
 		maxTextWidth = bandRect.Dx()
 	}
-	rowSizes := []float64{resolved.EyebrowSizePx, resolved.TitleSizePx, resolved.CaptionSizePx}
-	rowWeights := []string{style.Eyebrow.Weight, style.Title.Weight, style.Caption.Weight}
-	visible := make([]rowDraw, 0, len(rows))
-	for i, raw := range rows {
-		text := strings.TrimSpace(raw)
+
+	// Per-slot configuration. Indexes line up with the rows arg the
+	// caller passes in: 0=date (eyebrow), 1=tour (title, bold),
+	// 2=location (caption). Three slots are ALWAYS allocated; empty
+	// rows just don't draw anything in their slot, preserving vertical
+	// alignment across recordings of different metadata completeness.
+	type slotCfg struct {
+		minChars int
+		weight   string
+		sizeCap  float64 // upper bound on font size to keep slot from overflowing.
+		override float64 // user-pinned absolute size (>0 wins over char budget).
+	}
+	slots := [overlayRowCount]slotCfg{
+		{minChars: eyebrowMinChars, weight: style.Eyebrow.Weight,
+			sizeCap: float64(bandH) * eyebrowSlotCap, override: resolved.EyebrowSizePx},
+		{minChars: titleMinChars, weight: style.Title.Weight,
+			sizeCap: float64(bandH) * titleSlotCap, override: resolved.TitleSizePx},
+		{minChars: captionMinChars, weight: style.Caption.Weight,
+			sizeCap: float64(bandH) * captionSlotCap, override: resolved.CaptionSizePx},
+	}
+
+	type rowDraw struct {
+		text  string
+		face  font.Face
+		empty bool
+	}
+	var draws [overlayRowCount]rowDraw
+	hasText := false
+	for i := range overlayRowCount {
+		var raw string
+		if i < len(rows) {
+			raw = rows[i]
+		}
+		text := strings.ToUpper(strings.TrimSpace(raw))
 		if text == "" {
+			draws[i] = rowDraw{empty: true}
 			continue
 		}
-		text = strings.ToUpper(text)
-		spec := FontSpec{SizePx: rowSizes[i], Weight: rowWeights[i]}
-		face := pickFittingFace(text, spec, maxTextWidth)
-		visible = append(visible, rowDraw{
+		hasText = true
+		size := slots[i].override
+		if size <= 0 {
+			size = charBudgetSize(text, slots[i].minChars, slots[i].weight, maxTextWidth)
+		}
+		if size > slots[i].sizeCap && slots[i].sizeCap > 0 {
+			size = slots[i].sizeCap
+		}
+		if size < minFontSizePx {
+			size = minFontSizePx
+		}
+		face := loadFace(slots[i].weight, int(size))
+		draws[i] = rowDraw{
 			text: truncateToFit(face, text, maxTextWidth),
 			face: face,
-		})
+		}
 	}
-	if len(visible) == 0 {
-		// All rows empty — return the raw image unchanged. The user
-		// explicitly cleared their overlay or the recording lacks
-		// every piece of identifying metadata.
+	if !hasText {
+		// No rows have text. Return the raw image — don't paint a
+		// blank band over the source.
 		return dst
 	}
 
 	// Paint the band only when there's something to draw on it.
 	draw.Draw(dst, bandRect, &image.Uniform{C: style.BandColor}, image.Point{}, draw.Over)
 
-	// Distribute rows evenly: each row's center sits at (i + 0.5)/n
-	// of the band's height. With one row that's center; with three
-	// it's the 1/6, 3/6, 5/6 marks.
-	for i, row := range visible {
-		fraction := (float64(i) + halfRow) / float64(len(visible))
+	// Fixed slot positions: row i sits at (i + 0.5)/3 of the band
+	// height. Empty rows skip drawing but still consume their slot so
+	// the visible rows stay anchored regardless of which siblings have
+	// content. The "extra padding at top + bottom" the band has at
+	// 0.20 frac comes from the slot fonts being smaller than slot
+	// height — char budget caps fonts well below the slot ceiling on
+	// realistic posters.
+	for i, row := range draws {
+		if row.empty {
+			continue
+		}
+		fraction := (float64(i) + halfRow) / float64(overlayRowCount)
 		baselineY := bandRect.Min.Y + int(float64(bandRect.Dy())*fraction)
 		drawCenteredAtBaseline(dst, row.text, row.face, style.TextColor, bandRect, baselineY)
 	}
 
 	return dst
+}
+
+// charBudgetSize returns the font pixel size where a string of
+// max(minChars, len(text)) characters would fill availableWidth. Use:
+//   - actual text wins when it has more characters than the minimum,
+//     so a long tour name shrinks to fit instead of overflowing;
+//   - a synthetic "M" * minChars sample wins when text is shorter,
+//     locking the type at a stable size. Two dates of different lengths
+//     ("2024" vs "2024-12-31") therefore render at the same scale.
+//
+// "M" is the widest cap glyph in DejaVu Serif so the sample is a
+// conservative upper bound — actual text rendered at the resulting
+// size always fits with margin.
+func charBudgetSize(text string, minChars int, weight string, availableWidth int) float64 {
+	const probeSize = 100.0
+	sizingText := text
+	if utf8.RuneCountInString(text) < minChars {
+		sizingText = strings.Repeat("M", minChars)
+	}
+	probeFace := loadFace(weight, int(probeSize))
+	probeWidth := measureWidth(probeFace, sizingText)
+	if probeWidth <= 0 {
+		return minFontSizePx
+	}
+	return probeSize * float64(availableWidth) / float64(probeWidth)
 }
 
 // halfRow shifts each row's anchor from its top edge to its center
@@ -193,31 +254,44 @@ const halfRow = 0.5
 // out as a const so mnd lint stays happy on the band-fit math.
 const hPadFactor = 2
 
-// Fractional sizing defaults. Title + subtitle font heights are
-// expressed as fractions of the BAND height (not the image height):
-// for a 14% band, the title at 0.50 fills the upper half of the
-// band, the subtitle at 0.28 fills the lower portion. Padding is a
-// fraction of the IMAGE width — 4% reads cleanly at any size.
+// Layout constants. Fonts are now driven primarily by character
+// budget (eyebrowMinChars / titleMinChars / captionMinChars below),
+// so the band-fraction sizes only act as upper-bound CAPS that keep
+// a row from overflowing its slot when char budget would be huge
+// (e.g., short text on a very wide image).
 //
-// These kick in when style.Title.SizePx / Subtitle.SizePx / PadX are
-// zero (the default) so the user can still pin an absolute value via
-// the per-recording overlay_style_json blob if they want.
+// Per-recording overlay_style_json with a positive size_px on a row
+// pins an absolute pixel size for that row, bypassing both the char
+// budget and the slot cap.
 const (
-	// Per-row font heights as fractions of the band height. Three
-	// rows centered at 1/6, 3/6, 5/6 of the band each have ~1/3 of
-	// the band's vertical space; font sizes leave breathing room
-	// vertically. Title (the headline) is largest; eyebrow + caption
-	// are smaller secondary lines.
-	eyebrowSizeBandFraction = 0.22
-	titleSizeBandFraction   = 0.34
-	captionSizeBandFraction = 0.22
-	// 9% per side = 18% total horizontal margin. The previous 7% still
-	// read as edge-to-edge once a long date or venue used the interior
-	// width fully — leaving real visual breathing room around even
-	// a fitted line wants ~20% total.
+	// Per-row font caps as fractions of the band height. Each slot
+	// gets ~1/3 of the band; title sits a touch larger because the
+	// bold weight wants room and it carries the headline, while
+	// eyebrow + caption stay just under the slot ceiling.
+	eyebrowSlotCap = 0.30
+	titleSlotCap   = 0.34
+	captionSlotCap = 0.30
+	// Minimum character widths. The renderer sizes each row's font
+	// against max(minChars, len(text)) characters, so the row's type
+	// stays at a stable scale across recordings: a 4-char date
+	// "2024" and a 10-char date "2024-12-31" render at the same
+	// height because both are sized for the 12-char minimum.
+	eyebrowMinChars = 12
+	titleMinChars   = 15
+	captionMinChars = 25
+	// 9% per side = 18% total horizontal margin. The previous 7%
+	// still read as edge-to-edge once a long date or venue used the
+	// interior width fully; leaving real visual breathing room around
+	// even a fitted line wants ~20% total.
 	padXImageFraction = 0.09
 	minFontSizePx     = 8
 	minPadXPx         = 8
+	// overlayRowCount is the always-allocated number of slots in the
+	// band: date (eyebrow), tour (title), location (caption). Each row
+	// occupies its slot regardless of whether siblings are populated,
+	// so a 2-row recording renders at the same vertical positions as
+	// a 3-row recording would.
+	overlayRowCount = 3
 )
 
 // resolved bundles the post-fraction-resolution sizes the compose
@@ -229,10 +303,12 @@ type resolvedStyle struct {
 	CaptionSizePx float64
 }
 
-// resolveStyle fills in font sizes + padding from band dimensions
-// when the user-supplied (or default-baked) absolute values are
-// zero. Caller-supplied positive values pass through verbatim so an
-// explicit `size_px` override still wins.
+// resolveStyle returns the user-supplied (or default-baked) absolute
+// values for each row plus the horizontal padding. Sizes default to
+// 0 — meaning "let charBudgetSize compute the row's font" — and only
+// non-zero values pass through as absolute overrides that bypass the
+// char budget entirely. Padding falls back to padXImageFraction of
+// the band width when unset.
 //
 // Legacy `Subtitle` is honored as an alias for Caption when set —
 // keeps older overlay_style_json blobs working without forcing
@@ -248,57 +324,13 @@ func resolveStyle(style Style, bandRect image.Rectangle) resolvedStyle {
 		TitleSizePx:   style.Title.SizePx,
 		CaptionSizePx: captionPx,
 	}
-	bandH := bandRect.Dy()
-	if out.EyebrowSizePx <= 0 {
-		out.EyebrowSizePx = float64(bandH) * eyebrowSizeBandFraction
-	}
-	if out.TitleSizePx <= 0 {
-		out.TitleSizePx = float64(bandH) * titleSizeBandFraction
-	}
-	if out.CaptionSizePx <= 0 {
-		out.CaptionSizePx = float64(bandH) * captionSizeBandFraction
-	}
 	if out.PadX <= 0 {
 		out.PadX = int(float64(bandRect.Dx()) * padXImageFraction)
-	}
-	if out.EyebrowSizePx < minFontSizePx {
-		out.EyebrowSizePx = minFontSizePx
-	}
-	if out.TitleSizePx < minFontSizePx {
-		out.TitleSizePx = minFontSizePx
-	}
-	if out.CaptionSizePx < minFontSizePx {
-		out.CaptionSizePx = minFontSizePx
 	}
 	if out.PadX < minPadXPx {
 		out.PadX = minPadXPx
 	}
 	return out
-}
-
-// pickFittingFace shrinks the configured size down to titleShrinkFloor
-// until the rendered text fits maxWidth. Title and subtitle both go
-// through this so neither row runs edge-to-edge on small images.
-func pickFittingFace(text string, spec FontSpec, maxWidth int) font.Face {
-	size := spec.SizePx
-	if size <= 0 {
-		// Should not happen — resolveStyle ensures sizes are positive
-		// before this is called — but defensive fallback to the floor
-		// keeps the renderer from blowing up if the path changes.
-		size = minFontSizePx
-	}
-	floorSize := size * titleShrinkFloor
-	if floorSize < minFontSizePx {
-		floorSize = minFontSizePx
-	}
-	for size >= floorSize {
-		f := loadFace(spec.Weight, int(size))
-		if measureWidth(f, text) <= maxWidth {
-			return f
-		}
-		size--
-	}
-	return loadFace(spec.Weight, int(floorSize))
 }
 
 // measureWidth returns the rendered pixel width of s in face f.
@@ -308,11 +340,12 @@ func measureWidth(f font.Face, s string) int {
 }
 
 // truncateToFit drops trailing runes from text and appends an
-// ellipsis until the rendered string fits maxWidth in face f. Used as
-// a last resort after pickFittingFace has shrunk the font to its
-// floor — a 35-character "FIRST US NATIONAL TOUR - 2024-09-22" would
-// otherwise clip on a narrow poster. Returns the original text
-// unchanged when it already fits.
+// ellipsis until the rendered string fits maxWidth in face f. The
+// char-budget sizer typically yields a font where the actual text
+// fits with margin, but it can be wrong when the actual text is
+// longer than expected (e.g., the slot cap binds before the budget
+// would have, leaving the actual text too wide for the resulting
+// face). Truncation is the last-resort safety net.
 func truncateToFit(f font.Face, text string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return text

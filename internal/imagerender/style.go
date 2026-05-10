@@ -70,12 +70,16 @@ type Style struct {
 // positive integer pin an absolute pixel size for users who want to
 // tune the look manually.
 const (
-	// Bumped from 0.14 to 0.18 to fit three rows of text comfortably.
-	// At 0.18 a 345 px poster gives a 62 px band — three rows centered
-	// at 1/6, 3/6, 5/6 each get ~20 px of vertical space which lands
-	// the headline at ~16 px font (still readable when the displayed
-	// thumbnail is 200 px wide).
-	defaultBandHeightFraction = 0.18
+	// Band is 20 % of the source image height. Three text slots sit at
+	// (i+0.5)/3 of the band; per-row fonts are sized by character
+	// budget (see eyebrowMinChars / titleMinChars / captionMinChars in
+	// compose.go), and any leftover vertical space — which there
+	// usually is, because the budget caps fonts conservatively —
+	// becomes implicit padding at the top + bottom of the band. A row
+	// with no text still occupies its slot, so a 2-row recording
+	// (e.g., missing date) renders the tour + venue at the same
+	// vertical positions as a 3-row recording would.
+	defaultBandHeightFraction = 0.20
 	defaultPadX               = 0
 	defaultEyebrowSizePx      = 0
 	defaultTitleSizePx        = 0
