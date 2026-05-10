@@ -86,6 +86,39 @@ func TestSplitOverlay(t *testing.T) {
 	}
 }
 
+func TestTruncateToCharLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		max  int
+		want string
+	}{
+		{name: "shorter than limit unchanged",
+			in: "BROADWAY", max: 25, want: "BROADWAY"},
+		{name: "exactly at limit unchanged",
+			in: "ABCDEFGHIJKLMNOPQRSTUVWXY", max: 25,
+			want: "ABCDEFGHIJKLMNOPQRSTUVWXY"},
+		{name: "over limit gets 24 runes plus ellipsis",
+			in: "FIRST US NATIONAL TOUR (NON-EQUITY)", max: 25,
+			want: "FIRST US NATIONAL TOUR (…"},
+		{name: "trailing punctuation trimmed before ellipsis",
+			in: "THE LONGEST TOUR NAME EVER -EVER", max: 25,
+			want: "THE LONGEST TOUR NAME EV…"},
+		{name: "limit zero returns input unchanged",
+			in: "WHATEVER", max: 0, want: "WHATEVER"},
+		{name: "limit one returns just the ellipsis",
+			in: "ANYTHING", max: 1, want: "…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, truncateToCharLimit(tt.in, tt.max))
+		})
+	}
+}
+
 func TestAutoOverlayRows(t *testing.T) {
 	t.Parallel()
 

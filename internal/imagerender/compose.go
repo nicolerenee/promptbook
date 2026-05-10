@@ -146,9 +146,14 @@ func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.R
 	// The title slot gets ~2x the vertical room of the eyebrow/caption
 	// slots so it dominates as the headline (Cresthaven-style). Center
 	// fractions are explicit per-slot rather than (i+0.5)/3 because
-	// the slots are unequal in height.
+	// the slots are unequal in height. maxChars > 0 hard-truncates the
+	// row's text to that rune count (with the trailing rune being a
+	// single ellipsis "…") before sizing — keeps long tour names from
+	// shrinking the font into illegibility, and matches the legacy
+	// "tour over 25 chars gets ellipsized" behavior.
 	type slotCfg struct {
 		minChars int
+		maxChars int
 		weight   string
 		sizeCap  float64 // upper bound on font size to keep slot from overflowing.
 		center   float64 // vertical center of the slot as a fraction of band height.
@@ -158,7 +163,8 @@ func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.R
 		{minChars: eyebrowMinChars, weight: style.Eyebrow.Weight,
 			sizeCap: float64(bandH) * eyebrowSlotCap, center: eyebrowSlotCenter,
 			override: resolved.EyebrowSizePx},
-		{minChars: titleMinChars, weight: style.Title.Weight,
+		{minChars: titleMinChars, maxChars: titleMaxChars,
+			weight:  style.Title.Weight,
 			sizeCap: float64(bandH) * titleSlotCap, center: titleSlotCenter,
 			override: resolved.TitleSizePx},
 		{minChars: captionMinChars, weight: style.Caption.Weight,
@@ -182,6 +188,14 @@ func (r *Renderer) compose(src image.Image, rows []string, style Style) *image.R
 		if text == "" {
 			draws[i] = rowDraw{empty: true}
 			continue
+		}
+		// Hard char-count cap (currently only the title row uses it).
+		// We truncate BEFORE char-budget sizing so a 35-char tour name
+		// doesn't drag the font down to "size to fit 35 chars" — instead
+		// it gets sized for 25 chars and the rest are dropped behind a
+		// trailing ellipsis.
+		if slots[i].maxChars > 0 {
+			text = truncateToCharLimit(text, slots[i].maxChars)
 		}
 		hasText = true
 		size := slots[i].override
@@ -311,6 +325,14 @@ const (
 	eyebrowMinChars = 12
 	titleMinChars   = 8
 	captionMinChars = 22
+	// titleMaxChars hard-caps the rendered tour name so a verbose
+	// label like "FIRST US NATIONAL TOUR (NON-EQUITY)" doesn't shrink
+	// the title font into illegibility. 25 total characters with the
+	// 25th being a trailing "…" when truncation kicked in (so 24
+	// content runes + ellipsis). Mirrors the pre-rewrite legacy
+	// behavior; the eyebrow + caption rows have no hard cap because
+	// dates and venue strings tend to fit naturally.
+	titleMaxChars = 25
 	// 6% per side = 12% total horizontal margin. The earlier 9 % was
 	// over-cautious — on a 230-px-wide poster the difference between
 	// 0.09 and 0.06 padding is the difference between a 12 px caption
@@ -370,6 +392,27 @@ func resolveStyle(style Style, bandRect image.Rectangle) resolvedStyle {
 func measureWidth(f font.Face, s string) int {
 	d := &font.Drawer{Face: f}
 	return d.MeasureString(s).Round()
+}
+
+// truncateToCharLimit caps text at maxChars runes total, replacing
+// the last visible rune with a trailing ellipsis when truncation
+// happens. So maxChars=25 means up to 24 source runes plus the "…".
+// Trailing punctuation/whitespace is trimmed before the ellipsis is
+// appended so we never produce strings like "FIRST US NATIONAL TO -…".
+func truncateToCharLimit(text string, maxChars int) string {
+	if maxChars <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= maxChars {
+		return text
+	}
+	keep := maxChars - 1
+	if keep < 1 {
+		return ellipsis
+	}
+	cut := strings.TrimRight(string(runes[:keep]), " -·,.")
+	return cut + ellipsis
 }
 
 // truncateToFit drops trailing runes from text and appends an
