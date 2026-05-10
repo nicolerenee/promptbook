@@ -276,19 +276,23 @@ const hPadFactor = 2
 //	│  venue (slot 3, ~20%)     │
 //	└─5% bottom padding─────────┘
 const (
-	// Per-row font caps as fractions of the band height. Title at
-	// 0.40 dominates; eyebrow + caption at 0.20 stay quiet.
+	// Per-row font caps as fractions of the band height. Title gets
+	// the largest share so it remains the visual headline; the date
+	// + caption rows are quieter. The caption cap is generous enough
+	// (0.28) that long venue strings can grow toward it on
+	// high-resolution sources where horizontal space stops binding.
 	eyebrowSlotCap = 0.20
-	titleSlotCap   = 0.40
-	captionSlotCap = 0.20
+	titleSlotCap   = 0.34
+	captionSlotCap = 0.28
 	// Per-row vertical centers as fractions of band height. Slot 1
 	// at 0.15 (centered in the band's top quarter), slot 2 at 0.50
-	// (band middle), slot 3 at 0.85 (centered in the bottom quarter).
+	// (band middle), slot 3 at 0.82 (a hair higher than 0.85 so the
+	// taller caption cap doesn't push the row off the bottom edge).
 	// Empty rows still consume their slot so a 2-row recording aligns
 	// to the same Y coordinates as a 3-row one.
 	eyebrowSlotCenter = 0.15
 	titleSlotCenter   = 0.50
-	captionSlotCenter = 0.85
+	captionSlotCenter = 0.82
 	// Minimum character widths. The renderer sizes each row's font
 	// against max(minChars, len(text)) characters, so the row's type
 	// stays at a stable scale across recordings: a 4-char date
@@ -297,17 +301,19 @@ const (
 	//
 	// titleMinChars at 8 lets "BROADWAY" (the most common short tour
 	// label, 8 chars) hit the title slot cap so it fills the full
-	// slot height — at 10 the char budget came in below the cap and
-	// the rendered text left visible empty space. Long tour names
-	// still shrink to fit their own length.
+	// slot height. captionMinChars at 22 lets the standard
+	// "VENUE, CITY" pattern (typically 18-26 chars) get sized close
+	// to its actual width without an oversized 25-char floor pinning
+	// it down.
 	eyebrowMinChars = 12
 	titleMinChars   = 8
-	captionMinChars = 25
-	// 9% per side = 18% total horizontal margin. The previous 7%
-	// still read as edge-to-edge once a long date or venue used the
-	// interior width fully; leaving real visual breathing room around
-	// even a fitted line wants ~20% total.
-	padXImageFraction = 0.09
+	captionMinChars = 22
+	// 6% per side = 12% total horizontal margin. The earlier 9 % was
+	// over-cautious — on a 230-px-wide poster the difference between
+	// 0.09 and 0.06 padding is the difference between a 12 px caption
+	// font and a ~14 px one, which is the gap between "tiny" and
+	// "readable" for venue text like "PALACE THEATRE, NEW YORK".
+	padXImageFraction = 0.06
 	minFontSizePx     = 8
 	minPadXPx         = 8
 	// overlayRowCount is the always-allocated number of slots in the
