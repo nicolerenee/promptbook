@@ -905,18 +905,24 @@ function stripHTML(s) {
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// runRefreshImages POSTs the existing image-refresh endpoint. Phase 3
-// will replace this with the aggregate refresh-recording-full job;
-// for phase 1 we wire the toolbar Refresh button to the existing
-// surface so the affordance is live without a backend change.
-function runRefreshImages(id) {
+// runRefreshFull fires the aggregate refresh-recording-full scheduled
+// job via RunNow. The job re-pulls the Encora detail document,
+// re-probes every on-disk version, rewrites the movie.nfo, and kicks
+// the per-recording image refresh — all in one click. After the POST
+// resolves we wait briefly (matching the queue page's scan trigger
+// cadence) and refetch the recording detail so any DB changes from
+// the upstream re-pull surface immediately. The full pass with
+// Encora + probes + NFO + image fan-out can take longer than the
+// refetch delay; the user can refetch manually if needed.
+function runRefreshFull(id) {
   if (state.recording.imageBusy) return;
   state.recording.imageBusy = true;
   state.recording.imageError = null;
   m.redraw();
-  api.post('/recordings/' + encodeURIComponent(id) + '/refresh-images', {})
+  api.post('/jobs/scheduled/refresh-recording-full/run', {
+    args: { recording_id: id },
+  })
     .then(() => {
-      state.recording.imageBusy = false;
       state.recording.imageInfo =
         'Refresh queued — page will update when the job completes.';
       setTimeout(() => {
@@ -925,10 +931,12 @@ function runRefreshImages(id) {
           m.redraw();
         }
       }, 5000);
-      m.redraw();
+      // Refetch after a short delay so the typical metadata + nfo
+      // steps have landed by the time the page re-renders.
+      return new Promise((resolve) => setTimeout(resolve, 1500))
+        .then(() => loadRecording(id));
     })
     .catch((err) => {
-      state.recording.imageBusy = false;
       if (err && err.status === 503) {
         state.recording.imageError =
           'Background jobs not configured on the server.';
@@ -938,6 +946,9 @@ function runRefreshImages(id) {
       } else {
         state.recording.imageError = errorMessage(err);
       }
+    })
+    .then(() => {
+      state.recording.imageBusy = false;
       m.redraw();
     });
 }
@@ -967,7 +978,7 @@ function renderToolbar(loaded) {
       class: 'btn btn-sm gap-2',
       'aria-label': 'Refresh',
       disabled: refreshBusy,
-      onclick: () => runRefreshImages(id),
+      onclick: () => runRefreshFull(id),
     }, [
       refreshBusy
         ? m('span', { class: 'loading loading-spinner loading-xs' })

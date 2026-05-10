@@ -261,8 +261,12 @@ func buildJobRunner(
 
 	registered := 0
 	registered += registerRefreshEncora(runner, db, encClient, imgCache)
-	registered += registerImageRefreshJobs(
+	imageRefreshJob, imageRegistered := registerImageRefreshJobs(
 		runner, db, encClient, smClient, imgCache, imgRenderer, nfoRefresh,
+	)
+	registered += imageRegistered
+	registered += registerRefreshRecordingFull(
+		runner, db, encClient, nfoRefresh, imageRefreshJob,
 	)
 	registered += registerScanIncoming(runner, db)
 	registered += registerScanLibraryRoot(runner, db)
@@ -307,7 +311,12 @@ func registerRefreshEncora(
 }
 
 // registerImageRefreshJobs wires the three per-entity image refresh
-// jobs as manual-only. Returns the number successfully registered.
+// jobs as manual-only. Returns the constructed RefreshRecordingImagesJob
+// (so the aggregate refresh-recording-full job can invoke it inline)
+// alongside the count of successfully registered jobs. The returned
+// pointer is nil when the prerequisites for image refresh aren't
+// configured, which the caller treats as "skip the image step" rather
+// than as a failure.
 func registerImageRefreshJobs(
 	runner *jobs.Runner,
 	db *ent.Client,
@@ -316,14 +325,20 @@ func registerImageRefreshJobs(
 	imgCache *imagecache.Cache,
 	imgRenderer *imagerender.Renderer,
 	nfoRefresh *nforefresh.Service,
-) int {
+) (*builtin.RefreshRecordingImagesJob, int) {
 	if smClient == nil || imgCache == nil || imgCache.Disabled() {
-		return 0
+		return nil, 0
 	}
 	var smSync sync.StagemediaImageClient = smClient
 	var encScreenshots sync.EncoraScreenshotClient
 	if encClient != nil {
 		encScreenshots = encClient
+	}
+
+	recordingImagesJob := &builtin.RefreshRecordingImagesJob{
+		DB: db, Cache: imgCache, Encora: encScreenshots, SM: smSync,
+		Renderer: imgRenderer, Logger: log.Logger,
+		NFORefresh: nfoRefresh,
 	}
 
 	count := 0
@@ -332,11 +347,7 @@ func registerImageRefreshJobs(
 			DB: db, Cache: imgCache, SM: smSync, Logger: log.Logger,
 			NFORefresh: nfoRefresh,
 		}},
-		{Job: &builtin.RefreshRecordingImagesJob{
-			DB: db, Cache: imgCache, Encora: encScreenshots, SM: smSync,
-			Renderer: imgRenderer, Logger: log.Logger,
-			NFORefresh: nfoRefresh,
-		}},
+		{Job: recordingImagesJob},
 		{Job: &builtin.RefreshActorHeadshotJob{
 			DB: db, Cache: imgCache, SM: smSync, Logger: log.Logger,
 			NFORefresh: nfoRefresh,
@@ -351,7 +362,47 @@ func registerImageRefreshJobs(
 		}
 		count++
 	}
-	return count
+	return recordingImagesJob, count
+}
+
+// registerRefreshRecordingFull wires the aggregate refresh-recording-full
+// job as manual-only. Fired by the recording detail page's Refresh
+// button via RunNow; chains an Encora detail re-pull, an ffprobe pass
+// over every recording_versions row, an NFO rewrite, and the
+// per-recording image refresh into a single button click.
+//
+// All four downstream dependencies degrade independently:
+//   - encClient nil → step 1 (Encora re-pull) is skipped.
+//   - nfoRefresh nil → step 3 (NFO rewrite) is skipped.
+//   - imageRefreshJob nil → step 4 (image refresh) is skipped.
+//
+// The Prober is always wired to the same FFProbe instance the ingest
+// pipeline uses, so step 2 runs as long as ffprobe is on PATH.
+func registerRefreshRecordingFull(
+	runner *jobs.Runner,
+	db *ent.Client,
+	encClient *encora.Client,
+	nfoRefresh *nforefresh.Service,
+	imageRefreshJob *builtin.RefreshRecordingImagesJob,
+) int {
+	job := &builtin.RefreshRecordingFullJob{
+		DB:           db,
+		Prober:       probe.FFProbe{Path: appConfig.Library.FFProbePath},
+		NFORefresh:   nfoRefresh,
+		ImageRefresh: imageRefreshJob,
+		Logger:       log.Logger,
+	}
+	// Encora is an interface; a nil *encora.Client must arrive as a
+	// true nil interface so the job's nil-check fires. Mirrors the
+	// idiom used for the server's encora handles above.
+	if encClient != nil {
+		job.Encora = encClient
+	}
+	if err := runner.Register(jobs.JobDef{Job: job}); err != nil {
+		log.Error().Err(err).Msg("register refresh-recording-full job")
+		return 0
+	}
+	return 1
 }
 
 // registerScanIncoming wires the scan-incoming job when at least one
