@@ -279,7 +279,7 @@ func TestComputeFormatString(t *testing.T) {
 					MediaInfoJSON: mi1080,
 				},
 			},
-			want: "MKV - x264 / AAC - 1080p - 5.00 GB",
+			want: "MKV - x264 + AAC - 1080p - 5.00 GB",
 		},
 		{
 			name: "two versions sorted best-first and bracketed",
@@ -295,7 +295,7 @@ func TestComputeFormatString(t *testing.T) {
 					MediaInfoJSON: mi2160,
 				},
 			},
-			want: "[MKV - x265 / AAC - 2160p - 40.00 GB] [MKV - x264 / AAC - 1080p - 5.00 GB]",
+			want: "[MKV - x265 + AAC - 2160p - 40.00 GB] [MKV - x264 + AAC - 1080p - 5.00 GB]",
 		},
 		{
 			name: "legacy version without mediainfo renders ? placeholders",
@@ -305,7 +305,7 @@ func TestComputeFormatString(t *testing.T) {
 					FileSizeBytes: 4 * oneGiB,
 				},
 			},
-			want: "MKV - ? / ? - ? - 4.00 GB",
+			want: "MKV - ? + ? - ? - 4.00 GB",
 		},
 	}
 	for _, tt := range tests {

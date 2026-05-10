@@ -5,14 +5,14 @@
 //
 // Format:
 //
-//	{Container} - {VideoCodec} / {AudioCodec} - {Quality} - {Size}
+//	{Container} - {VideoCodec} + {AudioCodec} - {Quality} - {Size}
 //
 // Single-version recordings render bare; multi-version recordings wrap
 // each version in [...] and join with a single space, ordered by
 // height descending (best first):
 //
-//	MP4 - x265 / AAC - 2160p - 8.57 GB
-//	[MP4 - x265 / AAC - 2160p - 8.57 GB] [MP4 - x264 / AAC - 1080p - 4.20 GB]
+//	MP4 - x265 + AAC - 2160p - 8.57 GB
+//	[MP4 - x265 + AAC - 2160p - 8.57 GB] [MP4 - x264 + AAC - 1080p - 4.20 GB]
 //
 // Missing fields render as "?" so each slot stays visible — the
 // structure is what makes the string readable at a glance.
@@ -73,7 +73,7 @@ type VersionInfo struct {
 // Empty MediaInfo (legacy imports that pre-date the probe capture) is
 // handled cleanly: Container falls back to fallbackExt (the file
 // extension, uppercased), and the rest stay empty so the renderer
-// emits "{ext} - ? / ? - ? - {size}".
+// emits "{ext} - ? + ? - ? - {size}".
 func FromVersionAndMediaInfo(
 	info probe.MediaInfo, sizeBytes int64, fallbackExt string,
 ) VersionInfo {
@@ -124,9 +124,15 @@ func Compose(versions []VersionInfo) string {
 	return strings.Join(parts, " ")
 }
 
-// renderVersion emits the bare "{Container} - {VideoCodec} /
+// renderVersion emits the bare "{Container} - {VideoCodec} +
 // {AudioCodec} - {Quality} - {Size}" string for a single version.
 // Empty slots render as "?" rather than collapsing the structure.
+//
+// The codec separator is "+" instead of "/" because the same string
+// is pushed to encora's /api/collection/{id}/format/{format} endpoint
+// — Laravel's router decodes %2F into "/" before route-matching and
+// 404s when the format ends up looking like multi-segment path
+// suffix. "+" sidesteps that with no visible UX cost.
 func renderVersion(v VersionInfo) string {
 	container := v.Container
 	if container == "" {
@@ -144,7 +150,7 @@ func renderVersion(v VersionInfo) string {
 	if quality == "" {
 		quality = missingPlaceholder
 	}
-	return fmt.Sprintf("%s - %s / %s - %s - %s",
+	return fmt.Sprintf("%s - %s + %s - %s - %s",
 		container, videoCodec, audioCodec, quality, formatSize(v.SizeBytes))
 }
 

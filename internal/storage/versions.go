@@ -181,7 +181,7 @@ func DeleteVersionsForRecording(
 // ComputeFormatString returns the canonical release-format string for
 // a recording's versions — the same shape the SPA renders + the same
 // shape we push to encora's release_format field on a mismatch
-// resolution. Single version → bare "MP4 - x265 / AAC - 2160p - 8.57 GB";
+// resolution. Single version → bare "MP4 - x265 + AAC - 2160p - 8.57 GB";
 // multi-version → bracketed "[best] [next] …" sorted best-first.
 //
 // Each version's MediaInfo comes from the persisted media_info_json
@@ -199,7 +199,7 @@ func ComputeFormatString(versions []RecordingVersion) string {
 		if v.MediaInfoJSON != "" {
 			// A malformed blob shouldn't crash the format helper —
 			// we fall through to the empty MediaInfo case which still
-			// produces a useful "{ext} - ? / ? - ? - {size}" line.
+			// produces a useful "{ext} - ? + ? - ? - {size}" line.
 			_ = json.Unmarshal([]byte(v.MediaInfoJSON), &mi)
 		}
 		ext := filepath.Ext(v.FilePath)

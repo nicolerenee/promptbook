@@ -137,7 +137,7 @@ func TestLoadRecordingPopulatesVersions(t *testing.T) {
 	// Multi-version render: each version bracketed, sorted by height
 	// descending (2160p first), single-space separator.
 	assert.Equal(t,
-		"[MKV - x265 / AAC - 2160p - 40.00 GB] [MKV - x264 / AAC - 1080p - 5.00 GB]",
+		"[MKV - x265 + AAC - 2160p - 40.00 GB] [MKV - x264 + AAC - 1080p - 5.00 GB]",
 		loaded.LocalFormatString)
 }
 

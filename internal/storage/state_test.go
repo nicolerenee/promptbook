@@ -164,7 +164,7 @@ func TestLoadStateSynced(t *testing.T) {
 	// MediaInfoJSON and no FileSizeBytes (the seedVersion helper's
 	// shape). Equality of the two produces Synced; the actual string
 	// content isn't load-bearing here.
-	const fallback = "MKV - ? / ? - ? - 0 B"
+	const fallback = "MKV - ? + ? - ? - 0 B"
 	seedShow(ctx, t, db, showID, "Marigold")
 	seedRecording(ctx, t, db, recordingID, showID)
 	seedCollection(ctx, t, db, recordingID, fallback)
@@ -198,7 +198,7 @@ func TestLoadStateFormatMismatch(t *testing.T) {
 	// LocalFormat is whatever the new compose path produces for the
 	// seeded version — we only need it to differ from EncoraFormat
 	// to exercise the FormatMismatch branch.
-	assert.Equal(t, "MKV - ? / ? - ? - 0 B", got.LocalFormat)
+	assert.Equal(t, "MKV - ? + ? - ? - 0 B", got.LocalFormat)
 	assert.NotEqual(t, got.EncoraFormat, got.LocalFormat)
 }
 
@@ -258,7 +258,7 @@ func TestLoadStateOrphan(t *testing.T) {
 	// Legacy-fallback compose output for a seedVersion with no
 	// MediaInfoJSON / size — exercises the orphan path's local-format
 	// surfacing without asserting on the format string's content.
-	assert.Equal(t, "MKV - ? / ? - ? - 0 B", got.LocalFormat)
+	assert.Equal(t, "MKV - ? + ? - ? - 0 B", got.LocalFormat)
 }
 
 func TestListStatesFilterByStatus(t *testing.T) {
@@ -267,10 +267,10 @@ func TestListStatesFilterByStatus(t *testing.T) {
 	ctx, db := openTestDB(t)
 
 	// Synced: collection row + file with matching format. Both sides
-	// share the legacy-fallback compose output ("MKV - ? / ? - ? - 0 B")
+	// share the legacy-fallback compose output ("MKV - ? + ? - ? - 0 B")
 	// so the equality check in ComputeStatus passes — exercising the
 	// status-machine alone, not the format-string content.
-	const fallbackMKV = "MKV - ? / ? - ? - 0 B"
+	const fallbackMKV = "MKV - ? + ? - ? - 0 B"
 	seedShow(ctx, t, db, 200, "Synced Show")
 	seedRecording(ctx, t, db, 2000, 200)
 	seedCollection(ctx, t, db, 2000, fallbackMKV)
@@ -282,7 +282,7 @@ func TestListStatesFilterByStatus(t *testing.T) {
 	// FormatMismatch.
 	seedShow(ctx, t, db, 201, "Mismatch Show")
 	seedRecording(ctx, t, db, 2001, 201)
-	seedCollection(ctx, t, db, 2001, "MP4 - x264 / AAC - 720p - 5.00 GB")
+	seedCollection(ctx, t, db, 2001, "MP4 - x264 + AAC - 720p - 5.00 GB")
 	seedVersion(ctx, t, db, 2001, "/store/mismatch.mkv", "MKV 720p")
 
 	// Missing: collection row, no file.

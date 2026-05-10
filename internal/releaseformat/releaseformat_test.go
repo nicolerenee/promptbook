@@ -43,7 +43,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Height:     2160,
 				SizeBytes:  bytes8_57GB,
 			}},
-			want: "MP4 - x265 / AAC - 2160p - 8.57 GB",
+			want: "MP4 - x265 + AAC - 2160p - 8.57 GB",
 		},
 		{
 			name: "single_h264_1080p_mkv",
@@ -54,7 +54,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Height:     1080,
 				SizeBytes:  bytes4_20GB,
 			}},
-			want: "MKV - x264 / AC3 - 1080p - 4.20 GB",
+			want: "MKV - x264 + AC3 - 1080p - 4.20 GB",
 		},
 		{
 			name: "missing_video_codec",
@@ -64,7 +64,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Height:     2160,
 				SizeBytes:  bytes8_57GB,
 			}},
-			want: "MP4 - ? / AAC - 2160p - 8.57 GB",
+			want: "MP4 - ? + AAC - 2160p - 8.57 GB",
 		},
 		{
 			name: "missing_audio_codec",
@@ -74,7 +74,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Height:     2160,
 				SizeBytes:  bytes8_57GB,
 			}},
-			want: "MP4 - x265 / ? - 2160p - 8.57 GB",
+			want: "MP4 - x265 + ? - 2160p - 8.57 GB",
 		},
 		{
 			name: "missing_quality",
@@ -84,7 +84,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				AudioCodec: "aac",
 				SizeBytes:  bytes8_57GB,
 			}},
-			want: "MP4 - x265 / AAC - ? - 8.57 GB",
+			want: "MP4 - x265 + AAC - ? - 8.57 GB",
 		},
 		{
 			name: "all_codec_fields_empty_keeps_container",
@@ -92,7 +92,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Container: "MKV",
 				SizeBytes: bytes4_20GB,
 			}},
-			want: "MKV - ? / ? - ? - 4.20 GB",
+			want: "MKV - ? + ? - ? - 4.20 GB",
 		},
 		{
 			name: "small_file_renders_in_megabytes",
@@ -103,7 +103,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Height:     720,
 				SizeBytes:  bytes512MB,
 			}},
-			want: "MP4 - x264 / AAC - 720p - 512.00 MB",
+			want: "MP4 - x264 + AAC - 720p - 512.00 MB",
 		},
 		{
 			name: "unknown_video_codec_passes_through",
@@ -114,7 +114,7 @@ func TestComposeSingleVersion(t *testing.T) {
 				Height:     2160,
 				SizeBytes:  bytes8_57GB,
 			}},
-			want: "MKV - av1 / OPUS - 2160p - 8.57 GB",
+			want: "MKV - av1 + OPUS - 2160p - 8.57 GB",
 		},
 	}
 	for _, tt := range tests {
@@ -154,8 +154,8 @@ func TestComposeMultiVersion(t *testing.T) {
 					SizeBytes:  bytes4_20GB,
 				},
 			},
-			want: "[MP4 - x265 / AAC - 2160p - 8.57 GB] " +
-				"[MP4 - x264 / AAC - 1080p - 4.20 GB]",
+			want: "[MP4 - x265 + AAC - 2160p - 8.57 GB] " +
+				"[MP4 - x264 + AAC - 1080p - 4.20 GB]",
 		},
 		{
 			name: "input_order_reversed_sort_still_desc",
@@ -175,8 +175,8 @@ func TestComposeMultiVersion(t *testing.T) {
 					SizeBytes:  bytes8_57GB,
 				},
 			},
-			want: "[MP4 - x265 / AAC - 2160p - 8.57 GB] " +
-				"[MP4 - x264 / AAC - 1080p - 4.20 GB]",
+			want: "[MP4 - x265 + AAC - 2160p - 8.57 GB] " +
+				"[MP4 - x264 + AAC - 1080p - 4.20 GB]",
 		},
 		{
 			name: "mixed_completeness_keeps_question_marks",
@@ -194,8 +194,8 @@ func TestComposeMultiVersion(t *testing.T) {
 					SizeBytes: bytes4_20GB,
 				},
 			},
-			want: "[MKV - x265 / AAC - 2160p - 8.57 GB] " +
-				"[MP4 - ? / ? - 1080p - 4.20 GB]",
+			want: "[MKV - x265 + AAC - 2160p - 8.57 GB] " +
+				"[MP4 - ? + ? - 1080p - 4.20 GB]",
 		},
 		{
 			name: "zero_height_sorts_last",
@@ -213,8 +213,8 @@ func TestComposeMultiVersion(t *testing.T) {
 					SizeBytes:  bytes8_57GB,
 				},
 			},
-			want: "[MP4 - x265 / AAC - 2160p - 8.57 GB] " +
-				"[MKV - ? / ? - ? - 4.20 GB]",
+			want: "[MP4 - x265 + AAC - 2160p - 8.57 GB] " +
+				"[MKV - ? + ? - ? - 4.20 GB]",
 		},
 	}
 	for _, tt := range tests {
@@ -308,5 +308,5 @@ func TestComposeLegacyImportRendering(t *testing.T) {
 		probe.MediaInfo{}, bytes4_20GB, ".mkv",
 	)
 	got := releaseformat.Compose([]releaseformat.VersionInfo{v})
-	assert.Equal(t, "MKV - ? / ? - ? - 4.20 GB", got)
+	assert.Equal(t, "MKV - ? + ? - ? - 4.20 GB", got)
 }

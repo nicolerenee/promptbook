@@ -511,9 +511,9 @@ func TestAPIMismatchesEnumerates(t *testing.T) {
 	// synced: in collection with encoraFormat == ComputeFormatString
 	// of the seeded version. seedMismatchRecording's version has no
 	// MediaInfoJSON / FileSizeBytes, so the compose output is the
-	// legacy-fallback "{ext} - ? / ? - ? - 0 B" — make encoraFormat
+	// legacy-fallback "{ext} - ? + ? - ? - 0 B" — make encoraFormat
 	// match exactly so this row stays out of the mismatch list.
-	const fallback = "MKV - ? / ? - ? - 0 B"
+	const fallback = "MKV - ? + ? - ? - 0 B"
 	seedMismatchRecording(t, db, 9101, 91001, "SyncedShow",
 		true, false, true, fallback, "MKV 1080p")
 	// orphan: file present, not in collection or wants.
@@ -752,9 +752,9 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 	// from what the new compose path produces for the seeded version.
 	// The seedMismatchRecording helper writes a RecordingVersion with
 	// only FormatLabel set, so the compose output is the legacy-
-	// fallback "{ext} - ? / ? - ? - 0 B" — that's what the validation
+	// fallback "{ext} - ? + ? - ? - 0 B" — that's what the validation
 	// oracle will compare NewFormat against.
-	const localCompose = "MKV - ? / ? - ? - 0 B"
+	const localCompose = "MKV - ? + ? - ? - 0 B"
 	seedMismatchRecording(t, db, 99002, 90100222, "FormatShow",
 		true, false, true, "MKV 720p", "MKV 1080p")
 
