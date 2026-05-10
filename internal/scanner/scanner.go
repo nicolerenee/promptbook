@@ -24,6 +24,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -231,8 +232,15 @@ func (e *Engine) processFile(ctx context.Context, path string, res *Result) {
 			entry.SuggestedRecordingID = nil
 		}
 	case errors.Is(resolveErr, rename.ErrNoEncoraID):
-		// No id anywhere — leave both fields zero so the UI knows the
-		// human has to pick from scratch.
+		// No id anywhere — fall back to filename heuristic matching
+		// against the local catalog. Most user-uploaded files follow
+		// "Show YYYY-MM-DD.mp4" or similar; the matcher pulls show +
+		// date out and scores against ent.Recording rows. Top hit
+		// becomes the queue's suggestion (with the matcher's
+		// confidence label) when the score clears the medium
+		// threshold; lower scores leave the entry unsuggested so the
+		// UI prompts the human.
+		e.applyMatchSuggestion(ctx, path, &entry, res)
 	default:
 		recordError(res, fmt.Errorf("resolve %q: %w", path, resolveErr))
 		return
@@ -243,6 +251,111 @@ func (e *Engine) processFile(ctx context.Context, path string, res *Result) {
 		return
 	}
 	res.Enqueued++
+}
+
+// applyMatchSuggestion fills entry's SuggestedRecordingID +
+// SuggestedConfidence from the heuristic filename matcher.
+//
+// The pipeline runs the matcher TWICE — once with the filename's
+// show as the guess (filling missing date/tour from the folder)
+// and once with the folder's show as the guess (filling missing
+// date/tour from the filename). The higher-scoring top candidate
+// wins. This handles two failure modes cleanly:
+//   - Folder carries the metadata, file is "ACT 1.mp4" / "bows.mp4"
+//     — the folder-show variant scores; the filename-show variant
+//     either misses or scores lower.
+//   - File carries the metadata, folder is "10-26-2023" or empty
+//     — the filename-show variant scores.
+//
+// Errors are recorded on res but don't abort processing — a queue
+// entry with no suggestion is still useful (the human picks).
+func (e *Engine) applyMatchSuggestion(
+	ctx context.Context, path string, entry *storage.QueueEntry, res *Result,
+) {
+	fileParsed := match.Parse(filepath.Base(path))
+	folderParsed := match.Parse(filepath.Base(filepath.Dir(path)))
+
+	matcher := match.New(e.DB)
+
+	withFileShow := mergedWithShow(fileParsed.ShowGuess,
+		fileParsed.Tour, fileParsed, folderParsed)
+	withFolderShow := mergedWithShow(folderParsed.ShowGuess,
+		folderParsed.Tour, fileParsed, folderParsed)
+
+	top, err := bestMatch(ctx, matcher, withFileShow, withFolderShow)
+	if err != nil {
+		recordError(res, fmt.Errorf("match %q: %w", path, err))
+		return
+	}
+	if top == nil {
+		return
+	}
+	conf := top.Confidence()
+	if conf == match.ConfidenceLow {
+		// Don't pin a low-confidence guess to the queue row — the
+		// UI's "match" button auto-imports against the suggestion,
+		// and a wrong auto-import is worse than no suggestion.
+		return
+	}
+	idCopy := top.RecordingID
+	entry.SuggestedRecordingID = &idCopy
+	entry.SuggestedConfidence = conf
+}
+
+// mergedWithShow builds a Parsed using the supplied show + tour
+// values, filling everything else from the union of file + folder.
+// Lets applyMatchSuggestion try one show value while still using
+// the richest possible date / source / flag context.
+func mergedWithShow(show, tour string, file, folder match.Parsed) match.Parsed {
+	out := match.Parsed{ShowGuess: show, Tour: tour}
+	switch {
+	case file.Date.HasYear() && folder.Date.HasYear() && file.Date.HasMonth():
+		out.Date = file.Date
+	case file.Date.HasYear() && folder.Date.HasMonth() && !file.Date.HasMonth():
+		// Filename had only year; folder has month — prefer folder.
+		out.Date = folder.Date
+	case file.Date.HasYear():
+		out.Date = file.Date
+	case folder.Date.HasYear():
+		out.Date = folder.Date
+	}
+	if file.Source != "" {
+		out.Source = file.Source
+	} else {
+		out.Source = folder.Source
+	}
+	out.IsMaster = file.IsMaster || folder.IsMaster
+	out.IsMatinee = file.IsMatinee || folder.IsMatinee
+	out.IsPreview = file.IsPreview || folder.IsPreview
+	out.IsAct1 = file.IsAct1 || folder.IsAct1
+	out.IsAct2 = file.IsAct2 || folder.IsAct2
+	return out
+}
+
+// bestMatch runs the matcher on each candidate Parsed and returns
+// whichever produced the highest-scoring top hit. Returns nil when
+// neither attempt produced any candidates. Skips empty-show inputs.
+func bestMatch(
+	ctx context.Context, m *match.Matcher, candidates ...match.Parsed,
+) (*match.Candidate, error) {
+	var best *match.Candidate
+	for _, p := range candidates {
+		if p.ShowGuess == "" {
+			continue
+		}
+		results, err := m.Match(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+		if best == nil || results[0].Score > best.Score {
+			c := results[0]
+			best = &c
+		}
+	}
+	return best, nil
 }
 
 // confidenceFor maps a resolved encora id to a confidence label by
