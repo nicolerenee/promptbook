@@ -131,7 +131,7 @@ export function renderImageErrorToast({ error, onDismiss }) {
 export function renderUpstreamPicker(attrs) {
   const {
     currentURL, currentLabel, currentAlt,
-    aspect, options, loading, error, busy,
+    aspect, options, loading, error, busy, loadGen,
     onPick, onUpload, onRefetch, uploadLabel,
   } = attrs;
 
@@ -191,7 +191,7 @@ export function renderUpstreamPicker(attrs) {
         ]),
       ]),
       renderUpstreamStrip({
-        options, loading, error, busy, onPick, thumbClass, onRefetch,
+        options, loading, error, busy, onPick, thumbClass, onRefetch, loadGen,
       }),
     ]),
   ]);
@@ -227,9 +227,20 @@ function renderUpstreamStrip(attrs) {
     return m('div', { class: 'opacity-60 text-sm py-2' },
       'No upstream options found. Upload a custom image instead.');
   }
+  // loadGen is bumped by the caller each time fresh options are
+  // fetched. We append it as a `?_=` query param so the browser
+  // doesn't reuse a previously-failed cached load on Re-fetch, and
+  // we fold it into the Mithril key so remounting forces the <img>
+  // to re-issue the request rather than hold the stale node.
+  //
+  // referrerpolicy="no-referrer" is the StageMedia workaround:
+  // their CDN serves a 403 placeholder when the Referer header
+  // points at a host they don't recognize (e.g. localhost:8080).
+  // Stripping the referrer entirely lets the request through.
+  const gen = attrs.loadGen || 0;
   return m('div', { class: 'flex gap-3 overflow-x-auto py-2' },
     options.map((opt, idx) => m('button', {
-      key: opt.url + '-' + idx,
+      key: opt.url + '-' + idx + '-' + gen,
       type: 'button',
       class: 'shrink-0 rounded overflow-hidden bg-base-200 ' +
              'border-2 border-transparent hover:border-primary ' +
@@ -240,11 +251,22 @@ function renderUpstreamStrip(attrs) {
       disabled: busy,
       onclick: () => onPick(opt.url),
     }, m('img', {
-      src: opt.url,
+      src: gen ? bustCache(opt.url, gen) : opt.url,
       alt: opt.source || 'upstream option ' + (idx + 1),
       class: 'w-full h-full object-cover',
       loading: 'lazy',
+      referrerpolicy: 'no-referrer',
     }))));
+}
+
+// bustCache appends a `?_=<gen>` query param to url so a re-fetch
+// after a failed load forces the browser to re-request rather than
+// reuse the cached failure. Preserves any existing query string by
+// switching the separator to `&`.
+function bustCache(url, gen) {
+  if (!url) return url;
+  const sep = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + sep + '_=' + gen;
 }
 
 // uploadButton mirrors the renderUploadButton helper from

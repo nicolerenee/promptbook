@@ -691,6 +691,7 @@ function loadOptions(id, kind) {
   state.recording.pickerOptionsLoading = state.recording.pickerOptionsLoading || {};
   state.recording.pickerOptions = state.recording.pickerOptions || {};
   state.recording.pickerOptionsError = state.recording.pickerOptionsError || {};
+  state.recording.pickerOptionsGen = state.recording.pickerOptionsGen || {};
   state.recording.pickerOptionsLoading[kind] = true;
   state.recording.pickerOptionsError[kind] = null;
   // Don't clear pickerOptions on refetch — the user prefers seeing the
@@ -701,6 +702,12 @@ function loadOptions(id, kind) {
     .then((body) => {
       state.recording.pickerOptions[kind] =
         (body && Array.isArray(body.options)) ? body.options : [];
+      // Bump the generation so the picker forces fresh <img> requests
+      // (cache-buster on the URL + Mithril key churn). Critical when a
+      // previous fetch's images failed to load — without this the
+      // browser keeps reusing the cached failure.
+      state.recording.pickerOptionsGen[kind] =
+        (state.recording.pickerOptionsGen[kind] || 0) + 1;
       state.recording.pickerOptionsLoading[kind] = false;
       m.redraw();
     })
@@ -771,6 +778,7 @@ function renderPickerTab(loaded, kind) {
   const optionsByKind = state.recording.pickerOptions || {};
   const loadingByKind = state.recording.pickerOptionsLoading || {};
   const errorByKind = state.recording.pickerOptionsError || {};
+  const genByKind = state.recording.pickerOptionsGen || {};
 
   return renderUpstreamPicker({
     currentURL: localURL,
@@ -781,6 +789,7 @@ function renderPickerTab(loaded, kind) {
     loading: !!loadingByKind[kind],
     error: errorByKind[kind] || null,
     busy: !!state.recording.imageBusy,
+    loadGen: genByKind[kind] || 0,
     onPick: (url) => postPickerChoice(fromURLPath, { url },
       () => loadRecording(id)),
     onUpload: (file) => runUpload(uploadPath, id, file),

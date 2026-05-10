@@ -264,6 +264,10 @@ function loadShowOptions(id) {
     .then((body) => {
       state.show.pickerOptions =
         (body && Array.isArray(body.options)) ? body.options : [];
+      // Bump the generation so the picker forces fresh <img> requests
+      // (cache-buster + Mithril key churn). See the matching comment
+      // in Recording.js loadOptions for the full rationale.
+      state.show.pickerOptionsGen = (state.show.pickerOptionsGen || 0) + 1;
       state.show.pickerOptionsLoading = false;
       m.redraw();
     })
@@ -354,6 +358,7 @@ function renderPosterPicker(detail) {
     loading: !!state.show.pickerOptionsLoading,
     error: state.show.pickerOptionsError || null,
     busy: !!state.show.imageBusy,
+    loadGen: state.show.pickerOptionsGen || 0,
     onPick: (url) => runShowPick(id, url),
     onUpload: runBannerUpload,
     onRefetch: () => loadShowOptions(id),
