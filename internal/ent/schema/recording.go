@@ -135,6 +135,13 @@ func (Recording) Edges() []ent.Edge {
 				entsql.OnDelete(entsql.Cascade),
 				entgql.Skip(entgql.SkipAll),
 			),
+		// Note: external_ids is intentionally NOT modeled as an ent
+		// edge. The on-disk table uses a composite primary key
+		// (recording_id, provider) — ent's edge-back-reference model
+		// requires a real id column on the back-edge type, which would
+		// force a synthetic surrogate id we don't want. The
+		// externalids package reads/writes the table via raw SQL on the
+		// ent driver instead; Phase L's PK swap will revisit this.
 	}
 }
 
