@@ -1752,9 +1752,24 @@ function multipartVersionRow(items, idx, mi, expanded) {
 // children render flat under it rather than recursively building
 // nested <details> for grand-children. Hidden entirely when
 // loaded.extras is empty (loose-file imports, missing source folder).
-function renderExtrasSection(loaded) {
+function renderExtrasSection(loaded, recordingFolder) {
   const extras = loaded.extras || [];
   if (extras.length === 0) return null;
+  // Strip the recording folder prefix off every path before bucketing
+  // so "audio/01 Road To Hell.mp3" reads as "audio/…" instead of
+  // "store01/Performances/Broadway/Halcyon Crossing (2024-09) [encora-N]/audio/…".
+  // The server emits absolute paths verbatim (file_path on disk); the
+  // SPA owns the cosmetic "relative to the recording" view.
+  const prefix = recordingFolder ? recordingFolder.replace(/\/$/, '') + '/' : '';
+  const rel = (p) => {
+    if (!p) return '';
+    if (prefix && p.indexOf(prefix) === 0) return p.substring(prefix.length);
+    // Leading slash without a matching prefix → strip the slash so
+    // the renderer's directory-vs-file logic (which keys on the first
+    // '/') doesn't bucket everything under an empty-name directory.
+    return p.replace(/^\/+/, '');
+  };
+
   // Bucket the flat list into top-level files + a directory-keyed map
   // of children. The wire shape is already sorted by path, so a
   // single pass is enough — directories appear before their children
@@ -1764,22 +1779,26 @@ function renderExtrasSection(loaded) {
   const dirNames = [];
   for (const e of extras) {
     if (!e || typeof e.path !== 'string') continue;
-    const slashIdx = e.path.indexOf('/');
+    const relPath = rel(e.path);
+    // Replace the path on the row's projection so downstream renderers
+    // (title attrs, display fallbacks) all see the relativized form.
+    const row = Object.assign({}, e, { path: relPath });
+    const slashIdx = relPath.indexOf('/');
     if (slashIdx < 0) {
-      if (e.isDir) {
-        dirNames.push(e.path);
-        if (!dirChildren.has(e.path)) dirChildren.set(e.path, []);
+      if (row.isDir) {
+        dirNames.push(relPath);
+        if (!dirChildren.has(relPath)) dirChildren.set(relPath, []);
       } else {
-        topFiles.push(e);
+        topFiles.push(row);
       }
       continue;
     }
-    const root = e.path.substring(0, slashIdx);
+    const root = relPath.substring(0, slashIdx);
     if (!dirChildren.has(root)) {
       dirChildren.set(root, []);
       dirNames.push(root);
     }
-    dirChildren.get(root).push(e);
+    dirChildren.get(root).push(row);
   }
   return m('section', { class: 'space-y-2' }, [
     m('h3', { class: 'text-sm font-semibold opacity-80' },
@@ -1871,53 +1890,41 @@ function extraDirSection(name, children) {
   ]);
 }
 
-// renderDetailsSection surfaces the per-recording catalog metadata
-// the hero doesn't already carry — Cataloged timestamp + Folder path.
-// Gifting / Owners / Wanters moved to the hero badge row; this
-// section is intentionally short. Empty values fall through to "—".
-function renderDetailsSection(loaded) {
-  const versions = loaded.Versions || [];
-  // Folder = the canonical destination folder for the recording's
-  // first version. The SPA only carries dirname(FilePath) on
-  // versions, so the displayed folder is always destination-side.
-  const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
-  const cataloged = loaded.CollectedAt || '';
-  const rows = [
-    ['Cataloged', cataloged],
-  ];
-  return m('section', { class: 'space-y-2' }, [
-    m('h2', { class: 'text-base font-semibold opacity-80' }, 'Details'),
-    m('dl', {
-      class: 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm',
-    },
-      rows.flatMap(([label, value]) => [
-        m('dt', { class: 'opacity-60' }, label + ':'),
-        m('dd', { class: 'font-mono break-all' }, value || '—'),
-      ])),
-    folder
-      ? m('div', { class: 'text-sm flex flex-wrap gap-2 items-baseline pt-1' }, [
-          m('span', { class: 'opacity-60' }, 'Folder:'),
-          m('span', { class: 'font-mono break-all' }, folder),
-        ])
-      : null,
-  ]);
-}
-
 // renderFilesSection collapses phase 1's three trailing cards (Local
 // versions, Media Info, NFO output) into one Files surface containing
 // the Versions table (with per-row Media Info expansion), the optional
 // Extras tree, and the NFO disclosure row at the bottom.
+//
+// Section header carries the canonical on-disk folder so the user can
+// see the path without leaving the page. Cataloged timestamp renders
+// as a small footer badge at the bottom — it's reference data, not a
+// scan-the-row attribute, so it gets the lowest visual weight on the
+// card.
 function renderFilesSection(loaded) {
   const versions = loaded.Versions || [];
   const extras = loaded.extras || [];
+  const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
+  const cataloged = loaded.CollectedAt || '';
   return m('div', { class: 'card bg-base-100 shadow-sm' },
     m('div', { class: 'card-body space-y-4' }, [
-      m('h2', { class: 'card-title text-base' },
-        'Files · ' + versions.length),
+      m('div', { class: 'space-y-1' }, [
+        m('h2', { class: 'card-title text-base' },
+          'Files · ' + versions.length),
+        folder
+          ? m('div', { class: 'text-xs font-mono opacity-60 break-all' }, folder)
+          : null,
+      ]),
       renderVersionsTable(loaded),
-      extras.length > 0 ? renderExtrasSection(loaded) : null,
+      extras.length > 0 ? renderExtrasSection(loaded, folder) : null,
       m('div', { class: 'border-t border-base-200 pt-2' },
         renderNFORow(loaded)),
+      cataloged
+        ? m('div', { class: 'flex justify-end pt-1' },
+            m('span', {
+              class: 'badge badge-ghost badge-sm font-mono',
+              title: 'Cataloged ' + cataloged,
+            }, 'Cataloged ' + cataloged))
+        : null,
     ]));
 }
 
@@ -2646,7 +2653,6 @@ function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
   return m('div', { class: 'space-y-6' }, [
     callout,
-    renderDetailsSection(loaded),
     renderFilesSection(loaded),
     renderCastCard(loaded),
   ]);
