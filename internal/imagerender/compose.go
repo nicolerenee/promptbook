@@ -10,6 +10,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/font/opentype"
@@ -57,6 +58,40 @@ const renderDPI = 72
 // minimum font size. Single character so MeasureString predicts width
 // correctly across the embedded serif.
 const ellipsis = "…"
+
+// minRenderHeight is the floor for the rendered poster's pixel
+// height. When the source comes in below this (StageMedia thumbnails
+// are typically 230×345), the renderer upscales the source canvas
+// before compositing so the band — and the text drawn on it — get a
+// reasonable absolute pixel size. The image content can't really
+// gain detail from upscaling, but TEXT renders fresh on the larger
+// canvas and stays crisp at the higher resolution.
+//
+// 1000 puts the title font at ~68 px (vs ~23 px on a 345-tall source)
+// while keeping the JPEG well under 200 KB at quality 90.
+const minRenderHeight = 1000
+
+// ensureMinHeight returns src unchanged when its height is already
+// >= minH. Otherwise it scales src up via CatmullRom interpolation
+// (high-quality bicubic) to a canvas of height = minH, preserving
+// aspect ratio. The image content blurs from the upscale — accepted
+// because the alternative is illegible burn-in text on a tiny image.
+func ensureMinHeight(src image.Image, minH int) image.Image {
+	bounds := src.Bounds()
+	if bounds.Dy() >= minH {
+		return src
+	}
+	scale := float64(minH) / float64(bounds.Dy())
+	newW := int(float64(bounds.Dx())*scale + halfPixel)
+	dst := image.NewRGBA(image.Rect(0, 0, newW, minH))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Src, nil)
+	return dst
+}
+
+// halfPixel is the rounding bias used to convert a fractional scaled
+// width to an integer with banker-friendly behavior. Pulled out so
+// mnd lint stays happy.
+const halfPixel = 0.5
 
 // ellipsisTrimChars is the set of trailing characters stripped off a
 // truncated string before the ellipsis is appended. We pull off
@@ -144,6 +179,7 @@ func loadFace(weight string, sizePx int) font.Face {
 //
 //nolint:gocognit,funlen // single linear pipeline; splitting hides the shape.
 func compose(src image.Image, rows []string, style Style) *image.RGBA {
+	src = ensureMinHeight(src, minRenderHeight)
 	bounds := src.Bounds()
 	totalW, totalH := bounds.Dx(), bounds.Dy()
 	dst := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
