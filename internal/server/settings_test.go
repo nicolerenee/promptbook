@@ -31,7 +31,6 @@ func TestAPISettingsRedactsKeys(t *testing.T) {
 		Encora: config.EncoraConfig{
 			BaseURL:   "https://encora.it",
 			APIKey:    "super-secret-encora-key",
-			UserAgent: "promptbook/test",
 			RateLimit: config.RateLimitConfig{RequestsPerMinute: 30, BurstReserve: 2},
 		},
 		Storage: config.StorageConfig{DatabasePath: "/tmp/promptbook.db"},
@@ -52,9 +51,8 @@ func TestAPISettingsRedactsKeys(t *testing.T) {
 			},
 		},
 		Stagemedia: config.StagemediaConfig{
-			BaseURL:   "https://stagemedia.me",
-			APIKey:    "", // explicitly unset to assert the false branch
-			UserAgent: "promptbook/test",
+			BaseURL: "https://stagemedia.me",
+			APIKey:  "", // explicitly unset to assert the false branch
 		},
 	}
 

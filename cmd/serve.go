@@ -24,6 +24,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/storage"
 	"github.com/nicolerenee/promptbook/internal/sync"
 	"github.com/nicolerenee/promptbook/internal/tmdb"
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 // imageFetchHTTPTimeout caps any single image download from the local
@@ -79,10 +80,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	var smClient *stagemedia.Client
 	if appConfig.Stagemedia.APIKey != "" {
 		smClient, err = stagemedia.New(stagemedia.Options{
-			BaseURL:   appConfig.Stagemedia.BaseURL,
-			APIKey:    appConfig.Stagemedia.APIKey,
-			UserAgent: appConfig.Stagemedia.UserAgent,
-			Logger:    log.Logger,
+			BaseURL: appConfig.Stagemedia.BaseURL,
+			APIKey:  appConfig.Stagemedia.APIKey,
+			Logger:  log.Logger,
 		})
 		if err != nil {
 			return fmt.Errorf("build stagemedia client: %w", err)
@@ -169,7 +169,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		ImageCache:        imgCache,
 		ImageRenderer:     imgRenderer,
 		JobRunner:         runner,
-		Version:           Version,
+		Version:           version.Version,
 		Config:            appConfig,
 		// ConfigSource intentionally left empty — viper.ConfigFileUsed
 		// would require plumbing the *viper.Viper out of config.Load to
@@ -223,10 +223,9 @@ func buildServeTMDBClient() (server.TMDBClient, error) {
 		return nil, nil //nolint:nilnil // by design — caller treats nil as "disabled".
 	}
 	client, err := tmdb.New(tmdb.Options{
-		BaseURL:   appConfig.TMDB.BaseURL,
-		APIKey:    appConfig.TMDB.APIKey,
-		UserAgent: appConfig.TMDB.UserAgent,
-		Logger:    log.Logger,
+		BaseURL: appConfig.TMDB.BaseURL,
+		APIKey:  appConfig.TMDB.APIKey,
+		Logger:  log.Logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build tmdb client: %w", err)
@@ -244,10 +243,9 @@ func buildServeEncoraClient() (*encora.Client, error) {
 		return nil, nil //nolint:nilnil // by design — caller treats nil as "disabled".
 	}
 	encClient, err := encora.New(encora.Options{
-		BaseURL:   appConfig.Encora.BaseURL,
-		APIKey:    appConfig.Encora.APIKey,
-		UserAgent: appConfig.Encora.UserAgent,
-		Logger:    log.Logger,
+		BaseURL: appConfig.Encora.BaseURL,
+		APIKey:  appConfig.Encora.APIKey,
+		Logger:  log.Logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build encora client: %w", err)

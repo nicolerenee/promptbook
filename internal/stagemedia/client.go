@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 // defaultHTTPTimeout is the timeout applied when callers don't pass an
@@ -62,9 +64,8 @@ type Client struct {
 
 // Options configures a new Client.
 type Options struct {
-	BaseURL   string
-	APIKey    string
-	UserAgent string
+	BaseURL string
+	APIKey  string
 	// HTTPClient is optional; if nil a default with sane timeouts is used.
 	HTTPClient *http.Client
 	Logger     zerolog.Logger
@@ -82,9 +83,6 @@ func New(opts Options) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse base url: %w", err)
 	}
-	if opts.UserAgent == "" {
-		opts.UserAgent = "promptbook/0.0.1"
-	}
 	hc := opts.HTTPClient
 	if hc == nil {
 		hc = &http.Client{Timeout: defaultHTTPTimeout}
@@ -92,7 +90,7 @@ func New(opts Options) (*Client, error) {
 	return &Client{
 		baseURL:    u,
 		apiKey:     opts.APIKey,
-		userAgent:  opts.UserAgent,
+		userAgent:  version.UserAgent(),
 		httpClient: hc,
 		logger:     opts.Logger,
 	}, nil

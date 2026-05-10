@@ -34,6 +34,8 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 const (
@@ -78,9 +80,7 @@ func (s *Server) handleUpstreamImageProxy(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("upstream proxy: build request: %w", err)
 	}
-	// StageMedia / Encora occasionally serve a fallback image when the
-	// User-Agent looks bot-like; mirroring a stock browser UA dodges that.
-	req.Header.Set("User-Agent", "promptbook-image-proxy/1.0")
+	req.Header.Set("User-Agent", version.UserAgent())
 	req.Header.Set("Accept", "image/*,*/*;q=0.5")
 
 	resp, err := http.DefaultClient.Do(req)

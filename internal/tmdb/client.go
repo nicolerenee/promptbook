@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 // defaultHTTPTimeout is the timeout applied when callers don't pass
@@ -70,8 +72,6 @@ type Options struct {
 	ImageBase string
 	// APIKey is the v3 api_key. Required.
 	APIKey string
-	// UserAgent identifies this client in the request header.
-	UserAgent string
 	// HTTPClient is optional; if nil a default with sane timeouts is
 	// used.
 	HTTPClient *http.Client
@@ -91,9 +91,6 @@ func New(opts Options) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse base url: %w", err)
 	}
-	if opts.UserAgent == "" {
-		opts.UserAgent = "promptbook/0.0.1"
-	}
 	if opts.ImageBase == "" {
 		opts.ImageBase = defaultImageBase
 	}
@@ -105,7 +102,7 @@ func New(opts Options) (*Client, error) {
 		baseURL:    u,
 		imageBase:  strings.TrimSuffix(opts.ImageBase, "/"),
 		apiKey:     opts.APIKey,
-		userAgent:  opts.UserAgent,
+		userAgent:  version.UserAgent(),
 		httpClient: hc,
 		logger:     opts.Logger,
 	}, nil

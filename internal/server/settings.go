@@ -6,6 +6,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 // settingsResponse is the JSON shape /api/v1/settings returns. It
@@ -104,7 +105,7 @@ func (s *Server) handleSettings(c echo.Context) error {
 		Encora: settingsEncora{
 			BaseURL:   cfg.Encora.BaseURL,
 			APIKeySet: cfg.Encora.APIKey != "",
-			UserAgent: cfg.Encora.UserAgent,
+			UserAgent: version.UserAgent(),
 			RateLimit: settingsRateLimit{
 				RequestsPerMinute: cfg.Encora.RateLimit.RequestsPerMinute,
 				BurstReserve:      cfg.Encora.RateLimit.BurstReserve,
@@ -131,7 +132,7 @@ func (s *Server) handleSettings(c echo.Context) error {
 		Stagemedia: settingsStagemedia{
 			BaseURL:   cfg.Stagemedia.BaseURL,
 			APIKeySet: cfg.Stagemedia.APIKey != "",
-			UserAgent: cfg.Stagemedia.UserAgent,
+			UserAgent: version.UserAgent(),
 		},
 		ImageCache:   buildImageCacheSettings(s.ImageCache(), cfg.Library.ImageRoot),
 		Version:      s.version,

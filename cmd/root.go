@@ -11,16 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/config"
-)
-
-// Version information - set at build time via ldflags.
-//
-//nolint:gochecknoglobals // build-time variables set via ldflags
-var (
-	Version   = "dev"
-	Commit    = "unknown"
-	BuildDate = "unknown"
-	BuiltBy   = "unknown"
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 //nolint:gochecknoglobals // cobra CLI flags require package-level variables
@@ -97,10 +88,10 @@ func init() {
 
 //nolint:forbidigo // CLI version output requires fmt.Printf
 func printVersion() {
-	fmt.Printf("promptbook %s\n", Version)
-	fmt.Printf("  commit:   %s\n", Commit)
-	fmt.Printf("  built:    %s\n", BuildDate)
-	fmt.Printf("  built by: %s\n", BuiltBy)
+	fmt.Printf("promptbook %s\n", version.Version)
+	fmt.Printf("  commit:   %s\n", version.Commit)
+	fmt.Printf("  built:    %s\n", version.BuildDate)
+	fmt.Printf("  built by: %s\n", version.BuiltBy)
 }
 
 func initConfig() {

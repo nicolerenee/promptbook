@@ -25,6 +25,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/storage"
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 // posterPreviewMaxBytes caps the upstream body the preview endpoint
@@ -113,7 +114,7 @@ func fetchAndDecode(
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("User-Agent", "promptbook-poster-preview/1.0")
+	req.Header.Set("User-Agent", version.UserAgent())
 	req.Header.Set("Accept", "image/*,*/*;q=0.5")
 
 	resp, err := http.DefaultClient.Do(req)

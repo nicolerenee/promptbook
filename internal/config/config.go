@@ -13,7 +13,6 @@ import (
 // Defaults.
 const (
 	DefaultEncoraBaseURL       = "https://encora.it"
-	DefaultEncoraUserAgent     = "promptbook/0.0.1"
 	DefaultRequestsPerMinute   = 30
 	DefaultBurstReserve        = 2
 	DefaultDatabasePath        = "./promptbook.db"
@@ -41,18 +40,14 @@ const (
 	// (e.g. a vendored static build); the extractor surfaces a clear
 	// "not available" error if ffmpeg isn't reachable at extraction
 	// time.
-	DefaultFFmpegPath          = "ffmpeg"
-	DefaultWatchInterval       = 1 * time.Minute
-	DefaultStagemediaBaseURL   = "https://stagemedia.me"
-	DefaultStagemediaUserAgent = "promptbook/0.0.1"
+	DefaultFFmpegPath        = "ffmpeg"
+	DefaultWatchInterval     = 1 * time.Minute
+	DefaultStagemediaBaseURL = "https://stagemedia.me"
 	// DefaultTMDBBaseURL is TMDB's v3 API root. Override via
 	// tmdb.baseUrl / PROMPTBOOK_TMDB_BASEURL only for offline testing
 	// (e.g. an httptest server). Production should always speak to
 	// the canonical API root.
 	DefaultTMDBBaseURL = "https://api.themoviedb.org/3"
-	// DefaultTMDBUserAgent identifies promptbook to TMDB. Honored by
-	// the User-Agent header on every outbound request.
-	DefaultTMDBUserAgent = "promptbook/0.0.1"
 )
 
 // Config is the top-level application configuration.
@@ -69,7 +64,6 @@ type Config struct {
 type EncoraConfig struct {
 	BaseURL   string          `mapstructure:"baseUrl"`
 	APIKey    string          `mapstructure:"apiKey"`
-	UserAgent string          `mapstructure:"userAgent"`
 	RateLimit RateLimitConfig `mapstructure:"rateLimit"`
 }
 
@@ -136,9 +130,8 @@ type OIDCConfig struct {
 // StagemediaConfig holds StageMedia.me API client configuration. Optional —
 // leave APIKey blank to disable poster + headshot fetching.
 type StagemediaConfig struct {
-	BaseURL   string `mapstructure:"baseUrl"`
-	APIKey    string `mapstructure:"apiKey"`
-	UserAgent string `mapstructure:"userAgent"`
+	BaseURL string `mapstructure:"baseUrl"`
+	APIKey  string `mapstructure:"apiKey"`
 }
 
 // TMDBConfig holds TMDB API client configuration. Optional — leave
@@ -147,9 +140,8 @@ type StagemediaConfig struct {
 // The picker handlers nil-check and degrade to "no TMDB options"
 // cleanly when the key is unset.
 type TMDBConfig struct {
-	BaseURL   string `mapstructure:"baseUrl"`
-	APIKey    string `mapstructure:"apiKey"`
-	UserAgent string `mapstructure:"userAgent"`
+	BaseURL string `mapstructure:"baseUrl"`
+	APIKey  string `mapstructure:"apiKey"`
 }
 
 // LoadOptions configures how configuration is loaded.
@@ -208,7 +200,6 @@ func Load(opts LoadOptions) (Config, error) {
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("encora.baseUrl", DefaultEncoraBaseURL)
-	v.SetDefault("encora.userAgent", DefaultEncoraUserAgent)
 	v.SetDefault("encora.rateLimit.requestsPerMinute", DefaultRequestsPerMinute)
 	v.SetDefault("encora.rateLimit.burstReserve", DefaultBurstReserve)
 	v.SetDefault("storage.databasePath", DefaultDatabasePath)
@@ -220,9 +211,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.listen", DefaultListenAddr)
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
 	v.SetDefault("stagemedia.baseUrl", DefaultStagemediaBaseURL)
-	v.SetDefault("stagemedia.userAgent", DefaultStagemediaUserAgent)
 	v.SetDefault("tmdb.baseUrl", DefaultTMDBBaseURL)
-	v.SetDefault("tmdb.userAgent", DefaultTMDBUserAgent)
 }
 
 // asConfigNotFound reports whether err is viper.ConfigFileNotFoundError.

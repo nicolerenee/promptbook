@@ -40,9 +40,8 @@ func runCollectionSync(cmd *cobra.Command, _ []string) error {
 	}
 
 	client, err := encora.New(encora.Options{
-		BaseURL:   appConfig.Encora.BaseURL,
-		APIKey:    appConfig.Encora.APIKey,
-		UserAgent: appConfig.Encora.UserAgent,
+		BaseURL: appConfig.Encora.BaseURL,
+		APIKey:  appConfig.Encora.APIKey,
 	})
 	if err != nil {
 		return fmt.Errorf("build encora client: %w", err)

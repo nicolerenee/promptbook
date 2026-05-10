@@ -155,13 +155,11 @@ func buildEncoraClientForIngest() (*encora.Client, error) {
 		// already cached and has_subtitles=false. Dry-runs always work.
 		return encora.New(encora.Options{
 			BaseURL: appConfig.Encora.BaseURL, APIKey: "unset",
-			UserAgent: appConfig.Encora.UserAgent,
 		})
 	}
 	c, err := encora.New(encora.Options{
-		BaseURL:   appConfig.Encora.BaseURL,
-		APIKey:    appConfig.Encora.APIKey,
-		UserAgent: appConfig.Encora.UserAgent,
+		BaseURL: appConfig.Encora.BaseURL,
+		APIKey:  appConfig.Encora.APIKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build encora client: %w", err)
