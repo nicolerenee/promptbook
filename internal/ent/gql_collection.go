@@ -627,11 +627,6 @@ func (_q *RecordingQuery) collectField(ctx context.Context, oneNode bool, opCtx 
 				selectedFields = append(selectedFields, recording.FieldMasterNotes)
 				fieldSeen[recording.FieldMasterNotes] = struct{}{}
 			}
-		case "releaseFormat":
-			if _, ok := fieldSeen[recording.FieldReleaseFormat]; !ok {
-				selectedFields = append(selectedFields, recording.FieldReleaseFormat)
-				fieldSeen[recording.FieldReleaseFormat] = struct{}{}
-			}
 		case "venue":
 			if _, ok := fieldSeen[recording.FieldVenue]; !ok {
 				selectedFields = append(selectedFields, recording.FieldVenue)

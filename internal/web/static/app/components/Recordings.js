@@ -68,12 +68,15 @@ const STATUS_FILTERS = [
 
 // SORT_COLUMNS lists the sortable columns in their RENDER order.
 // Status is rightmost (least interesting axis to scan; row-identity
-// belongs on the left).
+// belongs on the left). The "Release format" column shows the
+// locally-derived release-format string (see releaseformat.Compose
+// on the server) — replaces the legacy "Local format" column that
+// pulled the per-version FormatLabel join.
 const SORT_COLUMNS = [
   { key: 'recording',    label: 'Recording' },
   { key: 'date',         label: 'Date' },
   { key: 'master',       label: 'Master' },
-  { key: 'local_format', label: 'Local format' },
+  { key: 'local_format', label: 'Release format' },
   { key: 'status',       label: 'Status' },
 ];
 
@@ -150,6 +153,7 @@ const RECORDINGS_LIST_QUERY = `
         fileCount
         encoraFormat
         localFormat
+        localReleaseFormat
         localPosterURL
       }
     }
@@ -187,6 +191,13 @@ function mapRecordingItem(node) {
     file_count:       node.fileCount || 0,
     encora_format:    node.encoraFormat || '',
     local_format:     node.localFormat || '',
+    // local_release_format is the locally-derived "what files do
+    // you have" string — see releaseformat.Compose on the server.
+    // Replaces the legacy local_format string in the table column;
+    // local_format stays in the payload for the format-mismatch
+    // sort+filter machinery that still keys off the reconciler's
+    // join string.
+    local_release_format: node.localReleaseFormat || '',
     local_poster_url: node.localPosterURL || '',
   };
 }
@@ -306,7 +317,7 @@ function Row(it) {
     m('td', { class: 'font-mono text-sm' },
       smartDate(it.date_full, it.date_month_known, it.date_day_known)),
     m('td', it.master || '—'),
-    m('td', { class: 'font-mono text-sm' }, it.local_format || '—'),
+    m('td', { class: 'font-mono text-sm' }, it.local_release_format || '—'),
     m('td', m('span', { class: 'badge ' + meta.badge }, meta.label)),
   ]);
 }

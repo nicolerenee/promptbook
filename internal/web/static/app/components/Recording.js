@@ -41,6 +41,9 @@ import ImagePickerModal, {
   renderImageInfoToast,
   renderUpstreamPicker,
 } from './ImagePickerModal.js';
+import RecordingRenameModal, {
+  loadRenamePreview,
+} from './RecordingRenameModal.js';
 
 // STATUS_META keys on the lowercase status tokens, matching Library.js.
 // Same DaisyUI badge color modifiers so the visual language stays
@@ -169,6 +172,7 @@ const RECORDING_DETAIL_QUERY = `
       inWants
       encoraFormat
       localFormatString
+      localReleaseFormat
       collectedAt
       localPosterURL
       localFanartURL
@@ -310,6 +314,12 @@ function shapeRecordingDetail(node) {
     InWants:               !!node.inWants,
     Format:                node.encoraFormat || '',
     LocalFormatString:     node.localFormatString || '',
+    // LocalReleaseFormat is the canonical "what files do you have"
+    // display string built locally from each version's MediaInfo
+    // blob. Replaces the legacy free-text encora release_format
+    // field as the metadata-card "Release format" line. See the
+    // releaseformat package on the server for the format spec.
+    LocalReleaseFormat:    node.localReleaseFormat || '',
     CollectedAt:           node.collectedAt || null,
     Versions:              versions,
     Cast:                  cast,
@@ -528,6 +538,63 @@ function runUpload(path, id, file) {
     });
 }
 
+// REGENERATE_NFO_MUTATION rewrites movie.nfo from scratch using the
+// current data + image + media-info state. Thin wrapper around the
+// nforefresh.Service.RewriteForRecording fan-out — fire-and-forget
+// from the SPA's perspective; we surface the outcome via the inline
+// toast pair on state.recording.
+const REGENERATE_NFO_MUTATION = `
+  mutation RegenerateRecordingNFO($id: ID!) {
+    regenerateRecordingNFO(recordingID: $id) {
+      ok
+      error
+    }
+  }
+`;
+
+// runRegenerateNFO fires the regenerateRecordingNFO mutation and parks
+// the outcome on state.recording. Success → a confirmation toast that
+// auto-dismisses; failure → an inline error toast the user must
+// dismiss manually. Disables the button via state.recording.
+// regeneratingNFO for the duration so a double-click can't fire two
+// concurrent mutations.
+function runRegenerateNFO(id) {
+  if (state.recording.regeneratingNFO) return;
+  state.recording.regeneratingNFO = true;
+  state.recording.regenerateNFOMessage = null;
+  state.recording.regenerateNFOError = null;
+  m.redraw();
+
+  graphql.query(REGENERATE_NFO_MUTATION, { id: 'recording-' + id })
+    .then((data) => {
+      const resp = (data && data.regenerateRecordingNFO) || {};
+      state.recording.regeneratingNFO = false;
+      if (resp.ok) {
+        state.recording.regenerateNFOMessage = 'NFO regenerated.';
+        // Bump the image version so the NFO card re-fetches its
+        // mtime + content via the recording detail re-load below.
+        loadRecording(id);
+        // Auto-dismiss the success toast after 4s.
+        setTimeout(() => {
+          if (state.recording.regenerateNFOMessage) {
+            state.recording.regenerateNFOMessage = null;
+            m.redraw();
+          }
+        }, 4000);
+      } else {
+        state.recording.regenerateNFOError =
+          resp.error || 'Regenerate NFO failed.';
+      }
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.regeneratingNFO = false;
+      state.recording.regenerateNFOError =
+        (err && err.message) || 'Regenerate NFO failed.';
+      m.redraw();
+    });
+}
+
 // runDangerAction handles a danger-zone button click: prompts for the
 // typed enc-NNNN token, posts to the chosen endpoint, then re-fetches
 // the recording so the buttons update. Inline failures land on
@@ -680,7 +747,33 @@ function renderHeader(loaded) {
               subParts.join(' · '))
           : null,
       ]),
-      m('div', { class: 'flex items-center gap-2 shrink-0' }, [
+      m('div', { class: 'flex items-center gap-2 shrink-0 flex-wrap' }, [
+        // Preview rename — opens the modal with a per-version
+        // source → destination plan. The modal itself drives apply.
+        m('button', {
+          type: 'button',
+          class: 'btn btn-sm btn-ghost',
+          onclick: () => {
+            state.recording.renameOpen = true;
+            state.recording.renamePreview = null;
+            state.recording.renameResult = null;
+            state.recording.renameApplyError = null;
+            loadRenamePreview(loaded.Recording.id);
+          },
+        }, 'Preview rename'),
+        // Regenerate NFO — fire-and-forget rewrite at the existing
+        // folder. The toast pair surfaces success / failure.
+        m('button', {
+          type: 'button',
+          class: 'btn btn-sm btn-ghost',
+          disabled: !!state.recording.regeneratingNFO,
+          onclick: () => runRegenerateNFO(loaded.Recording.id),
+        }, [
+          state.recording.regeneratingNFO
+            ? m('span', { class: 'loading loading-spinner loading-xs mr-1' })
+            : null,
+          state.recording.regeneratingNFO ? 'Regenerating…' : 'Regenerate NFO',
+        ]),
         renderEditImagesButton({
           onclick: () => {
             state.recording.pickerOpen = true;
@@ -739,7 +832,12 @@ function renderMetadataCard(loaded) {
     r.date && r.date.month_known,
     r.date && r.date.day_known,
   );
-  const formatStr = loaded.InCollection ? (loaded.Format || '—') : '—';
+  // Release format reads the locally-derived string off
+  // localReleaseFormat — built from each version's MediaInfo blob
+  // by the releaseformat package on the server. Replaces the legacy
+  // encora.release_format display: that field is still on disk in
+  // raw_json but no longer surfaced through GraphQL.
+  const releaseFormat = loaded.LocalReleaseFormat || '—';
   const cataloged = loaded.InCollection && loaded.CollectedAt
     ? formatNFTDate(loaded.CollectedAt) || loaded.CollectedAt
     : '—';
@@ -756,7 +854,7 @@ function renderMetadataCard(loaded) {
         metaRow('Tour', r.tour),
         metaRow('Date', date),
         metaRow('Master', r.master),
-        metaRow('Format', formatStr),
+        metaRow('Release format', releaseFormat),
         metaRow('Gifting', meta.gifting_status),
         metaRow('Owners', meta.owners_count != null ? String(meta.owners_count) : '—'),
         metaRow('Wanters', meta.wanters_count != null ? String(meta.wanters_count) : '—'),
@@ -1600,6 +1698,16 @@ const Recording = {
     state.recording.pickerOptions = {};
     state.recording.pickerOptionsLoading = {};
     state.recording.pickerOptionsError = {};
+    state.recording.renameOpen = false;
+    state.recording.renamePreview = null;
+    state.recording.renamePreviewLoading = false;
+    state.recording.renamePreviewError = null;
+    state.recording.renameApplying = false;
+    state.recording.renameResult = null;
+    state.recording.renameApplyError = null;
+    state.recording.regeneratingNFO = false;
+    state.recording.regenerateNFOMessage = null;
+    state.recording.regenerateNFOError = null;
     state.recording.pickerStaged = {};
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
@@ -1627,6 +1735,16 @@ const Recording = {
       state.recording.pickerOptions = {};
       state.recording.pickerOptionsLoading = {};
       state.recording.pickerOptionsError = {};
+      state.recording.renameOpen = false;
+      state.recording.renamePreview = null;
+      state.recording.renamePreviewLoading = false;
+      state.recording.renamePreviewError = null;
+      state.recording.renameApplying = false;
+      state.recording.renameResult = null;
+      state.recording.renameApplyError = null;
+      state.recording.regeneratingNFO = false;
+      state.recording.regenerateNFOMessage = null;
+      state.recording.regenerateNFOError = null;
       loadRecording(id);
     }
   },
@@ -1657,6 +1775,19 @@ const Recording = {
       renderBody(loaded),
       renderDangerZone(loaded),
       renderImagePickerModal(loaded),
+      m(RecordingRenameModal, {
+        open: !!state.recording.renameOpen,
+        recordingID: loaded.Recording.id,
+        onClose: () => {
+          state.recording.renameOpen = false;
+        },
+        onApplied: () => {
+          // Re-fetch the recording detail after a successful apply so
+          // the Local versions card reflects the new file paths and
+          // the NFO card picks up the post-rename rewrite.
+          loadRecording(loaded.Recording.id);
+        },
+      }),
       renderImageErrorToast({
         error: state.recording.imageError,
         onDismiss: () => { state.recording.imageError = null; },
@@ -1664,6 +1795,17 @@ const Recording = {
       renderImageInfoToast({
         message: state.recording.imageInfo,
         onDismiss: () => { state.recording.imageInfo = null; },
+      }),
+      // Regenerate-NFO confirmation / error toasts — re-use the same
+      // alert-pair pattern as the image surfaces above so the user
+      // sees a single visual style across all detail-page outcomes.
+      renderImageInfoToast({
+        message: state.recording.regenerateNFOMessage,
+        onDismiss: () => { state.recording.regenerateNFOMessage = null; },
+      }),
+      renderImageErrorToast({
+        error: state.recording.regenerateNFOError,
+        onDismiss: () => { state.recording.regenerateNFOError = null; },
       }),
     ]);
   },

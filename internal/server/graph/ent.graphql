@@ -778,7 +778,6 @@ type Recording implements Node {
   nftForever: Boolean!
   notes: String!
   masterNotes: String
-  releaseFormat: String
   venue: String!
   city: String!
   mediaType: String!

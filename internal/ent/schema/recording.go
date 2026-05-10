@@ -51,7 +51,14 @@ func (Recording) Fields() []ent.Field {
 		field.Bool("nft_forever").Default(false),
 		field.Text("notes").Default(""),
 		field.Text("master_notes").Optional().Nillable(),
-		field.Text("release_format").Optional().Nillable(),
+		// release_format holds the encora-supplied free-text format
+		// string (e.g. "MKV (1080p - h.264) - 4.20 GB"). Kept on disk
+		// for completeness in raw_json round-trips, but skipped from
+		// the GraphQL surface — display callers read the locally-
+		// derived Recording.releaseFormat enrichment field, which is
+		// computed from the recording's versions + their MediaInfo.
+		field.Text("release_format").Optional().Nillable().
+			Annotations(entgql.Skip(entgql.SkipType)),
 		field.Text("venue").Default(""),
 		field.Text("city").Default(""),
 		field.Text("media_type").Default(""),

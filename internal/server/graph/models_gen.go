@@ -103,21 +103,22 @@ type QueueEntry struct {
 }
 
 type RecordingsListItem struct {
-	ID             int64  `json:"id"`
-	ShowID         int64  `json:"showID"`
-	Show           string `json:"show"`
-	Tour           string `json:"tour"`
-	DateFull       string `json:"dateFull"`
-	DateMonthKnown bool   `json:"dateMonthKnown"`
-	DateDayKnown   bool   `json:"dateDayKnown"`
-	Master         string `json:"master"`
-	Status         string `json:"status"`
-	InCollection   bool   `json:"inCollection"`
-	InWants        bool   `json:"inWants"`
-	FileCount      int    `json:"fileCount"`
-	EncoraFormat   string `json:"encoraFormat"`
-	LocalFormat    string `json:"localFormat"`
-	LocalPosterURL string `json:"localPosterURL"`
+	ID                 int64  `json:"id"`
+	ShowID             int64  `json:"showID"`
+	Show               string `json:"show"`
+	Tour               string `json:"tour"`
+	DateFull           string `json:"dateFull"`
+	DateMonthKnown     bool   `json:"dateMonthKnown"`
+	DateDayKnown       bool   `json:"dateDayKnown"`
+	Master             string `json:"master"`
+	Status             string `json:"status"`
+	InCollection       bool   `json:"inCollection"`
+	InWants            bool   `json:"inWants"`
+	FileCount          int    `json:"fileCount"`
+	EncoraFormat       string `json:"encoraFormat"`
+	LocalFormat        string `json:"localFormat"`
+	LocalReleaseFormat string `json:"localReleaseFormat"`
+	LocalPosterURL     string `json:"localPosterURL"`
 }
 
 type RecordingsListPage struct {
@@ -125,6 +126,27 @@ type RecordingsListPage struct {
 	Total  int                   `json:"total"`
 	Limit  int                   `json:"limit"`
 	Offset int                   `json:"offset"`
+}
+
+type RegenerateNFOResult struct {
+	Ok    bool   `json:"ok"`
+	Error string `json:"error"`
+}
+
+type RenamePreviewItem struct {
+	VersionID   int64  `json:"versionID"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	WillMove    bool   `json:"willMove"`
+	Error       string `json:"error"`
+}
+
+type RenameResultItem struct {
+	VersionID   int64  `json:"versionID"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	Moved       bool   `json:"moved"`
+	Error       string `json:"error"`
 }
 
 type ResolvedCastEntry struct {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
 	"github.com/nicolerenee/promptbook/internal/ent/performer"
@@ -25,6 +26,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/probe"
+	"github.com/nicolerenee/promptbook/internal/releaseformat"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -63,6 +65,51 @@ func (r *Resolver) recordingMediaInfo(
 		return nil, nil //nolint:nilnil // null when blob is unparseable.
 	}
 	return mediaInfoToGraphQL(info, versions[0].Container), nil
+}
+
+// recordingLocalReleaseFormat is the resolver body for
+// Recording.localReleaseFormat. Walks every recording_versions row,
+// projects each onto a releaseformat.VersionInfo via the persisted
+// MediaInfo blob (with the version row's Container as the legacy
+// fallback), and returns releaseformat.Compose's output. Empty
+// string when the recording has no versions — caller's "no files
+// registered" branch.
+func (r *Resolver) recordingLocalReleaseFormat(
+	ctx context.Context, recordingID int64,
+) (string, error) {
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return "", fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	if len(versions) == 0 {
+		return "", nil
+	}
+	infos := make([]releaseformat.VersionInfo, 0, len(versions))
+	for _, v := range versions {
+		var mi probe.MediaInfo
+		blob := strings.TrimSpace(v.MediaInfoJSON)
+		if blob != "" && blob != "null" && blob != "{}" {
+			// Decode failures are non-fatal — fall through to the
+			// legacy "no MediaInfo" path so the slot still renders
+			// "{ext} - ? / ? - ? - {size}" cleanly.
+			if decoded, ok := decodeMediaInfoBlob(blob); ok {
+				mi = decoded
+			}
+		}
+		// fallbackExt drives the Container slot when the MediaInfo
+		// blob is empty. ListVersions always populates Container off
+		// the persisted typed column, so this is a stable fallback
+		// even when the blob predates the probe capture.
+		fallbackExt := v.Container
+		if fallbackExt == "" {
+			fallbackExt = filepath.Ext(v.FilePath)
+		}
+		infos = append(infos, releaseformat.FromVersionAndMediaInfo(
+			mi, v.FileSizeBytes, fallbackExt,
+		))
+	}
+	return releaseformat.Compose(infos), nil
 }
 
 // decodeMediaInfoBlob unmarshals the persisted JSON blob into the
@@ -302,6 +349,19 @@ func (r *Resolver) recordingsList(
 			FileCount:      st.FileCount,
 			EncoraFormat:   st.EncoraFormat,
 			LocalFormat:    st.LocalFormat,
+		}
+		// LocalReleaseFormat is the locally-derived "what files do
+		// you have" string. Empty when there are no versions, so we
+		// only walk the version rows when FileCount > 0 — the
+		// recordingLocalReleaseFormat helper handles the empty case
+		// internally too, but skipping the call when we know it's
+		// empty keeps the no-files row cheap.
+		if st.FileCount > 0 {
+			rf, rfErr := r.recordingLocalReleaseFormat(ctx, st.RecordingID)
+			if rfErr != nil {
+				return nil, rfErr
+			}
+			item.LocalReleaseFormat = rf
 		}
 		if r.imageCache != nil && !r.imageCache.Disabled() {
 			item.LocalPosterURL = r.imageCache.RecordingPosterURL(st.RecordingID)
@@ -1429,3 +1489,225 @@ func (r *Resolver) previewQueueImport(
 		DestAbsolute: plan.AbsoluteFile(),
 	}, nil
 }
+
+// errNFORefreshNotConfigured surfaces when the regenerateRecordingNFO
+// mutation or the apply-rename's post-move rewrite tries to use a
+// nil nforefresh.Service. Production wires the service whenever an
+// image cache is configured; tests can pass nil to exercise the
+// degraded path.
+var errNFORefreshNotConfigured = errors.New(
+	"graphql: nfo refresh not configured")
+
+// previewRecordingRename runs rename.BuildPlan against every version
+// of the recording and returns one preview row per version. Pure
+// dry-run — no files move, no DB writes. Per-version planning errors
+// (probe failure, template rendering failure, ...) populate the row's
+// `error` field rather than aborting the batch, so the SPA can render
+// a partial result set.
+func (r *Resolver) previewRecordingRename(
+	ctx context.Context, recordingID int64,
+) ([]*RenamePreviewItem, error) {
+	if !r.libraryPlan.Configured() {
+		return nil, errLibraryNotConfigured
+	}
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	loaded, err := storage.LoadRecording(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: load recording %d: %w", recordingID, err)
+	}
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	out := make([]*RenamePreviewItem, 0, len(versions))
+	for _, v := range versions {
+		out = append(out, r.renamePreviewForVersion(ctx, loaded.Recording, v))
+	}
+	return out, nil
+}
+
+// renamePreviewForVersion builds the per-version preview row. Probe
+// failures, template failures, etc. land in the row's `error` field
+// so the caller can surface them without aborting the batch.
+func (r *Resolver) renamePreviewForVersion(
+	ctx context.Context,
+	rec encoraRecordingValue,
+	v storage.RecordingVersion,
+) *RenamePreviewItem {
+	item := &RenamePreviewItem{
+		VersionID: v.ID,
+		Source:    v.FilePath,
+	}
+	plan, err := r.buildVersionPlan(ctx, rec, v)
+	if err != nil {
+		item.Error = err.Error()
+		return item
+	}
+	item.Destination = plan.AbsoluteFile()
+	item.WillMove = item.Source != item.Destination
+	return item
+}
+
+// applyRecordingRename runs BuildPlan + Plan.Apply for every version
+// of the recording. Per-version failures populate the row's `error`
+// field rather than aborting the batch. After every version moves
+// successfully the recording's NFO is rewritten at the new folder so
+// the file the media server scans matches the canonical name. The
+// old source folder is deliberately NOT auto-deleted; the user
+// manages cleanup so an empty parent doesn't disappear out from under
+// them.
+func (r *Resolver) applyRecordingRename(
+	ctx context.Context, recordingID int64,
+) ([]*RenameResultItem, error) {
+	if !r.libraryPlan.Configured() {
+		return nil, errLibraryNotConfigured
+	}
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	loaded, err := storage.LoadRecording(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: load recording %d: %w", recordingID, err)
+	}
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	out := make([]*RenameResultItem, 0, len(versions))
+	allMovedOrCanonical := true
+	for _, v := range versions {
+		item := r.applyRenameForVersion(ctx, loaded.Recording, v)
+		out = append(out, item)
+		if item.Error != "" {
+			allMovedOrCanonical = false
+		}
+	}
+	// Best-effort NFO rewrite at the new folder. We only fan out when
+	// every version landed (or was already canonical) so the writer
+	// targets the canonical destination rather than an in-flight mix
+	// of old + new locations. Failures are logged, not surfaced — the
+	// rename outcome is the headline result for this mutation.
+	if allMovedOrCanonical && len(versions) > 0 && r.nfoRefresh != nil {
+		if rfErr := r.nfoRefresh.RewriteForRecording(ctx, recordingID); rfErr != nil {
+			r.logger.Warn().
+				Err(rfErr).
+				Int64("recording_id", recordingID).
+				Msg("graphql: nfo rewrite after rename failed")
+		}
+	}
+	return out, nil
+}
+
+// applyRenameForVersion builds + applies the plan for one version,
+// then updates the recording_versions row's file_path on success.
+// The result row carries the planned destination either way so the
+// SPA can show "would have gone to..." on failure.
+func (r *Resolver) applyRenameForVersion(
+	ctx context.Context,
+	rec encoraRecordingValue,
+	v storage.RecordingVersion,
+) *RenameResultItem {
+	item := &RenameResultItem{
+		VersionID: v.ID,
+		Source:    v.FilePath,
+	}
+	plan, err := r.buildVersionPlan(ctx, rec, v)
+	if err != nil {
+		item.Error = err.Error()
+		return item
+	}
+	item.Destination = plan.AbsoluteFile()
+	if item.Source == item.Destination {
+		// Already canonical — record as a no-op (moved=false, no
+		// error) so the SPA can render "Already canonical".
+		return item
+	}
+	dest, applyErr := plan.Apply()
+	if applyErr != nil {
+		item.Error = applyErr.Error()
+		return item
+	}
+	item.Destination = dest
+	item.Moved = true
+	// Persist the new file_path on the existing row. UpsertVersion
+	// keys on (recording_id, file_path), so we delete the stale row
+	// first to avoid leaving the old path behind.
+	if delErr := storage.DeleteVersion(ctx, r.client, v.ID); delErr != nil {
+		item.Error = fmt.Errorf(
+			"delete stale version row: %w", delErr).Error()
+		return item
+	}
+	updated := v
+	updated.FilePath = dest
+	if upErr := storage.UpsertVersion(ctx, r.client, updated); upErr != nil {
+		item.Error = fmt.Errorf(
+			"persist new version path: %w", upErr).Error()
+		return item
+	}
+	return item
+}
+
+// buildVersionPlan probes + parses + renders a rename.Plan for a
+// single version. Pulled out so preview + apply share the exact same
+// per-version path; callers differ only in what they do with the
+// resulting Plan. Returns a typed error on probe / template failure;
+// the caller surfaces it on the per-row `error` field.
+func (r *Resolver) buildVersionPlan(
+	ctx context.Context,
+	rec encoraRecordingValue,
+	v storage.RecordingVersion,
+) (*rename.Plan, error) {
+	if r.libraryPlan.Prober == nil {
+		return nil, errors.New("graphql: ingest probe not configured")
+	}
+	info, perr := r.libraryPlan.Prober.Probe(ctx, v.FilePath)
+	if perr != nil {
+		return nil, fmt.Errorf("probe %s: %w", v.FilePath, perr)
+	}
+	parsed := match.Parse(filepath.Base(v.FilePath))
+	plan, err := rename.BuildPlan(rename.PlanInputs{
+		Recording:      rec,
+		Source:         v.FilePath,
+		LibraryRoot:    r.libraryPlan.Root,
+		FolderTemplate: r.libraryPlan.FolderTemplate,
+		FileTemplate:   r.libraryPlan.FileTemplate,
+		MediaInfo:      info,
+		Part:           parsed.PartIndex,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build plan: %w", err)
+	}
+	return plan, nil
+}
+
+// regenerateRecordingNFO is the resolver body for the
+// regenerateRecordingNFO mutation. Thin wrapper around
+// nforefresh.Service.RewriteForRecording — the service's own contract
+// treats "no version row" as a successful no-op, which we surface
+// straight through (ok=true). Errors land in `error` with ok=false.
+func (r *Resolver) regenerateRecordingNFO(
+	ctx context.Context, recordingID int64,
+) (*RegenerateNFOResult, error) {
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	if r.nfoRefresh == nil {
+		return nil, errNFORefreshNotConfigured
+	}
+	if err := r.nfoRefresh.RewriteForRecording(ctx, recordingID); err != nil {
+		return &RegenerateNFOResult{Ok: false, Error: err.Error()}, nil
+	}
+	return &RegenerateNFOResult{Ok: true}, nil
+}
+
+// encoraRecordingValue aliases encora.Recording so the per-version
+// helpers can carry the value type without each call site importing
+// the encora package directly. Pulled into a named type so the
+// signatures stay short.
+type encoraRecordingValue = encora.Recording

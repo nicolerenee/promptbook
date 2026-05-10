@@ -23,6 +23,21 @@ func (r *mutationResolver) ImportQueueEntry(ctx context.Context, input ImportQue
 	return r.Resolver.importQueueEntry(ctx, input)
 }
 
+// ApplyRecordingRename is the resolver for the applyRecordingRename
+// field. Pass-through to the resolver-package helper so the body
+// lives in enrichment_helpers.go (gqlgen otherwise sweeps long bodies
+// into "may delete" comment blocks on regeneration).
+func (r *mutationResolver) ApplyRecordingRename(ctx context.Context, recordingID int64) ([]*RenameResultItem, error) {
+	return r.Resolver.applyRecordingRename(ctx, recordingID)
+}
+
+// RegenerateRecordingNfo is the resolver for the regenerateRecordingNFO
+// field. Pass-through to the resolver-package helper so the body lives
+// in enrichment_helpers.go.
+func (r *mutationResolver) RegenerateRecordingNfo(ctx context.Context, recordingID int64) (*RegenerateNFOResult, error) {
+	return r.Resolver.regenerateRecordingNFO(ctx, recordingID)
+}
+
 // LocalHeadshotURL is the resolver for the localHeadshotURL field.
 func (r *performerResolver) LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error) {
 	if r.imageCache == nil || r.imageCache.Disabled() {
@@ -80,6 +95,15 @@ func (r *queryResolver) SearchRecordings(ctx context.Context, query string, limi
 // field. Same pass-through pattern as SearchRecordings.
 func (r *queryResolver) PreviewQueueImport(ctx context.Context, input PreviewQueueImportInput) (*ImportPreview, error) {
 	return r.Resolver.previewQueueImport(ctx, input)
+}
+
+// PreviewRecordingRename is the resolver for the
+// previewRecordingRename field. Pass-through to the resolver-package
+// helper so the body lives in enrichment_helpers.go (gqlgen otherwise
+// sweeps long bodies into "may delete" comment blocks on
+// regeneration).
+func (r *queryResolver) PreviewRecordingRename(ctx context.Context, recordingID int64) ([]*RenamePreviewItem, error) {
+	return r.Resolver.previewRecordingRename(ctx, recordingID)
 }
 
 // Status is the resolver for the status field. The reconciler runs
@@ -291,6 +315,14 @@ func (r *recordingResolver) CollectedAt(ctx context.Context, obj *ent.Recording)
 // "may delete" comment blocks on regeneration).
 func (r *recordingResolver) MediaInfo(ctx context.Context, obj *ent.Recording) (*MediaInfo, error) {
 	return r.Resolver.recordingMediaInfo(ctx, obj.ID)
+}
+
+// LocalReleaseFormat is the resolver for the localReleaseFormat
+// field. Pass-through to the resolver-package helper so the body
+// lives in enrichment_helpers.go (gqlgen otherwise sweeps long bodies
+// into "may delete" comment blocks on regeneration).
+func (r *recordingResolver) LocalReleaseFormat(ctx context.Context, obj *ent.Recording) (string, error) {
+	return r.Resolver.recordingLocalReleaseFormat(ctx, obj.ID)
 }
 
 // LocalBannerURL is the resolver for the localBannerURL field. Same

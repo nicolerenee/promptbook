@@ -112,6 +112,21 @@ extend type Recording {
   # decodes it; nil when there is no version yet or the blob is empty
   # / unparseable (legacy imports stay nil until they're re-ingested).
   mediaInfo: MediaInfo
+  # localReleaseFormat is the locally-derived release-format string
+  # built from the recording's versions + their MediaInfo blobs.
+  # Replaces the legacy free-text encora release_format field as the
+  # canonical "what files do you have" display string. Format is
+  # "{Container} - {VideoCodec} / {AudioCodec} - {Quality} - {Size}";
+  # multi-version recordings wrap each version in [...] joined by a
+  # single space, ordered by height descending. Empty string when no
+  # versions are registered. See releaseformat.Compose for details.
+  #
+  # Named with the "local" prefix to match the rest of the
+  # enrichment surface (localFormatString, localPosterURL, ...) and
+  # to avoid colliding with the ent-generated `releaseFormat` Go
+  # field on Recording (which holds encora's raw free-text — kept on
+  # disk but no longer surfaced through GraphQL).
+  localReleaseFormat: String!
 }
 
 # Show field extensions. localBannerURL + recordingCount + stateCounts
@@ -159,6 +174,12 @@ type RecordingsListItem {
   fileCount: Int!
   encoraFormat: String!
   localFormat: String!
+  # localReleaseFormat is the same locally-derived release-format
+  # string Recording.localReleaseFormat surfaces, denormalized onto
+  # the list-row shape so the recordings table can render it
+  # without per-row follow-up queries. Same format spec — see
+  # releaseformat.Compose. Empty when no versions are registered.
+  localReleaseFormat: String!
   localPosterURL: String!
 }
 
@@ -324,6 +345,13 @@ extend type Query {
   # the filename preview in the queue import modal. Does NOT move
   # the file; this is purely a Plan-side dry-run.
   previewQueueImport(input: PreviewQueueImportInput!): ImportPreview!
+
+  # previewRecordingRename returns the planned destination for each
+  # version of the recording under the current library config + rename
+  # templates. Pure dry-run: no files move, no DB writes. Empty list
+  # when the recording has no versions. Per-version planning errors
+  # populate the row's `error` field; other versions still appear.
+  previewRecordingRename(recordingID: ID!): [RenamePreviewItem!]!
 }
 
 # PreviewQueueImportInput drives the previewQueueImport query — the
@@ -333,6 +361,45 @@ extend type Query {
 input PreviewQueueImportInput {
   queueID: ID!
   recordingID: ID!
+}
+
+# RenamePreviewItem is one row in the per-recording rename preview.
+# source is the version's current absolute path; destination is the
+# planned absolute path under the current rename templates. willMove
+# is false when source == destination (file is already canonical).
+# error is populated on a per-row basis when the plan failed for that
+# version (probe error, template error, etc.); other versions still
+# get returned so the modal can show a partial result.
+type RenamePreviewItem {
+  versionID: ID!
+  source: String!
+  destination: String!
+  willMove: Boolean!
+  error: String!
+}
+
+# RenameResultItem is one row in the per-recording apply-rename
+# outcome. moved=true on a successful Apply; false otherwise (with
+# error populated). destination carries the final dest on success or
+# the planned dest on failure so the SPA's result view can still
+# render where the file would have gone. Per-version errors don't
+# abort the batch; the SPA gets a row per version regardless.
+type RenameResultItem {
+  versionID: ID!
+  source: String!
+  destination: String!
+  moved: Boolean!
+  error: String!
+}
+
+# RegenerateNFOResult is the thin wrapper around
+# nforefresh.Service.RewriteForRecording. ok=true on success — the
+# no-version-row case counts as a successful no-op, mirroring the
+# service's own contract. ok=false carries the error message in
+# `error`.
+type RegenerateNFOResult {
+  ok: Boolean!
+  error: String!
 }
 
 # ImportPreview is the planned-destination payload the queue import
@@ -366,7 +433,22 @@ type ImportQueueEntryPayload {
 
 # Mutation is the root for write surfaces. importQueueEntry is the
 # first one — moves a queued file into the canonical library tree and
-# clears the queue row on success.
+# clears the queue row on success. The per-recording rename + NFO
+# regen entry points are the operator surfaces the recording detail
+# page exposes for already-imported recordings.
 type Mutation {
   importQueueEntry(input: ImportQueueEntryInput!): ImportQueueEntryPayload!
+
+  # applyRecordingRename moves each version file to its canonical
+  # destination under the current rename templates, then triggers an
+  # NFO rewrite at the new folder. Per-version failures populate the
+  # row's `error` field but do not abort the batch — the SPA renders
+  # the full per-version outcome so partial successes are visible.
+  applyRecordingRename(recordingID: ID!): [RenameResultItem!]!
+
+  # regenerateRecordingNFO rewrites the recording's movie.nfo from
+  # scratch using the current data + image + media-info state. Thin
+  # wrapper around nforefresh.Service.RewriteForRecording — the
+  # no-version-row case is a successful no-op (ok=true).
+  regenerateRecordingNFO(recordingID: ID!): RegenerateNFOResult!
 }

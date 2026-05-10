@@ -130,7 +130,9 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
-		ImportQueueEntry func(childComplexity int, input ImportQueueEntryInput) int
+		ApplyRecordingRename   func(childComplexity int, recordingID int64) int
+		ImportQueueEntry       func(childComplexity int, input ImportQueueEntryInput) int
+		RegenerateRecordingNfo func(childComplexity int, recordingID int64) int
 	}
 
 	PageInfo struct {
@@ -196,26 +198,27 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		CollectionEntries  func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, where *ent.CollectionEntryWhereInput) int
-		CollectionEntry    func(childComplexity int, id int64) int
-		Node               func(childComplexity int, id int64) int
-		Nodes              func(childComplexity int, ids []int64) int
-		PeopleList         func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
-		Performer          func(childComplexity int, id int64) int
-		Performers         func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.PerformerOrder, where *ent.PerformerWhereInput) int
-		Person             func(childComplexity int, id int64) int
-		PreviewQueueImport func(childComplexity int, input PreviewQueueImportInput) int
-		Queue              func(childComplexity int) int
-		Recording          func(childComplexity int, id int64) int
-		Recordings         func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
-		RecordingsList     func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
-		SearchRecordings   func(childComplexity int, query string, limit *int) int
-		Show               func(childComplexity int, id int64) int
-		Shows              func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.ShowOrder, where *ent.ShowWhereInput) int
-		ShowsList          func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
-		SyncRuns           func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.SyncRunOrder, where *ent.SyncRunWhereInput) int
-		WantsEntries       func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.WantsEntryOrder, where *ent.WantsEntryWhereInput) int
-		WantsEntry         func(childComplexity int, id int64) int
+		CollectionEntries      func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, where *ent.CollectionEntryWhereInput) int
+		CollectionEntry        func(childComplexity int, id int64) int
+		Node                   func(childComplexity int, id int64) int
+		Nodes                  func(childComplexity int, ids []int64) int
+		PeopleList             func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
+		Performer              func(childComplexity int, id int64) int
+		Performers             func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.PerformerOrder, where *ent.PerformerWhereInput) int
+		Person                 func(childComplexity int, id int64) int
+		PreviewQueueImport     func(childComplexity int, input PreviewQueueImportInput) int
+		PreviewRecordingRename func(childComplexity int, recordingID int64) int
+		Queue                  func(childComplexity int) int
+		Recording              func(childComplexity int, id int64) int
+		Recordings             func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
+		RecordingsList         func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
+		SearchRecordings       func(childComplexity int, query string, limit *int) int
+		Show                   func(childComplexity int, id int64) int
+		Shows                  func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.ShowOrder, where *ent.ShowWhereInput) int
+		ShowsList              func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
+		SyncRuns               func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.SyncRunOrder, where *ent.SyncRunWhereInput) int
+		WantsEntries           func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.WantsEntryOrder, where *ent.WantsEntryWhereInput) int
+		WantsEntry             func(childComplexity int, id int64) int
 	}
 
 	QueueEntry struct {
@@ -262,6 +265,7 @@ type ComplexityRoot struct {
 		LocalFanartURL      func(childComplexity int) int
 		LocalFormatString   func(childComplexity int) int
 		LocalPosterURL      func(childComplexity int) int
+		LocalReleaseFormat  func(childComplexity int) int
 		Master              func(childComplexity int) int
 		MasterNotes         func(childComplexity int) int
 		MediaInfo           func(childComplexity int) int
@@ -276,7 +280,6 @@ type ComplexityRoot struct {
 		OwnersCount         func(childComplexity int) int
 		RawJSON             func(childComplexity int) int
 		RecordingType       func(childComplexity int) int
-		ReleaseFormat       func(childComplexity int) int
 		ResolvedCast        func(childComplexity int) int
 		Show                func(childComplexity int) int
 		ShowID              func(childComplexity int) int
@@ -327,21 +330,22 @@ type ComplexityRoot struct {
 	}
 
 	RecordingsListItem struct {
-		DateDayKnown   func(childComplexity int) int
-		DateFull       func(childComplexity int) int
-		DateMonthKnown func(childComplexity int) int
-		EncoraFormat   func(childComplexity int) int
-		FileCount      func(childComplexity int) int
-		ID             func(childComplexity int) int
-		InCollection   func(childComplexity int) int
-		InWants        func(childComplexity int) int
-		LocalFormat    func(childComplexity int) int
-		LocalPosterURL func(childComplexity int) int
-		Master         func(childComplexity int) int
-		Show           func(childComplexity int) int
-		ShowID         func(childComplexity int) int
-		Status         func(childComplexity int) int
-		Tour           func(childComplexity int) int
+		DateDayKnown       func(childComplexity int) int
+		DateFull           func(childComplexity int) int
+		DateMonthKnown     func(childComplexity int) int
+		EncoraFormat       func(childComplexity int) int
+		FileCount          func(childComplexity int) int
+		ID                 func(childComplexity int) int
+		InCollection       func(childComplexity int) int
+		InWants            func(childComplexity int) int
+		LocalFormat        func(childComplexity int) int
+		LocalPosterURL     func(childComplexity int) int
+		LocalReleaseFormat func(childComplexity int) int
+		Master             func(childComplexity int) int
+		Show               func(childComplexity int) int
+		ShowID             func(childComplexity int) int
+		Status             func(childComplexity int) int
+		Tour               func(childComplexity int) int
 	}
 
 	RecordingsListPage struct {
@@ -349,6 +353,27 @@ type ComplexityRoot struct {
 		Limit  func(childComplexity int) int
 		Offset func(childComplexity int) int
 		Total  func(childComplexity int) int
+	}
+
+	RegenerateNFOResult struct {
+		Error func(childComplexity int) int
+		Ok    func(childComplexity int) int
+	}
+
+	RenamePreviewItem struct {
+		Destination func(childComplexity int) int
+		Error       func(childComplexity int) int
+		Source      func(childComplexity int) int
+		VersionID   func(childComplexity int) int
+		WillMove    func(childComplexity int) int
+	}
+
+	RenameResultItem struct {
+		Destination func(childComplexity int) int
+		Error       func(childComplexity int) int
+		Moved       func(childComplexity int) int
+		Source      func(childComplexity int) int
+		VersionID   func(childComplexity int) int
 	}
 
 	ResolvedCastEntry struct {
@@ -460,6 +485,8 @@ type ComplexityRoot struct {
 
 type MutationResolver interface {
 	ImportQueueEntry(ctx context.Context, input ImportQueueEntryInput) (*ImportQueueEntryPayload, error)
+	ApplyRecordingRename(ctx context.Context, recordingID int64) ([]*RenameResultItem, error)
+	RegenerateRecordingNfo(ctx context.Context, recordingID int64) (*RegenerateNFOResult, error)
 }
 type PerformerResolver interface {
 	LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error)
@@ -485,6 +512,7 @@ type QueryResolver interface {
 	Queue(ctx context.Context) ([]*QueueEntry, error)
 	SearchRecordings(ctx context.Context, query string, limit *int) ([]*RecordingsListItem, error)
 	PreviewQueueImport(ctx context.Context, input PreviewQueueImportInput) (*ImportPreview, error)
+	PreviewRecordingRename(ctx context.Context, recordingID int64) ([]*RenamePreviewItem, error)
 }
 type RecordingResolver interface {
 	Status(ctx context.Context, obj *ent.Recording) (string, error)
@@ -502,6 +530,7 @@ type RecordingResolver interface {
 	LocalFormatString(ctx context.Context, obj *ent.Recording) (string, error)
 	CollectedAt(ctx context.Context, obj *ent.Recording) (*string, error)
 	MediaInfo(ctx context.Context, obj *ent.Recording) (*MediaInfo, error)
+	LocalReleaseFormat(ctx context.Context, obj *ent.Recording) (string, error)
 }
 type ShowResolver interface {
 	LocalBannerURL(ctx context.Context, obj *ent.Show) (string, error)
@@ -861,6 +890,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.MediaInfo.Width(childComplexity), true
 
+	case "Mutation.applyRecordingRename":
+		if e.ComplexityRoot.Mutation.ApplyRecordingRename == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_applyRecordingRename_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ApplyRecordingRename(childComplexity, args["recordingID"].(int64)), true
 	case "Mutation.importQueueEntry":
 		if e.ComplexityRoot.Mutation.ImportQueueEntry == nil {
 			break
@@ -872,6 +912,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ImportQueueEntry(childComplexity, args["input"].(ImportQueueEntryInput)), true
+	case "Mutation.regenerateRecordingNFO":
+		if e.ComplexityRoot.Mutation.RegenerateRecordingNfo == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_regenerateRecordingNFO_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RegenerateRecordingNfo(childComplexity, args["recordingID"].(int64)), true
 
 	case "PageInfo.endCursor":
 		if e.ComplexityRoot.PageInfo.EndCursor == nil {
@@ -1209,6 +1260,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.PreviewQueueImport(childComplexity, args["input"].(PreviewQueueImportInput)), true
+	case "Query.previewRecordingRename":
+		if e.ComplexityRoot.Query.PreviewRecordingRename == nil {
+			break
+		}
+
+		args, err := ec.field_Query_previewRecordingRename_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.PreviewRecordingRename(childComplexity, args["recordingID"].(int64)), true
 	case "Query.queue":
 		if e.ComplexityRoot.Query.Queue == nil {
 			break
@@ -1572,6 +1634,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.LocalPosterURL(childComplexity), true
+	case "Recording.localReleaseFormat":
+		if e.ComplexityRoot.Recording.LocalReleaseFormat == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.LocalReleaseFormat(childComplexity), true
 	case "Recording.master":
 		if e.ComplexityRoot.Recording.Master == nil {
 			break
@@ -1656,12 +1724,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.RecordingType(childComplexity), true
-	case "Recording.releaseFormat":
-		if e.ComplexityRoot.Recording.ReleaseFormat == nil {
-			break
-		}
-
-		return e.ComplexityRoot.Recording.ReleaseFormat(childComplexity), true
 	case "Recording.resolvedCast":
 		if e.ComplexityRoot.Recording.ResolvedCast == nil {
 			break
@@ -1925,6 +1987,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RecordingsListItem.LocalPosterURL(childComplexity), true
+	case "RecordingsListItem.localReleaseFormat":
+		if e.ComplexityRoot.RecordingsListItem.LocalReleaseFormat == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.LocalReleaseFormat(childComplexity), true
 	case "RecordingsListItem.master":
 		if e.ComplexityRoot.RecordingsListItem.Master == nil {
 			break
@@ -1980,6 +2048,81 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RecordingsListPage.Total(childComplexity), true
+
+	case "RegenerateNFOResult.error":
+		if e.ComplexityRoot.RegenerateNFOResult.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RegenerateNFOResult.Error(childComplexity), true
+	case "RegenerateNFOResult.ok":
+		if e.ComplexityRoot.RegenerateNFOResult.Ok == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RegenerateNFOResult.Ok(childComplexity), true
+
+	case "RenamePreviewItem.destination":
+		if e.ComplexityRoot.RenamePreviewItem.Destination == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenamePreviewItem.Destination(childComplexity), true
+	case "RenamePreviewItem.error":
+		if e.ComplexityRoot.RenamePreviewItem.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenamePreviewItem.Error(childComplexity), true
+	case "RenamePreviewItem.source":
+		if e.ComplexityRoot.RenamePreviewItem.Source == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenamePreviewItem.Source(childComplexity), true
+	case "RenamePreviewItem.versionID":
+		if e.ComplexityRoot.RenamePreviewItem.VersionID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenamePreviewItem.VersionID(childComplexity), true
+	case "RenamePreviewItem.willMove":
+		if e.ComplexityRoot.RenamePreviewItem.WillMove == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenamePreviewItem.WillMove(childComplexity), true
+
+	case "RenameResultItem.destination":
+		if e.ComplexityRoot.RenameResultItem.Destination == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenameResultItem.Destination(childComplexity), true
+	case "RenameResultItem.error":
+		if e.ComplexityRoot.RenameResultItem.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenameResultItem.Error(childComplexity), true
+	case "RenameResultItem.moved":
+		if e.ComplexityRoot.RenameResultItem.Moved == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenameResultItem.Moved(childComplexity), true
+	case "RenameResultItem.source":
+		if e.ComplexityRoot.RenameResultItem.Source == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenameResultItem.Source(childComplexity), true
+	case "RenameResultItem.versionID":
+		if e.ComplexityRoot.RenameResultItem.VersionID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RenameResultItem.VersionID(childComplexity), true
 
 	case "ResolvedCastEntry.castEntryID":
 		if e.ComplexityRoot.ResolvedCastEntry.CastEntryID == nil {
@@ -2855,8 +2998,6 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_notes(ctx, field)
 	case "masterNotes":
 		return ec.fieldContext_Recording_masterNotes(ctx, field)
-	case "releaseFormat":
-		return ec.fieldContext_Recording_releaseFormat(ctx, field)
 	case "venue":
 		return ec.fieldContext_Recording_venue(ctx, field)
 	case "city":
@@ -2935,6 +3076,8 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_collectedAt(ctx, field)
 	case "mediaInfo":
 		return ec.fieldContext_Recording_mediaInfo(ctx, field)
+	case "localReleaseFormat":
+		return ec.fieldContext_Recording_localReleaseFormat(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Recording", field.Name)
 }
@@ -3047,6 +3190,8 @@ func (ec *executionContext) childFields_RecordingsListItem(ctx context.Context, 
 		return ec.fieldContext_RecordingsListItem_encoraFormat(ctx, field)
 	case "localFormat":
 		return ec.fieldContext_RecordingsListItem_localFormat(ctx, field)
+	case "localReleaseFormat":
+		return ec.fieldContext_RecordingsListItem_localReleaseFormat(ctx, field)
 	case "localPosterURL":
 		return ec.fieldContext_RecordingsListItem_localPosterURL(ctx, field)
 	}
@@ -3065,6 +3210,48 @@ func (ec *executionContext) childFields_RecordingsListPage(ctx context.Context, 
 		return ec.fieldContext_RecordingsListPage_offset(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type RecordingsListPage", field.Name)
+}
+
+func (ec *executionContext) childFields_RegenerateNFOResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "ok":
+		return ec.fieldContext_RegenerateNFOResult_ok(ctx, field)
+	case "error":
+		return ec.fieldContext_RegenerateNFOResult_error(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RegenerateNFOResult", field.Name)
+}
+
+func (ec *executionContext) childFields_RenamePreviewItem(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "versionID":
+		return ec.fieldContext_RenamePreviewItem_versionID(ctx, field)
+	case "source":
+		return ec.fieldContext_RenamePreviewItem_source(ctx, field)
+	case "destination":
+		return ec.fieldContext_RenamePreviewItem_destination(ctx, field)
+	case "willMove":
+		return ec.fieldContext_RenamePreviewItem_willMove(ctx, field)
+	case "error":
+		return ec.fieldContext_RenamePreviewItem_error(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RenamePreviewItem", field.Name)
+}
+
+func (ec *executionContext) childFields_RenameResultItem(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "versionID":
+		return ec.fieldContext_RenameResultItem_versionID(ctx, field)
+	case "source":
+		return ec.fieldContext_RenameResultItem_source(ctx, field)
+	case "destination":
+		return ec.fieldContext_RenameResultItem_destination(ctx, field)
+	case "moved":
+		return ec.fieldContext_RenameResultItem_moved(ctx, field)
+	case "error":
+		return ec.fieldContext_RenameResultItem_error(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RenameResultItem", field.Name)
 }
 
 func (ec *executionContext) childFields_ResolvedCastEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -3395,6 +3582,20 @@ func (ec *executionContext) childFields___Type(ctx context.Context, field graphq
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Mutation_applyRecordingRename_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_importQueueEntry_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -3406,6 +3607,20 @@ func (ec *executionContext) field_Mutation_importQueueEntry_args(ctx context.Con
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_regenerateRecordingNFO_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
 	return args, nil
 }
 
@@ -3642,6 +3857,20 @@ func (ec *executionContext) field_Query_previewQueueImport_args(ctx context.Cont
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_previewRecordingRename_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
 	return args, nil
 }
 
@@ -5586,6 +5815,94 @@ func (ec *executionContext) fieldContext_Mutation_importQueueEntry(ctx context.C
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_applyRecordingRename(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_applyRecordingRename(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ApplyRecordingRename(ctx, fc.Args["recordingID"].(int64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*RenameResultItem) graphql.Marshaler {
+			return ec.marshalNRenameResultItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenameResultItemᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_applyRecordingRename(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RenameResultItem(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_applyRecordingRename_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_regenerateRecordingNFO(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_regenerateRecordingNFO(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RegenerateRecordingNfo(ctx, fc.Args["recordingID"].(int64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *RegenerateNFOResult) graphql.Marshaler {
+			return ec.marshalNRegenerateNFOResult2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRegenerateNFOResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_regenerateRecordingNFO(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RegenerateNFOResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_regenerateRecordingNFO_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _PageInfo_hasNextPage(ctx context.Context, field graphql.CollectedField, obj *entgql.PageInfo[int64]) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -7382,6 +7699,50 @@ func (ec *executionContext) fieldContext_Query_previewQueueImport(ctx context.Co
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_previewRecordingRename(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_previewRecordingRename(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().PreviewRecordingRename(ctx, fc.Args["recordingID"].(int64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*RenamePreviewItem) graphql.Marshaler {
+			return ec.marshalNRenamePreviewItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenamePreviewItemᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_previewRecordingRename(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RenamePreviewItem(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_previewRecordingRename_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -7993,29 +8354,6 @@ func (ec *executionContext) _Recording_masterNotes(ctx context.Context, field gr
 	)
 }
 func (ec *executionContext) fieldContext_Recording_masterNotes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Recording", field, false, false, errors.New("field of type String does not have child fields"))
-}
-
-func (ec *executionContext) _Recording_releaseFormat(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_Recording_releaseFormat(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			return obj.ReleaseFormat, nil
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
-			return ec.marshalOString2ᚖstring(ctx, selections, v)
-		},
-		true,
-		false,
-	)
-}
-func (ec *executionContext) fieldContext_Recording_releaseFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Recording", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -8994,6 +9332,29 @@ func (ec *executionContext) fieldContext_Recording_mediaInfo(_ context.Context, 
 	return fc, nil
 }
 
+func (ec *executionContext) _Recording_localReleaseFormat(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_localReleaseFormat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().LocalReleaseFormat(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_localReleaseFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _RecordingConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.RecordingConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -9931,6 +10292,29 @@ func (ec *executionContext) fieldContext_RecordingsListItem_localFormat(_ contex
 	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _RecordingsListItem_localReleaseFormat(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_localReleaseFormat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LocalReleaseFormat, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_localReleaseFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _RecordingsListItem_localPosterURL(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10053,6 +10437,282 @@ func (ec *executionContext) _RecordingsListPage_offset(ctx context.Context, fiel
 }
 func (ec *executionContext) fieldContext_RecordingsListPage_offset(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("RecordingsListPage", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _RegenerateNFOResult_ok(ctx context.Context, field graphql.CollectedField, obj *RegenerateNFOResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RegenerateNFOResult_ok(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Ok, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RegenerateNFOResult_ok(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RegenerateNFOResult", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RegenerateNFOResult_error(ctx context.Context, field graphql.CollectedField, obj *RegenerateNFOResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RegenerateNFOResult_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RegenerateNFOResult_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RegenerateNFOResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RenamePreviewItem_versionID(ctx context.Context, field graphql.CollectedField, obj *RenamePreviewItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenamePreviewItem_versionID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VersionID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenamePreviewItem_versionID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenamePreviewItem", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _RenamePreviewItem_source(ctx context.Context, field graphql.CollectedField, obj *RenamePreviewItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenamePreviewItem_source(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Source, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenamePreviewItem_source(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenamePreviewItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RenamePreviewItem_destination(ctx context.Context, field graphql.CollectedField, obj *RenamePreviewItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenamePreviewItem_destination(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Destination, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenamePreviewItem_destination(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenamePreviewItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RenamePreviewItem_willMove(ctx context.Context, field graphql.CollectedField, obj *RenamePreviewItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenamePreviewItem_willMove(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.WillMove, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenamePreviewItem_willMove(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenamePreviewItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RenamePreviewItem_error(ctx context.Context, field graphql.CollectedField, obj *RenamePreviewItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenamePreviewItem_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenamePreviewItem_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenamePreviewItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RenameResultItem_versionID(ctx context.Context, field graphql.CollectedField, obj *RenameResultItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenameResultItem_versionID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VersionID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
+			return ec.marshalNID2int64(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenameResultItem_versionID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenameResultItem", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _RenameResultItem_source(ctx context.Context, field graphql.CollectedField, obj *RenameResultItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenameResultItem_source(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Source, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenameResultItem_source(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenameResultItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RenameResultItem_destination(ctx context.Context, field graphql.CollectedField, obj *RenameResultItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenameResultItem_destination(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Destination, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenameResultItem_destination(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenameResultItem", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RenameResultItem_moved(ctx context.Context, field graphql.CollectedField, obj *RenameResultItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenameResultItem_moved(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Moved, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenameResultItem_moved(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenameResultItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RenameResultItem_error(ctx context.Context, field graphql.CollectedField, obj *RenameResultItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RenameResultItem_error(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RenameResultItem_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RenameResultItem", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _ResolvedCastEntry_castEntryID(ctx context.Context, field graphql.CollectedField, obj *ResolvedCastEntry) (ret graphql.Marshaler) {
@@ -20052,6 +20712,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "applyRecordingRename":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_applyRecordingRename(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "regenerateRecordingNFO":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_regenerateRecordingNFO(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -20994,6 +21668,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "previewRecordingRename":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_previewRecordingRename(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -21170,8 +21866,6 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 			}
 		case "masterNotes":
 			out.Values[i] = ec._Recording_masterNotes(ctx, field, obj)
-		case "releaseFormat":
-			out.Values[i] = ec._Recording_releaseFormat(ctx, field, obj)
 		case "venue":
 			out.Values[i] = ec._Recording_venue(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -21913,6 +22607,42 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "localReleaseFormat":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_localReleaseFormat(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -22326,6 +23056,11 @@ func (ec *executionContext) _RecordingsListItem(ctx context.Context, sel ast.Sel
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "localReleaseFormat":
+			out.Values[i] = ec._RecordingsListItem_localReleaseFormat(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "localPosterURL":
 			out.Values[i] = ec._RecordingsListItem_localPosterURL(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -22382,6 +23117,168 @@ func (ec *executionContext) _RecordingsListPage(ctx context.Context, sel ast.Sel
 			}
 		case "offset":
 			out.Values[i] = ec._RecordingsListPage_offset(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var regenerateNFOResultImplementors = []string{"RegenerateNFOResult"}
+
+func (ec *executionContext) _RegenerateNFOResult(ctx context.Context, sel ast.SelectionSet, obj *RegenerateNFOResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, regenerateNFOResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RegenerateNFOResult")
+		case "ok":
+			out.Values[i] = ec._RegenerateNFOResult_ok(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._RegenerateNFOResult_error(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var renamePreviewItemImplementors = []string{"RenamePreviewItem"}
+
+func (ec *executionContext) _RenamePreviewItem(ctx context.Context, sel ast.SelectionSet, obj *RenamePreviewItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, renamePreviewItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RenamePreviewItem")
+		case "versionID":
+			out.Values[i] = ec._RenamePreviewItem_versionID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "source":
+			out.Values[i] = ec._RenamePreviewItem_source(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "destination":
+			out.Values[i] = ec._RenamePreviewItem_destination(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "willMove":
+			out.Values[i] = ec._RenamePreviewItem_willMove(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._RenamePreviewItem_error(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var renameResultItemImplementors = []string{"RenameResultItem"}
+
+func (ec *executionContext) _RenameResultItem(ctx context.Context, sel ast.SelectionSet, obj *RenameResultItem) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, renameResultItemImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RenameResultItem")
+		case "versionID":
+			out.Values[i] = ec._RenameResultItem_versionID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "source":
+			out.Values[i] = ec._RenameResultItem_source(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "destination":
+			out.Values[i] = ec._RenameResultItem_destination(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "moved":
+			out.Values[i] = ec._RenameResultItem_moved(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._RenameResultItem_error(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -24192,6 +25089,72 @@ func (ec *executionContext) marshalNRecordingsListPage2ᚖgithubᚗcomᚋnicoler
 		return graphql.Null
 	}
 	return ec._RecordingsListPage(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRegenerateNFOResult2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRegenerateNFOResult(ctx context.Context, sel ast.SelectionSet, v RegenerateNFOResult) graphql.Marshaler {
+	return ec._RegenerateNFOResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNRegenerateNFOResult2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRegenerateNFOResult(ctx context.Context, sel ast.SelectionSet, v *RegenerateNFOResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RegenerateNFOResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRenamePreviewItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenamePreviewItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*RenamePreviewItem) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRenamePreviewItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenamePreviewItem(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRenamePreviewItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenamePreviewItem(ctx context.Context, sel ast.SelectionSet, v *RenamePreviewItem) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RenamePreviewItem(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRenameResultItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenameResultItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*RenameResultItem) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRenameResultItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenameResultItem(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRenameResultItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenameResultItem(ctx context.Context, sel ast.SelectionSet, v *RenameResultItem) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RenameResultItem(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNResolvedCastEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐResolvedCastEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*ResolvedCastEntry) graphql.Marshaler {
