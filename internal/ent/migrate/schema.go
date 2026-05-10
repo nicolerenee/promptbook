@@ -210,6 +210,7 @@ var (
 		{Name: "suggested_confidence", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "notes", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "extras_count", Type: field.TypeInt, Default: 0},
+		{Name: "classification_json", Type: field.TypeString, Size: 2147483647, Default: ""},
 	}
 	// ManualImportQueueTable holds the schema information for the "manual_import_queue" table.
 	ManualImportQueueTable = &schema.Table{

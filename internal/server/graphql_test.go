@@ -628,6 +628,138 @@ func TestGraphQLQueueLists(t *testing.T) {
 	assert.Equal(t, "recording-90100222", *greenwich-beacon)
 }
 
+// TestGraphQLQueueClassificationProjects pins the contract that the
+// scanner's per-folder classification blob — persisted on
+// manual_import_queue.classification_json — round-trips through the
+// queue resolver as a typed QueueClassification subtype. Phase 2 of
+// the multipart + extras feature: the modal (phase 3) reads the
+// projection to render its multi-file picker without re-walking the
+// folder.
+func TestGraphQLQueueClassificationProjects(t *testing.T) {
+	t.Parallel()
+	srv, db := queueImportTestServer(t, &stubIngestRunner{})
+
+	const blob = `{"parts":[{"path":"/a/main.mkv","sizeBytes":4096,` +
+		`"suggestedKind":"main","partIndex":0}],"extras":[` +
+		`{"path":"/a/audio/track-01.mp3","sizeBytes":2048,` +
+		`"suggestedKind":"extra-audio","partIndex":0},` +
+		`{"path":"/a/bows.mp4","sizeBytes":1024,` +
+		`"suggestedKind":"extra-featurette","partIndex":0}],` +
+		`"ambiguous":true}`
+	_, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:           "/a/main.mkv",
+		FileSizeBytes:      4096,
+		ExtrasCount:        2,
+		ClassificationJSON: blob,
+	})
+	require.NoError(t, err)
+
+	body, rr := graphqlPost(t, srv.Handler(), `{
+		queue {
+			filePath
+			classification {
+				ambiguous
+				parts { path sizeBytes suggestedKind partIndex }
+				extras { path sizeBytes suggestedKind partIndex }
+			}
+		}
+	}`)
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			Queue []struct {
+				FilePath       string `json:"filePath"`
+				Classification struct {
+					Ambiguous bool `json:"ambiguous"`
+					Parts     []struct {
+						Path          string `json:"path"`
+						SizeBytes     int    `json:"sizeBytes"`
+						SuggestedKind string `json:"suggestedKind"`
+						PartIndex     int    `json:"partIndex"`
+					} `json:"parts"`
+					Extras []struct {
+						Path          string `json:"path"`
+						SizeBytes     int    `json:"sizeBytes"`
+						SuggestedKind string `json:"suggestedKind"`
+						PartIndex     int    `json:"partIndex"`
+					} `json:"extras"`
+				} `json:"classification"`
+			} `json:"queue"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Data.Queue, 1)
+
+	row := resp.Data.Queue[0]
+	assert.True(t, row.Classification.Ambiguous,
+		"ambiguous flag must round-trip through the projection")
+	require.Len(t, row.Classification.Parts, 1)
+	assert.Equal(t, "/a/main.mkv", row.Classification.Parts[0].Path)
+	assert.Equal(t, "main", row.Classification.Parts[0].SuggestedKind)
+	assert.Equal(t, 4096, row.Classification.Parts[0].SizeBytes)
+
+	require.Len(t, row.Classification.Extras, 2)
+	kinds := map[string]string{}
+	for _, ex := range row.Classification.Extras {
+		kinds[ex.Path] = ex.SuggestedKind
+	}
+	assert.Equal(t, "extra-audio", kinds["/a/audio/track-01.mp3"])
+	assert.Equal(t, "extra-featurette", kinds["/a/bows.mp4"])
+}
+
+// TestGraphQLQueueClassificationLegacyEmpty pins the contract that
+// queue rows with no classification_json (legacy / loose-file) still
+// project as a non-null QueueClassification with empty Parts/Extras.
+// The schema's `classification: QueueClassification!` non-null
+// promise relies on this — the modal can range over the lists safely.
+func TestGraphQLQueueClassificationLegacyEmpty(t *testing.T) {
+	t.Parallel()
+	srv, db := queueImportTestServer(t, &stubIngestRunner{})
+
+	_, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath:      "/incoming/legacy.mkv",
+		FileSizeBytes: 2048,
+	})
+	require.NoError(t, err)
+
+	body, rr := graphqlPost(t, srv.Handler(), `{
+		queue {
+			classification {
+				ambiguous
+				parts { path }
+				extras { path }
+			}
+		}
+	}`)
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			Queue []struct {
+				Classification struct {
+					Ambiguous bool `json:"ambiguous"`
+					Parts     []struct {
+						Path string `json:"path"`
+					} `json:"parts"`
+					Extras []struct {
+						Path string `json:"path"`
+					} `json:"extras"`
+				} `json:"classification"`
+			} `json:"queue"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Len(t, resp.Data.Queue, 1)
+
+	cls := resp.Data.Queue[0].Classification
+	assert.False(t, cls.Ambiguous)
+	assert.Empty(t, cls.Parts, "legacy rows project an empty parts list")
+	assert.Empty(t, cls.Extras, "legacy rows project an empty extras list")
+}
+
 // TestGraphQLImportQueueEntrySuccess covers the happy path: the
 // resolver runs the engine, removes the queue row, and writes a
 // manual_import history event.

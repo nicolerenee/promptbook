@@ -25,6 +25,7 @@ package scanner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -230,23 +231,23 @@ func (e *Engine) walkDir(ctx context.Context, dir string, res *Result) {
 			res.Skipped++
 			continue
 		}
-		e.processFile(ctx, path, res, 0)
+		e.processFile(ctx, path, res, 0, "")
 	}
 }
 
 // walkFolderUnit treats folder as one recording-with-extras. It walks
-// the entire subtree to find every media file, picks the "main" file
-// using mainFile's heuristic, and enqueues a single row pointing at
-// it. ExtrasCount is the count of OTHER media files (audio + video)
-// found alongside the main one. Empty folders (no media at all) are
-// silently skipped.
+// the entire subtree to find every media file, runs the classifier to
+// produce a per-file role suggestion, and enqueues a single row whose
+// FilePath points at the heuristic-chosen main file (Parts[0]). The
+// full Classification rides on the row as a JSON blob so the queue
+// import modal can render its multi-file picker without re-walking
+// the folder. Empty folders (no media at all) are silently skipped.
 //
-// TODO: multi-part folder handling. When two video files inside the
-// folder are similar size and their filenames carry part markers
-// ({Part}-1, act 1 / act 2, pt-1 / pt-2), this is one recording split
-// across two files — both should ride into ingest together. For now
-// we still pick the largest as main and let the user sort it out
-// during import.
+// extras_count keeps its legacy meaning: the count of NON-main media
+// files in the folder (audio + video). For a multipart classification
+// that's len(Parts)-1 + len(Extras); for a single-main shape it's
+// len(Extras). The accounting holds because every file the classifier
+// sees is either a part or an extra.
 func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result) {
 	media, err := collectMediaFiles(folder)
 	if err != nil {
@@ -260,9 +261,27 @@ func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result)
 		e.Logger.Debug().Str("folder", folder).Msg("scanner: empty folder, skipping")
 		return
 	}
-	main := mainFile(media)
-	extras := len(media) - 1
-	e.processFile(ctx, main, res, extras)
+	cls := classifyFolder(folder, media)
+	if len(cls.Parts) == 0 {
+		// Defensive: classifier returns at least one part when media is
+		// non-empty. If we got here without a Parts entry something is
+		// off — log and skip rather than enqueue a row with no main.
+		e.Logger.Warn().Str("folder", folder).
+			Msg("scanner: classification returned no parts; skipping folder")
+		return
+	}
+	mainPath := cls.Parts[0].Path
+	extrasCount := len(cls.Parts) - 1 + len(cls.Extras)
+	clsJSON, err := json.Marshal(cls)
+	if err != nil {
+		// JSON-encoding a struct of strings + ints can only fail on
+		// extreme pathology. Record + fall back to enqueueing without
+		// the classification rather than dropping the folder entirely.
+		recordError(res, fmt.Errorf("encode classification %q: %w", folder, err))
+		e.processFile(ctx, mainPath, res, extrasCount, "")
+		return
+	}
+	e.processFile(ctx, mainPath, res, extrasCount, string(clsJSON))
 }
 
 // mediaFile is a single hit from collectMediaFiles — the absolute
@@ -271,13 +290,13 @@ type mediaFile struct {
 	path string
 	size int64
 	// rootLevel is true when path sits at the very top of the folder
-	// being walked (depth 0). Used by mainFile as a tie-breaker so a
-	// recording at the folder root wins over a similarly-sized track in
-	// audio/.
+	// being walked (depth 0). Used by the classifier as a tie-breaker
+	// so a recording at the folder root wins over a similarly-sized
+	// track in audio/.
 	rootLevel bool
 	// isVideo is true when the file's extension is in VideoExtensions.
-	// Used by mainFile to bias toward video formats when sizes are
-	// close.
+	// Used by the classifier to bias toward video formats when sizes
+	// are close.
 	isVideo bool
 }
 
@@ -321,74 +340,19 @@ func collectMediaFiles(folder string) ([]mediaFile, error) {
 	return out, nil
 }
 
-// mainFile picks the "main" recording out of a folder-as-unit's media
-// hits. Heuristic:
-//
-//   - Largest by size wins (the recording itself halflings per-track
-//     extracts in nearly every real-world drop pattern).
-//   - When the next-largest is within 10% of the leader, prefer a
-//     file at the folder root over one in a subdirectory (audio/),
-//     and then prefer video over audio. The 10% band is wide enough
-//     to forgive container-overhead differences without letting a
-//     single per-track audio rip masquerade as the main file.
-//
-// media must be non-empty — callers gate on len(media) == 0 first.
-func mainFile(media []mediaFile) string {
-	// Find the leader by size first.
-	leader := media[0]
-	for _, m := range media[1:] {
-		if m.size > leader.size {
-			leader = m
-		}
-	}
-	// Then sweep for any candidate within 10% of the leader's size and
-	// apply the root-level / video-preferred tie-breakers. The 10%
-	// band is symmetric: candidate.size * 1.10 >= leader.size.
-	const (
-		closeBandPct = 10
-		percentDenom = 100
-	)
-	threshold := leader.size - leader.size*closeBandPct/percentDenom
-	for _, m := range media {
-		if m.path == leader.path {
-			continue
-		}
-		if m.size < threshold {
-			continue
-		}
-		// Within the close band — apply tie-breakers.
-		if betterMain(m, leader) {
-			leader = m
-		}
-	}
-	return leader.path
-}
-
-// betterMain returns true when candidate beats current as the main
-// file under the close-size tie-breaker rules: prefer a root-level
-// file over a nested one, and prefer a video over an audio file when
-// the root-level state is equal.
-func betterMain(candidate, current mediaFile) bool {
-	if candidate.rootLevel && !current.rootLevel {
-		return true
-	}
-	if !candidate.rootLevel && current.rootLevel {
-		return false
-	}
-	if candidate.isVideo && !current.isVideo {
-		return true
-	}
-	return false
-}
-
 // processFile classifies one main file (loose at the watched-dir root
 // or the picked main of a folder-as-unit) and dispatches to the right
 // queue mutation. extrasCount is the number of OTHER media files
 // alongside path inside its source folder; pass 0 for loose-file
-// rows. It treats every "couldn't make sense of this file" case as an
-// error tracked on res rather than a hard failure — one bad
-// permission shouldn't abort the rest of the walk.
-func (e *Engine) processFile(ctx context.Context, path string, res *Result, extrasCount int) {
+// rows. classificationJSON is the JSON-encoded folder classification
+// (per-file role suggestions); empty string for loose-file rows or
+// when JSON-encoding failed upstream. It treats every "couldn't make
+// sense of this file" case as an error tracked on res rather than a
+// hard failure — one bad permission shouldn't abort the rest of the
+// walk.
+func (e *Engine) processFile(
+	ctx context.Context, path string, res *Result, extrasCount int, classificationJSON string,
+) {
 	info, err := os.Stat(path)
 	if err != nil {
 		recordError(res, fmt.Errorf("stat %q: %w", path, err))
@@ -408,9 +372,10 @@ func (e *Engine) processFile(ctx context.Context, path string, res *Result, extr
 	}
 
 	entry := storage.QueueEntry{
-		FilePath:      path,
-		FileSizeBytes: info.Size(),
-		ExtrasCount:   extrasCount,
+		FilePath:           path,
+		FileSizeBytes:      info.Size(),
+		ExtrasCount:        extrasCount,
+		ClassificationJSON: classificationJSON,
 	}
 
 	id, _, resolveErr := rename.Resolve(path, 0)

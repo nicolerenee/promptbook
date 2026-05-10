@@ -32,8 +32,10 @@ type ManualImportQueue struct {
 	// Notes holds the value of the "notes" field.
 	Notes string `json:"notes,omitempty"`
 	// ExtrasCount holds the value of the "extras_count" field.
-	ExtrasCount  int `json:"extras_count,omitempty"`
-	selectValues sql.SelectValues
+	ExtrasCount int `json:"extras_count,omitempty"`
+	// ClassificationJSON holds the value of the "classification_json" field.
+	ClassificationJSON string `json:"classification_json,omitempty"`
+	selectValues       sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -43,7 +45,7 @@ func (*ManualImportQueue) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case manualimportqueue.FieldID, manualimportqueue.FieldFileSizeBytes, manualimportqueue.FieldSuggestedRecordingID, manualimportqueue.FieldExtrasCount:
 			values[i] = new(sql.NullInt64)
-		case manualimportqueue.FieldFilePath, manualimportqueue.FieldSuggestedConfidence, manualimportqueue.FieldNotes:
+		case manualimportqueue.FieldFilePath, manualimportqueue.FieldSuggestedConfidence, manualimportqueue.FieldNotes, manualimportqueue.FieldClassificationJSON:
 			values[i] = new(sql.NullString)
 		case manualimportqueue.FieldDiscoveredAt, manualimportqueue.FieldLastSeenAt:
 			values[i] = new(sql.NullTime)
@@ -117,6 +119,12 @@ func (_m *ManualImportQueue) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				_m.ExtrasCount = int(value.Int64)
 			}
+		case manualimportqueue.FieldClassificationJSON:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field classification_json", values[i])
+			} else if value.Valid {
+				_m.ClassificationJSON = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -178,6 +186,9 @@ func (_m *ManualImportQueue) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("extras_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ExtrasCount))
+	builder.WriteString(", ")
+	builder.WriteString("classification_json=")
+	builder.WriteString(_m.ClassificationJSON)
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -29,6 +29,8 @@ const (
 	FieldNotes = "notes"
 	// FieldExtrasCount holds the string denoting the extras_count field in the database.
 	FieldExtrasCount = "extras_count"
+	// FieldClassificationJSON holds the string denoting the classification_json field in the database.
+	FieldClassificationJSON = "classification_json"
 	// Table holds the table name of the manualimportqueue in the database.
 	Table = "manual_import_queue"
 )
@@ -44,6 +46,7 @@ var Columns = []string{
 	FieldSuggestedConfidence,
 	FieldNotes,
 	FieldExtrasCount,
+	FieldClassificationJSON,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -69,6 +72,8 @@ var (
 	DefaultNotes string
 	// DefaultExtrasCount holds the default value on creation for the "extras_count" field.
 	DefaultExtrasCount int
+	// DefaultClassificationJSON holds the default value on creation for the "classification_json" field.
+	DefaultClassificationJSON string
 )
 
 // OrderOption defines the ordering options for the ManualImportQueue queries.
@@ -117,4 +122,9 @@ func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 // ByExtrasCount orders the results by the extras_count field.
 func ByExtrasCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldExtrasCount, opts...).ToFunc()
+}
+
+// ByClassificationJSON orders the results by the classification_json field.
+func ByClassificationJSON(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldClassificationJSON, opts...).ToFunc()
 }

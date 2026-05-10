@@ -221,7 +221,21 @@ type ComplexityRoot struct {
 		WantsEntry             func(childComplexity int, id int64) int
 	}
 
+	QueueClassification struct {
+		Ambiguous func(childComplexity int) int
+		Extras    func(childComplexity int) int
+		Parts     func(childComplexity int) int
+	}
+
+	QueueClassifiedFile struct {
+		PartIndex     func(childComplexity int) int
+		Path          func(childComplexity int) int
+		SizeBytes     func(childComplexity int) int
+		SuggestedKind func(childComplexity int) int
+	}
+
 	QueueEntry struct {
+		Classification       func(childComplexity int) int
 		DiscoveredAt         func(childComplexity int) int
 		ExtrasCount          func(childComplexity int) int
 		FilePath             func(childComplexity int) int
@@ -1401,6 +1415,56 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Query.WantsEntry(childComplexity, args["id"].(int64)), true
 
+	case "QueueClassification.ambiguous":
+		if e.ComplexityRoot.QueueClassification.Ambiguous == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassification.Ambiguous(childComplexity), true
+	case "QueueClassification.extras":
+		if e.ComplexityRoot.QueueClassification.Extras == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassification.Extras(childComplexity), true
+	case "QueueClassification.parts":
+		if e.ComplexityRoot.QueueClassification.Parts == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassification.Parts(childComplexity), true
+
+	case "QueueClassifiedFile.partIndex":
+		if e.ComplexityRoot.QueueClassifiedFile.PartIndex == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassifiedFile.PartIndex(childComplexity), true
+	case "QueueClassifiedFile.path":
+		if e.ComplexityRoot.QueueClassifiedFile.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassifiedFile.Path(childComplexity), true
+	case "QueueClassifiedFile.sizeBytes":
+		if e.ComplexityRoot.QueueClassifiedFile.SizeBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassifiedFile.SizeBytes(childComplexity), true
+	case "QueueClassifiedFile.suggestedKind":
+		if e.ComplexityRoot.QueueClassifiedFile.SuggestedKind == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassifiedFile.SuggestedKind(childComplexity), true
+
+	case "QueueEntry.classification":
+		if e.ComplexityRoot.QueueEntry.Classification == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.Classification(childComplexity), true
 	case "QueueEntry.discoveredAt":
 		if e.ComplexityRoot.QueueEntry.DiscoveredAt == nil {
 			break
@@ -3012,6 +3076,32 @@ func (ec *executionContext) childFields_PersonRecording(ctx context.Context, fie
 	return nil, fmt.Errorf("no field named %q was found under type PersonRecording", field.Name)
 }
 
+func (ec *executionContext) childFields_QueueClassification(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "parts":
+		return ec.fieldContext_QueueClassification_parts(ctx, field)
+	case "extras":
+		return ec.fieldContext_QueueClassification_extras(ctx, field)
+	case "ambiguous":
+		return ec.fieldContext_QueueClassification_ambiguous(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type QueueClassification", field.Name)
+}
+
+func (ec *executionContext) childFields_QueueClassifiedFile(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "path":
+		return ec.fieldContext_QueueClassifiedFile_path(ctx, field)
+	case "sizeBytes":
+		return ec.fieldContext_QueueClassifiedFile_sizeBytes(ctx, field)
+	case "suggestedKind":
+		return ec.fieldContext_QueueClassifiedFile_suggestedKind(ctx, field)
+	case "partIndex":
+		return ec.fieldContext_QueueClassifiedFile_partIndex(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type QueueClassifiedFile", field.Name)
+}
+
 func (ec *executionContext) childFields_QueueEntry(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "id":
@@ -3034,6 +3124,8 @@ func (ec *executionContext) childFields_QueueEntry(ctx context.Context, field gr
 		return ec.fieldContext_QueueEntry_notes(ctx, field)
 	case "extrasCount":
 		return ec.fieldContext_QueueEntry_extrasCount(ctx, field)
+	case "classification":
+		return ec.fieldContext_QueueEntry_classification(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type QueueEntry", field.Name)
 }
@@ -7911,6 +8003,185 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 	return fc, nil
 }
 
+func (ec *executionContext) _QueueClassification_parts(ctx context.Context, field graphql.CollectedField, obj *QueueClassification) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassification_parts(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Parts, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*QueueClassifiedFile) graphql.Marshaler {
+			return ec.marshalNQueueClassifiedFile2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassifiedFileᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassification_parts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "QueueClassification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_QueueClassifiedFile(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _QueueClassification_extras(ctx context.Context, field graphql.CollectedField, obj *QueueClassification) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassification_extras(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Extras, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*QueueClassifiedFile) graphql.Marshaler {
+			return ec.marshalNQueueClassifiedFile2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassifiedFileᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassification_extras(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "QueueClassification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_QueueClassifiedFile(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _QueueClassification_ambiguous(ctx context.Context, field graphql.CollectedField, obj *QueueClassification) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassification_ambiguous(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Ambiguous, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassification_ambiguous(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueClassification", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _QueueClassifiedFile_path(ctx context.Context, field graphql.CollectedField, obj *QueueClassifiedFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassifiedFile_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassifiedFile_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueClassifiedFile", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueClassifiedFile_sizeBytes(ctx context.Context, field graphql.CollectedField, obj *QueueClassifiedFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassifiedFile_sizeBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SizeBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassifiedFile_sizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueClassifiedFile", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _QueueClassifiedFile_suggestedKind(ctx context.Context, field graphql.CollectedField, obj *QueueClassifiedFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassifiedFile_suggestedKind(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SuggestedKind, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassifiedFile_suggestedKind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueClassifiedFile", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueClassifiedFile_partIndex(ctx context.Context, field graphql.CollectedField, obj *QueueClassifiedFile) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassifiedFile_partIndex(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PartIndex, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassifiedFile_partIndex(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueClassifiedFile", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
 func (ec *executionContext) _QueueEntry_id(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -8148,6 +8419,38 @@ func (ec *executionContext) _QueueEntry_extrasCount(ctx context.Context, field g
 }
 func (ec *executionContext) fieldContext_QueueEntry_extrasCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_classification(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_classification(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Classification, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *QueueClassification) graphql.Marshaler {
+			return ec.marshalNQueueClassification2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassification(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_classification(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "QueueEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_QueueClassification(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Recording_id(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
@@ -22176,6 +22479,109 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 	return out
 }
 
+var queueClassificationImplementors = []string{"QueueClassification"}
+
+func (ec *executionContext) _QueueClassification(ctx context.Context, sel ast.SelectionSet, obj *QueueClassification) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, queueClassificationImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("QueueClassification")
+		case "parts":
+			out.Values[i] = ec._QueueClassification_parts(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "extras":
+			out.Values[i] = ec._QueueClassification_extras(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ambiguous":
+			out.Values[i] = ec._QueueClassification_ambiguous(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var queueClassifiedFileImplementors = []string{"QueueClassifiedFile"}
+
+func (ec *executionContext) _QueueClassifiedFile(ctx context.Context, sel ast.SelectionSet, obj *QueueClassifiedFile) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, queueClassifiedFileImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("QueueClassifiedFile")
+		case "path":
+			out.Values[i] = ec._QueueClassifiedFile_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sizeBytes":
+			out.Values[i] = ec._QueueClassifiedFile_sizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "suggestedKind":
+			out.Values[i] = ec._QueueClassifiedFile_suggestedKind(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "partIndex":
+			out.Values[i] = ec._QueueClassifiedFile_partIndex(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var queueEntryImplementors = []string{"QueueEntry"}
 
 func (ec *executionContext) _QueueEntry(ctx context.Context, sel ast.SelectionSet, obj *QueueEntry) graphql.Marshaler {
@@ -22228,6 +22634,11 @@ func (ec *executionContext) _QueueEntry(ctx context.Context, sel ast.SelectionSe
 			}
 		case "extrasCount":
 			out.Values[i] = ec._QueueEntry_extrasCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "classification":
+			out.Values[i] = ec._QueueEntry_classification(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -25528,6 +25939,42 @@ func (ec *executionContext) marshalNPersonRecording2ᚖgithubᚗcomᚋnicolerene
 func (ec *executionContext) unmarshalNPreviewQueueImportInput2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐPreviewQueueImportInput(ctx context.Context, v any) (PreviewQueueImportInput, error) {
 	res, err := ec.unmarshalInputPreviewQueueImportInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNQueueClassification2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassification(ctx context.Context, sel ast.SelectionSet, v *QueueClassification) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._QueueClassification(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNQueueClassifiedFile2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassifiedFileᚄ(ctx context.Context, sel ast.SelectionSet, v []*QueueClassifiedFile) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNQueueClassifiedFile2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassifiedFile(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNQueueClassifiedFile2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueClassifiedFile(ctx context.Context, sel ast.SelectionSet, v *QueueClassifiedFile) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._QueueClassifiedFile(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNQueueEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*QueueEntry) graphql.Marshaler {

@@ -126,6 +126,20 @@ func (_c *ManualImportQueueCreate) SetNillableExtrasCount(v *int) *ManualImportQ
 	return _c
 }
 
+// SetClassificationJSON sets the "classification_json" field.
+func (_c *ManualImportQueueCreate) SetClassificationJSON(v string) *ManualImportQueueCreate {
+	_c.mutation.SetClassificationJSON(v)
+	return _c
+}
+
+// SetNillableClassificationJSON sets the "classification_json" field if the given value is not nil.
+func (_c *ManualImportQueueCreate) SetNillableClassificationJSON(v *string) *ManualImportQueueCreate {
+	if v != nil {
+		_c.SetClassificationJSON(*v)
+	}
+	return _c
+}
+
 // Mutation returns the ManualImportQueueMutation object of the builder.
 func (_c *ManualImportQueueCreate) Mutation() *ManualImportQueueMutation {
 	return _c.mutation
@@ -185,6 +199,10 @@ func (_c *ManualImportQueueCreate) defaults() {
 		v := manualimportqueue.DefaultExtrasCount
 		_c.mutation.SetExtrasCount(v)
 	}
+	if _, ok := _c.mutation.ClassificationJSON(); !ok {
+		v := manualimportqueue.DefaultClassificationJSON
+		_c.mutation.SetClassificationJSON(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -209,6 +227,9 @@ func (_c *ManualImportQueueCreate) check() error {
 	}
 	if _, ok := _c.mutation.ExtrasCount(); !ok {
 		return &ValidationError{Name: "extras_count", err: errors.New(`ent: missing required field "ManualImportQueue.extras_count"`)}
+	}
+	if _, ok := _c.mutation.ClassificationJSON(); !ok {
+		return &ValidationError{Name: "classification_json", err: errors.New(`ent: missing required field "ManualImportQueue.classification_json"`)}
 	}
 	return nil
 }
@@ -268,6 +289,10 @@ func (_c *ManualImportQueueCreate) createSpec() (*ManualImportQueue, *sqlgraph.C
 	if value, ok := _c.mutation.ExtrasCount(); ok {
 		_spec.SetField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
 		_node.ExtrasCount = value
+	}
+	if value, ok := _c.mutation.ClassificationJSON(); ok {
+		_spec.SetField(manualimportqueue.FieldClassificationJSON, field.TypeString, value)
+		_node.ClassificationJSON = value
 	}
 	return _node, _spec
 }
@@ -438,6 +463,18 @@ func (u *ManualImportQueueUpsert) UpdateExtrasCount() *ManualImportQueueUpsert {
 // AddExtrasCount adds v to the "extras_count" field.
 func (u *ManualImportQueueUpsert) AddExtrasCount(v int) *ManualImportQueueUpsert {
 	u.Add(manualimportqueue.FieldExtrasCount, v)
+	return u
+}
+
+// SetClassificationJSON sets the "classification_json" field.
+func (u *ManualImportQueueUpsert) SetClassificationJSON(v string) *ManualImportQueueUpsert {
+	u.Set(manualimportqueue.FieldClassificationJSON, v)
+	return u
+}
+
+// UpdateClassificationJSON sets the "classification_json" field to the value that was provided on create.
+func (u *ManualImportQueueUpsert) UpdateClassificationJSON() *ManualImportQueueUpsert {
+	u.SetExcluded(manualimportqueue.FieldClassificationJSON)
 	return u
 }
 
@@ -618,6 +655,20 @@ func (u *ManualImportQueueUpsertOne) AddExtrasCount(v int) *ManualImportQueueUps
 func (u *ManualImportQueueUpsertOne) UpdateExtrasCount() *ManualImportQueueUpsertOne {
 	return u.Update(func(s *ManualImportQueueUpsert) {
 		s.UpdateExtrasCount()
+	})
+}
+
+// SetClassificationJSON sets the "classification_json" field.
+func (u *ManualImportQueueUpsertOne) SetClassificationJSON(v string) *ManualImportQueueUpsertOne {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.SetClassificationJSON(v)
+	})
+}
+
+// UpdateClassificationJSON sets the "classification_json" field to the value that was provided on create.
+func (u *ManualImportQueueUpsertOne) UpdateClassificationJSON() *ManualImportQueueUpsertOne {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.UpdateClassificationJSON()
 	})
 }
 
@@ -962,6 +1013,20 @@ func (u *ManualImportQueueUpsertBulk) AddExtrasCount(v int) *ManualImportQueueUp
 func (u *ManualImportQueueUpsertBulk) UpdateExtrasCount() *ManualImportQueueUpsertBulk {
 	return u.Update(func(s *ManualImportQueueUpsert) {
 		s.UpdateExtrasCount()
+	})
+}
+
+// SetClassificationJSON sets the "classification_json" field.
+func (u *ManualImportQueueUpsertBulk) SetClassificationJSON(v string) *ManualImportQueueUpsertBulk {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.SetClassificationJSON(v)
+	})
+}
+
+// UpdateClassificationJSON sets the "classification_json" field to the value that was provided on create.
+func (u *ManualImportQueueUpsertBulk) UpdateClassificationJSON() *ManualImportQueueUpsertBulk {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.UpdateClassificationJSON()
 	})
 }
 

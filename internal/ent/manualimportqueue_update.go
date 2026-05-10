@@ -168,6 +168,20 @@ func (_u *ManualImportQueueUpdate) AddExtrasCount(v int) *ManualImportQueueUpdat
 	return _u
 }
 
+// SetClassificationJSON sets the "classification_json" field.
+func (_u *ManualImportQueueUpdate) SetClassificationJSON(v string) *ManualImportQueueUpdate {
+	_u.mutation.SetClassificationJSON(v)
+	return _u
+}
+
+// SetNillableClassificationJSON sets the "classification_json" field if the given value is not nil.
+func (_u *ManualImportQueueUpdate) SetNillableClassificationJSON(v *string) *ManualImportQueueUpdate {
+	if v != nil {
+		_u.SetClassificationJSON(*v)
+	}
+	return _u
+}
+
 // Mutation returns the ManualImportQueueMutation object of the builder.
 func (_u *ManualImportQueueUpdate) Mutation() *ManualImportQueueMutation {
 	return _u.mutation
@@ -250,6 +264,9 @@ func (_u *ManualImportQueueUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if value, ok := _u.mutation.AddedExtrasCount(); ok {
 		_spec.AddField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ClassificationJSON(); ok {
+		_spec.SetField(manualimportqueue.FieldClassificationJSON, field.TypeString, value)
 	}
 	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
@@ -412,6 +429,20 @@ func (_u *ManualImportQueueUpdateOne) AddExtrasCount(v int) *ManualImportQueueUp
 	return _u
 }
 
+// SetClassificationJSON sets the "classification_json" field.
+func (_u *ManualImportQueueUpdateOne) SetClassificationJSON(v string) *ManualImportQueueUpdateOne {
+	_u.mutation.SetClassificationJSON(v)
+	return _u
+}
+
+// SetNillableClassificationJSON sets the "classification_json" field if the given value is not nil.
+func (_u *ManualImportQueueUpdateOne) SetNillableClassificationJSON(v *string) *ManualImportQueueUpdateOne {
+	if v != nil {
+		_u.SetClassificationJSON(*v)
+	}
+	return _u
+}
+
 // Mutation returns the ManualImportQueueMutation object of the builder.
 func (_u *ManualImportQueueUpdateOne) Mutation() *ManualImportQueueMutation {
 	return _u.mutation
@@ -524,6 +555,9 @@ func (_u *ManualImportQueueUpdateOne) sqlSave(ctx context.Context) (_node *Manua
 	}
 	if value, ok := _u.mutation.AddedExtrasCount(); ok {
 		_spec.AddField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ClassificationJSON(); ok {
+		_spec.SetField(manualimportqueue.FieldClassificationJSON, field.TypeString, value)
 	}
 	_spec.AddModifiers(_u.modifiers...)
 	_node = &ManualImportQueue{config: _u.config}

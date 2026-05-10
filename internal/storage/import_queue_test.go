@@ -209,3 +209,38 @@ func TestLoadQueueEntryNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, storage.ErrQueueEntryNotFound)
 }
+
+// TestEnqueueRoundTripsClassificationJSON pins the contract that the
+// scanner's per-folder classification blob makes it through
+// EnqueueFile + LoadQueueEntry intact. The blob is opaque to storage
+// — store-and-return semantics are all the queue layer needs.
+func TestEnqueueRoundTripsClassificationJSON(t *testing.T) {
+	t.Parallel()
+	gofakeit.Seed(0)
+	db := openQueueDB(t)
+	ctx := t.Context()
+
+	const path = "/store01/Performances/multipart-drop/act-1.mkv"
+	const blob = `{"parts":[{"path":"/a/act-1.mkv","sizeBytes":1024,` +
+		`"suggestedKind":"part-1","partIndex":1},{"path":"/a/act-2.mkv",` +
+		`"sizeBytes":2048,"suggestedKind":"part-2","partIndex":2}],` +
+		`"extras":[],"ambiguous":false}`
+	id, err := storage.EnqueueFile(ctx, db, storage.QueueEntry{
+		FilePath:           path,
+		FileSizeBytes:      1024,
+		ClassificationJSON: blob,
+	})
+	require.NoError(t, err)
+
+	loaded, err := storage.LoadQueueEntry(ctx, db, id)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+	assert.JSONEq(t, blob, loaded.ClassificationJSON,
+		"ClassificationJSON must round-trip equivalent JSON")
+
+	listed, err := storage.ListQueue(ctx, db)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.JSONEq(t, blob, listed[0].ClassificationJSON,
+		"ListQueue must surface the classification blob too")
+}

@@ -361,6 +361,34 @@ type QueueEntry {
   # the SPA can render "+N extras" next to the file path. 0 for loose
   # files at the watched-dir root.
   extrasCount: Int!
+  # classification is the scanner's per-file role suggestion for this
+  # folder-as-unit drop. Drives the queue import modal's multi-file
+  # picker so the user can confirm the heuristic or override per-file.
+  # Empty Parts/Extras + Ambiguous=false for legacy rows that pre-date
+  # the classifier or for loose-file entries.
+  classification: QueueClassification!
+}
+
+# QueueClassification is the scanner's per-folder classification —
+# ordered Parts when filename markers indicate multipart, role-tagged
+# Extras for everything else, and an Ambiguous flag for "two similar-
+# sized videos at root, no markers" cases the modal needs to surface
+# to the user.
+type QueueClassification {
+  parts: [QueueClassifiedFile!]!
+  extras: [QueueClassifiedFile!]!
+  ambiguous: Boolean!
+}
+
+# QueueClassifiedFile is one media file inside a QueueClassification.
+# suggestedKind is one of the assignment kind tokens the
+# importQueueEntry mutation speaks (main / part-N / extra-{kind}).
+# partIndex is 0 for non-parts and >0 for ordered parts.
+type QueueClassifiedFile {
+  path: String!
+  sizeBytes: Int!
+  suggestedKind: String!
+  partIndex: Int!
 }
 
 extend type Query {

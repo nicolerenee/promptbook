@@ -94,6 +94,11 @@ func ExtrasCount(v int) predicate.ManualImportQueue {
 	return predicate.ManualImportQueue(sql.FieldEQ(FieldExtrasCount, v))
 }
 
+// ClassificationJSON applies equality check predicate on the "classification_json" field. It's identical to ClassificationJSONEQ.
+func ClassificationJSON(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldEQ(FieldClassificationJSON, v))
+}
+
 // FilePathEQ applies the EQ predicate on the "file_path" field.
 func FilePathEQ(v string) predicate.ManualImportQueue {
 	return predicate.ManualImportQueue(sql.FieldEQ(FieldFilePath, v))
@@ -497,6 +502,71 @@ func ExtrasCountLT(v int) predicate.ManualImportQueue {
 // ExtrasCountLTE applies the LTE predicate on the "extras_count" field.
 func ExtrasCountLTE(v int) predicate.ManualImportQueue {
 	return predicate.ManualImportQueue(sql.FieldLTE(FieldExtrasCount, v))
+}
+
+// ClassificationJSONEQ applies the EQ predicate on the "classification_json" field.
+func ClassificationJSONEQ(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldEQ(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONNEQ applies the NEQ predicate on the "classification_json" field.
+func ClassificationJSONNEQ(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldNEQ(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONIn applies the In predicate on the "classification_json" field.
+func ClassificationJSONIn(vs ...string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldIn(FieldClassificationJSON, vs...))
+}
+
+// ClassificationJSONNotIn applies the NotIn predicate on the "classification_json" field.
+func ClassificationJSONNotIn(vs ...string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldNotIn(FieldClassificationJSON, vs...))
+}
+
+// ClassificationJSONGT applies the GT predicate on the "classification_json" field.
+func ClassificationJSONGT(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldGT(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONGTE applies the GTE predicate on the "classification_json" field.
+func ClassificationJSONGTE(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldGTE(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONLT applies the LT predicate on the "classification_json" field.
+func ClassificationJSONLT(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldLT(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONLTE applies the LTE predicate on the "classification_json" field.
+func ClassificationJSONLTE(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldLTE(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONContains applies the Contains predicate on the "classification_json" field.
+func ClassificationJSONContains(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldContains(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONHasPrefix applies the HasPrefix predicate on the "classification_json" field.
+func ClassificationJSONHasPrefix(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldHasPrefix(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONHasSuffix applies the HasSuffix predicate on the "classification_json" field.
+func ClassificationJSONHasSuffix(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldHasSuffix(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONEqualFold applies the EqualFold predicate on the "classification_json" field.
+func ClassificationJSONEqualFold(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldEqualFold(FieldClassificationJSON, v))
+}
+
+// ClassificationJSONContainsFold applies the ContainsFold predicate on the "classification_json" field.
+func ClassificationJSONContainsFold(v string) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldContainsFold(FieldClassificationJSON, v))
 }
 
 // And groups predicates with the AND operator between them.

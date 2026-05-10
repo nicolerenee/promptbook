@@ -89,17 +89,31 @@ type PreviewQueueImportInput struct {
 	RecordingID int64 `json:"recordingID"`
 }
 
+type QueueClassification struct {
+	Parts     []*QueueClassifiedFile `json:"parts"`
+	Extras    []*QueueClassifiedFile `json:"extras"`
+	Ambiguous bool                   `json:"ambiguous"`
+}
+
+type QueueClassifiedFile struct {
+	Path          string `json:"path"`
+	SizeBytes     int    `json:"sizeBytes"`
+	SuggestedKind string `json:"suggestedKind"`
+	PartIndex     int    `json:"partIndex"`
+}
+
 type QueueEntry struct {
-	ID                   int64               `json:"id"`
-	FilePath             string              `json:"filePath"`
-	FileSizeBytes        int                 `json:"fileSizeBytes"`
-	DiscoveredAt         time.Time           `json:"discoveredAt"`
-	LastSeenAt           time.Time           `json:"lastSeenAt"`
-	SuggestedRecordingID *int64              `json:"suggestedRecordingID,omitempty"`
-	SuggestedRecording   *RecordingsListItem `json:"suggestedRecording,omitempty"`
-	SuggestedConfidence  string              `json:"suggestedConfidence"`
-	Notes                string              `json:"notes"`
-	ExtrasCount          int                 `json:"extrasCount"`
+	ID                   int64                `json:"id"`
+	FilePath             string               `json:"filePath"`
+	FileSizeBytes        int                  `json:"fileSizeBytes"`
+	DiscoveredAt         time.Time            `json:"discoveredAt"`
+	LastSeenAt           time.Time            `json:"lastSeenAt"`
+	SuggestedRecordingID *int64               `json:"suggestedRecordingID,omitempty"`
+	SuggestedRecording   *RecordingsListItem  `json:"suggestedRecording,omitempty"`
+	SuggestedConfidence  string               `json:"suggestedConfidence"`
+	Notes                string               `json:"notes"`
+	ExtrasCount          int                  `json:"extrasCount"`
+	Classification       *QueueClassification `json:"classification"`
 }
 
 type RecordingExtra struct {

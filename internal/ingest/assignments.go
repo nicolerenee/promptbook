@@ -23,6 +23,22 @@ const (
 	assignmentKindPrefixExtra = "extra-"
 )
 
+// AssignmentKindPart returns the assignment kind token for a part
+// at the given 1-based index, e.g. AssignmentKindPart(2) → "part-2".
+// Used by the scanner's classifier so the wire-format prefix lives
+// in one place.
+func AssignmentKindPart(index int) string {
+	return fmt.Sprintf("%s%d", assignmentKindPrefixPart, index)
+}
+
+// AssignmentKindExtra returns the assignment kind token for an extra
+// of the given kind, e.g. AssignmentKindExtra(ExtraKindFeaturette) →
+// "extra-featurette". Used by the scanner's classifier so the wire-
+// format prefix lives in one place.
+func AssignmentKindExtra(kind string) string {
+	return assignmentKindPrefixExtra + kind
+}
+
 // Extras kind tokens — what the queue modal labels each extra-kind
 // dropdown option as. Mirrors Jellyfin's extras subfolder vocabulary
 // (featurettes/scenes/...) plus two promptbook-only kinds (audio,

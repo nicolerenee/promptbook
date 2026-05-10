@@ -41,6 +41,11 @@ type QueueEntry struct {
 	SuggestedConfidence  string
 	Notes                string
 	ExtrasCount          int
+	// ClassificationJSON is the scanner's per-file role classification
+	// for this folder-as-unit drop, JSON-encoded so the queue import
+	// modal can render the multi-file picker without re-walking the
+	// folder. Empty string for legacy rows or for loose-file enqueues.
+	ClassificationJSON string
 }
 
 // EnqueueFile inserts e into the queue, or updates the existing row if
@@ -58,7 +63,8 @@ func EnqueueFile(ctx context.Context, client *ent.Client, e QueueEntry) (int64, 
 		SetLastSeenAt(now).
 		SetSuggestedConfidence(e.SuggestedConfidence).
 		SetNotes(e.Notes).
-		SetExtrasCount(e.ExtrasCount)
+		SetExtrasCount(e.ExtrasCount).
+		SetClassificationJSON(e.ClassificationJSON)
 	if e.SuggestedRecordingID != nil {
 		create = create.SetSuggestedRecordingID(*e.SuggestedRecordingID)
 	}
@@ -75,6 +81,7 @@ func EnqueueFile(ctx context.Context, client *ent.Client, e QueueEntry) (int64, 
 			u.UpdateSuggestedConfidence()
 			u.UpdateNotes()
 			u.UpdateExtrasCount()
+			u.UpdateClassificationJSON()
 		}).
 		Exec(ctx)
 	if err != nil {
@@ -161,6 +168,7 @@ func queueEntryFromEnt(r *ent.ManualImportQueue) QueueEntry {
 		SuggestedConfidence: r.SuggestedConfidence,
 		Notes:               r.Notes,
 		ExtrasCount:         r.ExtrasCount,
+		ClassificationJSON:  r.ClassificationJSON,
 	}
 	if r.SuggestedRecordingID != nil {
 		v := *r.SuggestedRecordingID

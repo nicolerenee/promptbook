@@ -5001,6 +5001,7 @@ type ManualImportQueueMutation struct {
 	notes                     *string
 	extras_count              *int
 	addextras_count           *int
+	classification_json       *string
 	clearedFields             map[string]struct{}
 	done                      bool
 	oldValue                  func(context.Context) (*ManualImportQueue, error)
@@ -5467,6 +5468,42 @@ func (m *ManualImportQueueMutation) ResetExtrasCount() {
 	m.addextras_count = nil
 }
 
+// SetClassificationJSON sets the "classification_json" field.
+func (m *ManualImportQueueMutation) SetClassificationJSON(s string) {
+	m.classification_json = &s
+}
+
+// ClassificationJSON returns the value of the "classification_json" field in the mutation.
+func (m *ManualImportQueueMutation) ClassificationJSON() (r string, exists bool) {
+	v := m.classification_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClassificationJSON returns the old "classification_json" field's value of the ManualImportQueue entity.
+// If the ManualImportQueue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ManualImportQueueMutation) OldClassificationJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClassificationJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClassificationJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClassificationJSON: %w", err)
+	}
+	return oldValue.ClassificationJSON, nil
+}
+
+// ResetClassificationJSON resets all changes to the "classification_json" field.
+func (m *ManualImportQueueMutation) ResetClassificationJSON() {
+	m.classification_json = nil
+}
+
 // Where appends a list predicates to the ManualImportQueueMutation builder.
 func (m *ManualImportQueueMutation) Where(ps ...predicate.ManualImportQueue) {
 	m.predicates = append(m.predicates, ps...)
@@ -5501,7 +5538,7 @@ func (m *ManualImportQueueMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ManualImportQueueMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 9)
 	if m.file_path != nil {
 		fields = append(fields, manualimportqueue.FieldFilePath)
 	}
@@ -5525,6 +5562,9 @@ func (m *ManualImportQueueMutation) Fields() []string {
 	}
 	if m.extras_count != nil {
 		fields = append(fields, manualimportqueue.FieldExtrasCount)
+	}
+	if m.classification_json != nil {
+		fields = append(fields, manualimportqueue.FieldClassificationJSON)
 	}
 	return fields
 }
@@ -5550,6 +5590,8 @@ func (m *ManualImportQueueMutation) Field(name string) (ent.Value, bool) {
 		return m.Notes()
 	case manualimportqueue.FieldExtrasCount:
 		return m.ExtrasCount()
+	case manualimportqueue.FieldClassificationJSON:
+		return m.ClassificationJSON()
 	}
 	return nil, false
 }
@@ -5575,6 +5617,8 @@ func (m *ManualImportQueueMutation) OldField(ctx context.Context, name string) (
 		return m.OldNotes(ctx)
 	case manualimportqueue.FieldExtrasCount:
 		return m.OldExtrasCount(ctx)
+	case manualimportqueue.FieldClassificationJSON:
+		return m.OldClassificationJSON(ctx)
 	}
 	return nil, fmt.Errorf("unknown ManualImportQueue field %s", name)
 }
@@ -5639,6 +5683,13 @@ func (m *ManualImportQueueMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetExtrasCount(v)
+		return nil
+	case manualimportqueue.FieldClassificationJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClassificationJSON(v)
 		return nil
 	}
 	return fmt.Errorf("unknown ManualImportQueue field %s", name)
@@ -5760,6 +5811,9 @@ func (m *ManualImportQueueMutation) ResetField(name string) error {
 		return nil
 	case manualimportqueue.FieldExtrasCount:
 		m.ResetExtrasCount()
+		return nil
+	case manualimportqueue.FieldClassificationJSON:
+		m.ResetClassificationJSON()
 		return nil
 	}
 	return fmt.Errorf("unknown ManualImportQueue field %s", name)

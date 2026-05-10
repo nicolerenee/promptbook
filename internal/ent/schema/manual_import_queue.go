@@ -49,6 +49,12 @@ func (ManualImportQueue) Fields() []ent.Field {
 		// also holds per-track audio rips, photos, etc.). 0 for queue
 		// rows whose source is a loose file at the watched-dir root.
 		field.Int("extras_count").Default(0),
+		// classification_json carries the scanner's per-file role
+		// classification for this folder-as-unit drop, JSON-encoded
+		// so the queue import modal can render the multi-file picker
+		// without re-walking the folder. Empty string for legacy rows
+		// that pre-date the column or for loose-file enqueues.
+		field.Text("classification_json").Default(""),
 	}
 }
 

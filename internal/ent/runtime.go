@@ -141,6 +141,10 @@ func init() {
 	manualimportqueueDescExtrasCount := manualimportqueueFields[7].Descriptor()
 	// manualimportqueue.DefaultExtrasCount holds the default value on creation for the extras_count field.
 	manualimportqueue.DefaultExtrasCount = manualimportqueueDescExtrasCount.Default.(int)
+	// manualimportqueueDescClassificationJSON is the schema descriptor for classification_json field.
+	manualimportqueueDescClassificationJSON := manualimportqueueFields[8].Descriptor()
+	// manualimportqueue.DefaultClassificationJSON holds the default value on creation for the classification_json field.
+	manualimportqueue.DefaultClassificationJSON = manualimportqueueDescClassificationJSON.Default.(string)
 	performerFields := schema.Performer{}.Fields()
 	_ = performerFields
 	// performerDescSlug is the schema descriptor for slug field.

@@ -1211,7 +1211,10 @@ func (r *Resolver) attachSuggestedRecordings(
 // the wire-format prefix is applied by MarshalPrefixedID at write
 // time. file_size_bytes narrows from int64 to int because GraphQL's
 // `Int` scalar maps to Go int — every catalog file fits comfortably
-// inside int32 so the cast is safe.
+// inside int32 so the cast is safe. Classification is decoded from
+// the row's JSON blob — empty / unparseable inputs produce an empty
+// (non-nil) QueueClassification so the schema's non-null promise
+// still holds for legacy rows.
 func queueEntryToGraphQL(e storage.QueueEntry) *QueueEntry {
 	out := &QueueEntry{
 		ID:                  e.ID,
@@ -1222,10 +1225,64 @@ func queueEntryToGraphQL(e storage.QueueEntry) *QueueEntry {
 		SuggestedConfidence: e.SuggestedConfidence,
 		Notes:               e.Notes,
 		ExtrasCount:         e.ExtrasCount,
+		Classification:      decodeQueueClassification(e.ClassificationJSON),
 	}
 	if e.SuggestedRecordingID != nil {
 		v := *e.SuggestedRecordingID
 		out.SuggestedRecordingID = &v
+	}
+	return out
+}
+
+// decodeQueueClassification turns the JSON blob the scanner persists
+// onto manual_import_queue.classification_json into the GraphQL
+// QueueClassification shape. Empty / unparseable inputs return an
+// empty (non-nil) QueueClassification so the schema's non-null
+// promise still holds for legacy rows.
+func decodeQueueClassification(raw string) *QueueClassification {
+	out := &QueueClassification{
+		Parts:  []*QueueClassifiedFile{},
+		Extras: []*QueueClassifiedFile{},
+	}
+	if raw == "" {
+		return out
+	}
+	var decoded struct {
+		Parts []struct {
+			Path          string `json:"path"`
+			SizeBytes     int64  `json:"sizeBytes"`
+			SuggestedKind string `json:"suggestedKind"`
+			PartIndex     int    `json:"partIndex"`
+		} `json:"parts"`
+		Extras []struct {
+			Path          string `json:"path"`
+			SizeBytes     int64  `json:"sizeBytes"`
+			SuggestedKind string `json:"suggestedKind"`
+			PartIndex     int    `json:"partIndex"`
+		} `json:"extras"`
+		Ambiguous bool `json:"ambiguous"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		// Defensive: a row with a corrupt blob still surfaces as an
+		// empty classification rather than failing the queue read.
+		return out
+	}
+	out.Ambiguous = decoded.Ambiguous
+	for _, p := range decoded.Parts {
+		out.Parts = append(out.Parts, &QueueClassifiedFile{
+			Path:          p.Path,
+			SizeBytes:     int(p.SizeBytes),
+			SuggestedKind: p.SuggestedKind,
+			PartIndex:     p.PartIndex,
+		})
+	}
+	for _, x := range decoded.Extras {
+		out.Extras = append(out.Extras, &QueueClassifiedFile{
+			Path:          x.Path,
+			SizeBytes:     int(x.SizeBytes),
+			SuggestedKind: x.SuggestedKind,
+			PartIndex:     x.PartIndex,
+		})
 	}
 	return out
 }
