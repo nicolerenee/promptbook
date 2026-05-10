@@ -100,6 +100,11 @@ func Notes(v string) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldEQ(FieldNotes, v))
 }
 
+// MediaInfoJSON applies equality check predicate on the "media_info_json" field. It's identical to MediaInfoJSONEQ.
+func MediaInfoJSON(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEQ(FieldMediaInfoJSON, v))
+}
+
 // AddedAt applies equality check predicate on the "added_at" field. It's identical to AddedAtEQ.
 func AddedAt(v time.Time) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldEQ(FieldAddedAt, v))
@@ -623,6 +628,71 @@ func NotesEqualFold(v string) predicate.RecordingVersion {
 // NotesContainsFold applies the ContainsFold predicate on the "notes" field.
 func NotesContainsFold(v string) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldContainsFold(FieldNotes, v))
+}
+
+// MediaInfoJSONEQ applies the EQ predicate on the "media_info_json" field.
+func MediaInfoJSONEQ(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEQ(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONNEQ applies the NEQ predicate on the "media_info_json" field.
+func MediaInfoJSONNEQ(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldNEQ(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONIn applies the In predicate on the "media_info_json" field.
+func MediaInfoJSONIn(vs ...string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldIn(FieldMediaInfoJSON, vs...))
+}
+
+// MediaInfoJSONNotIn applies the NotIn predicate on the "media_info_json" field.
+func MediaInfoJSONNotIn(vs ...string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldNotIn(FieldMediaInfoJSON, vs...))
+}
+
+// MediaInfoJSONGT applies the GT predicate on the "media_info_json" field.
+func MediaInfoJSONGT(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldGT(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONGTE applies the GTE predicate on the "media_info_json" field.
+func MediaInfoJSONGTE(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldGTE(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONLT applies the LT predicate on the "media_info_json" field.
+func MediaInfoJSONLT(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldLT(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONLTE applies the LTE predicate on the "media_info_json" field.
+func MediaInfoJSONLTE(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldLTE(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONContains applies the Contains predicate on the "media_info_json" field.
+func MediaInfoJSONContains(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldContains(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONHasPrefix applies the HasPrefix predicate on the "media_info_json" field.
+func MediaInfoJSONHasPrefix(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldHasPrefix(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONHasSuffix applies the HasSuffix predicate on the "media_info_json" field.
+func MediaInfoJSONHasSuffix(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldHasSuffix(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONEqualFold applies the EqualFold predicate on the "media_info_json" field.
+func MediaInfoJSONEqualFold(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEqualFold(FieldMediaInfoJSON, v))
+}
+
+// MediaInfoJSONContainsFold applies the ContainsFold predicate on the "media_info_json" field.
+func MediaInfoJSONContainsFold(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldContainsFold(FieldMediaInfoJSON, v))
 }
 
 // AddedAtEQ applies the EQ predicate on the "added_at" field.

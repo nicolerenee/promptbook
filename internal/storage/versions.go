@@ -21,6 +21,12 @@ const FormatSeparator = " | "
 // master alongside a 1080p compressed copy); the per-version format
 // labels are joined with FormatSeparator to form the recording-level
 // format string.
+//
+// MediaInfoJSON is the JSON-encoded probe.MediaInfo blob captured at
+// ingest time. It powers the Sonarr/Radarr-style media-info card on
+// the recording detail page; legacy versions imported before the
+// field existed leave it as the empty string and the GraphQL resolver
+// returns a null mediaInfo in that case.
 type RecordingVersion struct {
 	ID            int64
 	RecordingID   int64
@@ -32,6 +38,7 @@ type RecordingVersion struct {
 	AudioCodec    string
 	FormatLabel   string
 	Notes         string
+	MediaInfoJSON string
 	AddedAt       time.Time
 	LastSeenAt    time.Time
 }
@@ -108,6 +115,7 @@ func upsertVersion(
 		SetAudioCodec(v.AudioCodec).
 		SetFormatLabel(v.FormatLabel).
 		SetNotes(v.Notes).
+		SetMediaInfoJSON(v.MediaInfoJSON).
 		SetLastSeenAt(v.lastSeenOrNow()).
 		OnConflictColumns(
 			recordingversion.FieldRecordingID,
@@ -121,6 +129,7 @@ func upsertVersion(
 			u.UpdateAudioCodec()
 			u.UpdateFormatLabel()
 			u.UpdateNotes()
+			u.UpdateMediaInfoJSON()
 			u.UpdateLastSeenAt()
 		}).
 		Exec(ctx)
@@ -203,6 +212,7 @@ func recordingVersionFromEnt(r *ent.RecordingVersion) RecordingVersion {
 		AudioCodec:    r.AudioCodec,
 		FormatLabel:   r.FormatLabel,
 		Notes:         r.Notes,
+		MediaInfoJSON: r.MediaInfoJSON,
 		AddedAt:       r.AddedAt,
 		LastSeenAt:    r.LastSeenAt,
 	}

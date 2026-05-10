@@ -881,6 +881,11 @@ func (_q *RecordingVersionQuery) collectField(ctx context.Context, oneNode bool,
 				selectedFields = append(selectedFields, recordingversion.FieldNotes)
 				fieldSeen[recordingversion.FieldNotes] = struct{}{}
 			}
+		case "mediaInfoJSON":
+			if _, ok := fieldSeen[recordingversion.FieldMediaInfoJSON]; !ok {
+				selectedFields = append(selectedFields, recordingversion.FieldMediaInfoJSON)
+				fieldSeen[recordingversion.FieldMediaInfoJSON] = struct{}{}
+			}
 		case "addedAt":
 			if _, ok := fieldSeen[recordingversion.FieldAddedAt]; !ok {
 				selectedFields = append(selectedFields, recordingversion.FieldAddedAt)

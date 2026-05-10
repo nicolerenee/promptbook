@@ -5,6 +5,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -120,6 +121,11 @@ type ItemResult struct {
 	// Encora (i.e. it was not previously present in the local DB). Used by
 	// history-event recording to phrase the summary correctly.
 	AutoAdded bool
+	// MediaInfo is the probe.MediaInfo captured during buildPlan. Held
+	// here so recordVersion can persist the JSON-encoded blob alongside
+	// the new version row without re-running ffprobe. Zero value when
+	// the probe didn't run (early-skip pipelines).
+	MediaInfo probe.MediaInfo
 }
 
 // Result aggregates per-item outcomes.
@@ -243,6 +249,7 @@ func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bo
 		item.Action = ActionSkipped
 		return false
 	}
+	item.MediaInfo = info
 	parsed := match.Parse(filepath.Base(src))
 	plan, err := rename.BuildPlan(rename.PlanInputs{
 		Recording:      *item.Recording,
@@ -346,10 +353,33 @@ func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
 		VideoCodec:    videoCodec,
 		AudioCodec:    audioCodec,
 		FormatLabel:   DefaultFormatLabel(container, quality, videoCodec, size),
+		MediaInfoJSON: encodeMediaInfo(item.MediaInfo, e.Logger),
 	}
 	if upsertErr := storage.UpsertVersion(ctx, e.DB, version); upsertErr != nil {
 		e.Logger.Warn().Err(upsertErr).Msg("failed to record version")
 	}
+}
+
+// encodeMediaInfo JSON-encodes the probe.MediaInfo blob for
+// persistence on the recording_versions row. A marshal failure is
+// treated as a soft error: the version row still persists with an
+// empty media_info_json so the file move isn't blocked. The detail
+// page hides the media-info card when the JSON is empty / unparseable.
+func encodeMediaInfo(info probe.MediaInfo, logger zerolog.Logger) string {
+	// Empty MediaInfo is the sentinel for "probe didn't run" or the
+	// caller skipped it; persist empty string so the GraphQL resolver
+	// returns null mediaInfo.
+	if info.VideoCodec == "" && info.Width == 0 && info.Height == 0 &&
+		len(info.AudioStreams) == 0 && len(info.SubtitleStreams) == 0 &&
+		info.DurationSeconds == 0 {
+		return ""
+	}
+	b, err := json.Marshal(info)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to encode media info; persisting empty blob")
+		return ""
+	}
+	return string(b)
 }
 
 // recordIngestEvent persists a single history row summarizing the

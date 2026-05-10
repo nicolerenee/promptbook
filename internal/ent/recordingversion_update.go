@@ -163,6 +163,20 @@ func (_u *RecordingVersionUpdate) SetNillableNotes(v *string) *RecordingVersionU
 	return _u
 }
 
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (_u *RecordingVersionUpdate) SetMediaInfoJSON(v string) *RecordingVersionUpdate {
+	_u.mutation.SetMediaInfoJSON(v)
+	return _u
+}
+
+// SetNillableMediaInfoJSON sets the "media_info_json" field if the given value is not nil.
+func (_u *RecordingVersionUpdate) SetNillableMediaInfoJSON(v *string) *RecordingVersionUpdate {
+	if v != nil {
+		_u.SetMediaInfoJSON(*v)
+	}
+	return _u
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_u *RecordingVersionUpdate) SetAddedAt(v time.Time) *RecordingVersionUpdate {
 	_u.mutation.SetAddedAt(v)
@@ -286,6 +300,9 @@ func (_u *RecordingVersionUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(recordingversion.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.MediaInfoJSON(); ok {
+		_spec.SetField(recordingversion.FieldMediaInfoJSON, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)
@@ -477,6 +494,20 @@ func (_u *RecordingVersionUpdateOne) SetNillableNotes(v *string) *RecordingVersi
 	return _u
 }
 
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (_u *RecordingVersionUpdateOne) SetMediaInfoJSON(v string) *RecordingVersionUpdateOne {
+	_u.mutation.SetMediaInfoJSON(v)
+	return _u
+}
+
+// SetNillableMediaInfoJSON sets the "media_info_json" field if the given value is not nil.
+func (_u *RecordingVersionUpdateOne) SetNillableMediaInfoJSON(v *string) *RecordingVersionUpdateOne {
+	if v != nil {
+		_u.SetMediaInfoJSON(*v)
+	}
+	return _u
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_u *RecordingVersionUpdateOne) SetAddedAt(v time.Time) *RecordingVersionUpdateOne {
 	_u.mutation.SetAddedAt(v)
@@ -630,6 +661,9 @@ func (_u *RecordingVersionUpdateOne) sqlSave(ctx context.Context) (_node *Record
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(recordingversion.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.MediaInfoJSON(); ok {
+		_spec.SetField(recordingversion.FieldMediaInfoJSON, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)

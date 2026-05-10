@@ -211,6 +211,26 @@ const RECORDING_DETAIL_QUERY = `
           }
         }
       }
+      mediaInfo {
+        container
+        videoCodec
+        width
+        height
+        videoBitDepth
+        videoFps
+        durationSeconds
+        scanType
+        audioStreams {
+          codec
+          channelLayout
+          bitrate
+          language
+        }
+        subtitleStreams {
+          codec
+          language
+        }
+      }
     }
   }
 `;
@@ -304,6 +324,11 @@ function shapeRecordingDetail(node) {
       position:     (node.bannerLayout && node.bannerLayout.position) || '',
       image_region: (node.bannerLayout && node.bannerLayout.imageRegion) || '',
     },
+    // mediaInfo is the Sonarr-style ffprobe blob. null when the
+    // recording has no version row yet (orphan, missing) or the blob
+    // wasn't captured (legacy import). The card renders only when
+    // present.
+    media_info:            node.mediaInfo || null,
   };
 }
 
@@ -845,6 +870,155 @@ function versionRow(v, idx) {
   ]);
 }
 
+// formatMediaRunTime turns a duration in seconds into Sonarr's
+// "H:MM:SS" / "MM:SS" form. Hours are dropped when zero so a 44-min
+// recording reads "44:04" rather than "0:44:04".
+function formatMediaRunTime(seconds) {
+  const total = Math.floor(Math.max(0, Number(seconds) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (h > 0) return h + ':' + pad(m) + ':' + pad(s);
+  return pad(m) + ':' + pad(s);
+}
+
+// formatVideoCodec maps ffprobe codec names onto the labels Sonarr
+// surfaces — h264 → x264, hevc → x265 — so users see the names they
+// recognize from release groups. Unknown codecs pass through verbatim.
+function formatVideoCodec(codec) {
+  if (!codec) return '';
+  switch (codec.toLowerCase()) {
+    case 'h264':
+      return 'x264';
+    case 'hevc':
+    case 'h265':
+      return 'x265';
+    default:
+      return codec;
+  }
+}
+
+// formatScanType maps ffprobe field_order onto the human label. The
+// progressive case is overwhelmingly common; tt/bb/tb/bt indicate
+// interlaced streams and surface as a single "Interlaced" bucket
+// because the user doesn't care which field comes first.
+function formatScanType(scan) {
+  if (!scan) return '—';
+  const lower = String(scan).toLowerCase();
+  if (lower === 'progressive') return 'Progressive';
+  if (lower === 'tt' || lower === 'bb' || lower === 'tb' || lower === 'bt') {
+    return 'Interlaced';
+  }
+  // Defensive: anything else (rare) renders capitalized for legibility.
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+// joinUnique returns a "/"-separated list of the input strings,
+// preserving order but dropping duplicates and empty values. Mirrors
+// Sonarr's "eng/eng" rendering for two English audio streams.
+function joinUnique(values, sep) {
+  const seen = new Set();
+  const out = [];
+  for (const v of values || []) {
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    // Sonarr renders duplicates verbatim ("eng/eng") so the user can
+    // see the per-stream count. Keep duplicates by NOT adding to seen
+    // when the caller passes the raw list. Callers that want dedup
+    // pass through Set-deduplicated input.
+    seen.add(v);
+    out.push(v);
+  }
+  return out.join(sep || '/');
+}
+
+// audioLanguagesDisplay returns the Sonarr-style "eng/eng" form: one
+// token per audio stream, tokens NOT deduplicated, empty strings
+// dropped. Matches the reference card the user pasted.
+function audioLanguagesDisplay(streams) {
+  const tokens = (streams || [])
+    .map((s) => s && s.language ? s.language : '')
+    .filter(Boolean);
+  if (tokens.length === 0) return '—';
+  return tokens.join('/');
+}
+
+// audioChannelsDisplay joins each stream's channelLayout — falling
+// through to "{n}-channel" semantics is already handled server-side.
+// Multiple streams join with " / " so 5.1 + stereo reads "5.1 / stereo".
+function audioChannelsDisplay(streams) {
+  const labels = (streams || [])
+    .map((s) => s && s.channelLayout ? s.channelLayout : '')
+    .filter(Boolean);
+  if (labels.length === 0) return '—';
+  return labels.join(' / ');
+}
+
+// subtitleLanguagesDisplay returns the unique "/"-joined subtitle
+// languages.
+function subtitleLanguagesDisplay(streams) {
+  return joinUnique(
+    (streams || []).map((s) => s && s.language ? s.language : ''),
+    '/',
+  );
+}
+
+// renderMediaInfoCard renders the Sonarr-style media info table on the
+// recording detail page. Hidden entirely when mediaInfo is null
+// (legacy imports, recordings without a versions row, or unparseable
+// blobs); each row is hidden inside the table when its specific field
+// is missing (audio bitrate of 0 means ffprobe didn't expose it).
+function renderMediaInfoCard(loaded) {
+  const mi = loaded && loaded.media_info;
+  if (!mi) return null;
+  const audio = mi.audioStreams || [];
+  const subs = mi.subtitleStreams || [];
+  const firstAudio = audio[0] || null;
+  const rows = [];
+  if (firstAudio && firstAudio.bitrate > 0) {
+    rows.push(['Audio Bitrate', String(firstAudio.bitrate)]);
+  }
+  rows.push(['Audio Channels', audioChannelsDisplay(audio)]);
+  if (firstAudio && firstAudio.codec) {
+    rows.push(['Audio Codec', String(firstAudio.codec).toUpperCase()]);
+  }
+  rows.push(['Audio Languages', audioLanguagesDisplay(audio)]);
+  rows.push(['Audio Stream Count', String(audio.length)]);
+  rows.push(['Video Bit Depth', String(mi.videoBitDepth || 0)]);
+  rows.push(['Video Codec', formatVideoCodec(mi.videoCodec) || '—']);
+  if (mi.videoFps && mi.videoFps > 0) {
+    rows.push(['Video Fps', mi.videoFps.toFixed(3)]);
+  } else {
+    rows.push(['Video Fps', '—']);
+  }
+  if (mi.width > 0 && mi.height > 0) {
+    rows.push(['Resolution', mi.width + 'x' + mi.height]);
+  } else {
+    rows.push(['Resolution', '—']);
+  }
+  if (mi.durationSeconds && mi.durationSeconds > 0) {
+    rows.push(['Run Time', formatMediaRunTime(mi.durationSeconds)]);
+  } else {
+    rows.push(['Run Time', '—']);
+  }
+  rows.push(['Scan Type', formatScanType(mi.scanType)]);
+  rows.push(['Subtitles', subtitleLanguagesDisplay(subs)]);
+
+  return m('div', { class: 'card bg-base-100 shadow-sm' },
+    m('div', { class: 'card-body' }, [
+      m('h2', { class: 'card-title text-base' }, 'Media Info'),
+      m('div', { class: 'divide-y divide-base-200' },
+        rows.map(([label, value]) => m('div', {
+          class: 'flex justify-between gap-4 py-1 text-sm',
+        }, [
+          m('span', { class: 'opacity-60' }, label),
+          m('span', { class: 'font-mono text-right break-all' },
+            value || '—'),
+        ]))),
+    ]));
+}
+
 // renderNFOCard surfaces the on-disk movie.nfo when the server read
 // one. We deliberately skip the synthetic "PREVIEW" fallback the
 // legacy page rendered — the new layout simply omits the card when
@@ -1352,6 +1526,7 @@ function maybeLoadPickerOptions(id, tab) {
 function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
   const nfoCard = renderNFOCard(loaded);
+  const mediaInfoCard = renderMediaInfoCard(loaded);
   return m('div', { class: 'grid gap-6 lg:grid-cols-3' }, [
     m('div', { class: 'lg:col-span-1 space-y-6' }, [
       renderPosterCard(loaded),
@@ -1361,6 +1536,7 @@ function renderBody(loaded) {
     m('div', { class: 'lg:col-span-2 space-y-6' }, [
       renderCastCard(loaded),
       renderVersionsCard(loaded),
+      mediaInfoCard,
       nfoCard,
     ]),
   ]);

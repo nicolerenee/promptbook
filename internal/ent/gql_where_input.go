@@ -2992,6 +2992,21 @@ type RecordingVersionWhereInput struct {
 	NotesEqualFold    *string  `json:"notesEqualFold,omitempty"`
 	NotesContainsFold *string  `json:"notesContainsFold,omitempty"`
 
+	// "media_info_json" field predicates.
+	MediaInfoJSON             *string  `json:"mediaInfoJSON,omitempty"`
+	MediaInfoJSONNEQ          *string  `json:"mediaInfoJSONNEQ,omitempty"`
+	MediaInfoJSONIn           []string `json:"mediaInfoJSONIn,omitempty"`
+	MediaInfoJSONNotIn        []string `json:"mediaInfoJSONNotIn,omitempty"`
+	MediaInfoJSONGT           *string  `json:"mediaInfoJSONGT,omitempty"`
+	MediaInfoJSONGTE          *string  `json:"mediaInfoJSONGTE,omitempty"`
+	MediaInfoJSONLT           *string  `json:"mediaInfoJSONLT,omitempty"`
+	MediaInfoJSONLTE          *string  `json:"mediaInfoJSONLTE,omitempty"`
+	MediaInfoJSONContains     *string  `json:"mediaInfoJSONContains,omitempty"`
+	MediaInfoJSONHasPrefix    *string  `json:"mediaInfoJSONHasPrefix,omitempty"`
+	MediaInfoJSONHasSuffix    *string  `json:"mediaInfoJSONHasSuffix,omitempty"`
+	MediaInfoJSONEqualFold    *string  `json:"mediaInfoJSONEqualFold,omitempty"`
+	MediaInfoJSONContainsFold *string  `json:"mediaInfoJSONContainsFold,omitempty"`
+
 	// "added_at" field predicates.
 	AddedAt      *time.Time  `json:"addedAt,omitempty"`
 	AddedAtNEQ   *time.Time  `json:"addedAtNEQ,omitempty"`
@@ -3420,6 +3435,45 @@ func (i *RecordingVersionWhereInput) P() (predicate.RecordingVersion, error) {
 	}
 	if i.NotesContainsFold != nil {
 		predicates = append(predicates, recordingversion.NotesContainsFold(*i.NotesContainsFold))
+	}
+	if i.MediaInfoJSON != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONEQ(*i.MediaInfoJSON))
+	}
+	if i.MediaInfoJSONNEQ != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONNEQ(*i.MediaInfoJSONNEQ))
+	}
+	if len(i.MediaInfoJSONIn) > 0 {
+		predicates = append(predicates, recordingversion.MediaInfoJSONIn(i.MediaInfoJSONIn...))
+	}
+	if len(i.MediaInfoJSONNotIn) > 0 {
+		predicates = append(predicates, recordingversion.MediaInfoJSONNotIn(i.MediaInfoJSONNotIn...))
+	}
+	if i.MediaInfoJSONGT != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONGT(*i.MediaInfoJSONGT))
+	}
+	if i.MediaInfoJSONGTE != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONGTE(*i.MediaInfoJSONGTE))
+	}
+	if i.MediaInfoJSONLT != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONLT(*i.MediaInfoJSONLT))
+	}
+	if i.MediaInfoJSONLTE != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONLTE(*i.MediaInfoJSONLTE))
+	}
+	if i.MediaInfoJSONContains != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONContains(*i.MediaInfoJSONContains))
+	}
+	if i.MediaInfoJSONHasPrefix != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONHasPrefix(*i.MediaInfoJSONHasPrefix))
+	}
+	if i.MediaInfoJSONHasSuffix != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONHasSuffix(*i.MediaInfoJSONHasSuffix))
+	}
+	if i.MediaInfoJSONEqualFold != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONEqualFold(*i.MediaInfoJSONEqualFold))
+	}
+	if i.MediaInfoJSONContainsFold != nil {
+		predicates = append(predicates, recordingversion.MediaInfoJSONContainsFold(*i.MediaInfoJSONContainsFold))
 	}
 	if i.AddedAt != nil {
 		predicates = append(predicates, recordingversion.AddedAtEQ(*i.AddedAt))

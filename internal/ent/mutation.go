@@ -9621,6 +9621,7 @@ type RecordingVersionMutation struct {
 	audio_codec        *string
 	format_label       *string
 	notes              *string
+	media_info_json    *string
 	added_at           *time.Time
 	last_seen_at       *time.Time
 	clearedFields      map[string]struct{}
@@ -10079,6 +10080,42 @@ func (m *RecordingVersionMutation) ResetNotes() {
 	m.notes = nil
 }
 
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (m *RecordingVersionMutation) SetMediaInfoJSON(s string) {
+	m.media_info_json = &s
+}
+
+// MediaInfoJSON returns the value of the "media_info_json" field in the mutation.
+func (m *RecordingVersionMutation) MediaInfoJSON() (r string, exists bool) {
+	v := m.media_info_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMediaInfoJSON returns the old "media_info_json" field's value of the RecordingVersion entity.
+// If the RecordingVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RecordingVersionMutation) OldMediaInfoJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMediaInfoJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMediaInfoJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMediaInfoJSON: %w", err)
+	}
+	return oldValue.MediaInfoJSON, nil
+}
+
+// ResetMediaInfoJSON resets all changes to the "media_info_json" field.
+func (m *RecordingVersionMutation) ResetMediaInfoJSON() {
+	m.media_info_json = nil
+}
+
 // SetAddedAt sets the "added_at" field.
 func (m *RecordingVersionMutation) SetAddedAt(t time.Time) {
 	m.added_at = &t
@@ -10212,7 +10249,7 @@ func (m *RecordingVersionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RecordingVersionMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.recording != nil {
 		fields = append(fields, recordingversion.FieldRecordingID)
 	}
@@ -10239,6 +10276,9 @@ func (m *RecordingVersionMutation) Fields() []string {
 	}
 	if m.notes != nil {
 		fields = append(fields, recordingversion.FieldNotes)
+	}
+	if m.media_info_json != nil {
+		fields = append(fields, recordingversion.FieldMediaInfoJSON)
 	}
 	if m.added_at != nil {
 		fields = append(fields, recordingversion.FieldAddedAt)
@@ -10272,6 +10312,8 @@ func (m *RecordingVersionMutation) Field(name string) (ent.Value, bool) {
 		return m.FormatLabel()
 	case recordingversion.FieldNotes:
 		return m.Notes()
+	case recordingversion.FieldMediaInfoJSON:
+		return m.MediaInfoJSON()
 	case recordingversion.FieldAddedAt:
 		return m.AddedAt()
 	case recordingversion.FieldLastSeenAt:
@@ -10303,6 +10345,8 @@ func (m *RecordingVersionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldFormatLabel(ctx)
 	case recordingversion.FieldNotes:
 		return m.OldNotes(ctx)
+	case recordingversion.FieldMediaInfoJSON:
+		return m.OldMediaInfoJSON(ctx)
 	case recordingversion.FieldAddedAt:
 		return m.OldAddedAt(ctx)
 	case recordingversion.FieldLastSeenAt:
@@ -10378,6 +10422,13 @@ func (m *RecordingVersionMutation) SetField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetNotes(v)
+		return nil
+	case recordingversion.FieldMediaInfoJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMediaInfoJSON(v)
 		return nil
 	case recordingversion.FieldAddedAt:
 		v, ok := value.(time.Time)
@@ -10483,6 +10534,9 @@ func (m *RecordingVersionMutation) ResetField(name string) error {
 		return nil
 	case recordingversion.FieldNotes:
 		m.ResetNotes()
+		return nil
+	case recordingversion.FieldMediaInfoJSON:
+		m.ResetMediaInfoJSON()
 		return nil
 	case recordingversion.FieldAddedAt:
 		m.ResetAddedAt()

@@ -133,6 +133,20 @@ func (_c *RecordingVersionCreate) SetNillableNotes(v *string) *RecordingVersionC
 	return _c
 }
 
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (_c *RecordingVersionCreate) SetMediaInfoJSON(v string) *RecordingVersionCreate {
+	_c.mutation.SetMediaInfoJSON(v)
+	return _c
+}
+
+// SetNillableMediaInfoJSON sets the "media_info_json" field if the given value is not nil.
+func (_c *RecordingVersionCreate) SetNillableMediaInfoJSON(v *string) *RecordingVersionCreate {
+	if v != nil {
+		_c.SetMediaInfoJSON(*v)
+	}
+	return _c
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_c *RecordingVersionCreate) SetAddedAt(v time.Time) *RecordingVersionCreate {
 	_c.mutation.SetAddedAt(v)
@@ -235,6 +249,10 @@ func (_c *RecordingVersionCreate) defaults() {
 		v := recordingversion.DefaultNotes
 		_c.mutation.SetNotes(v)
 	}
+	if _, ok := _c.mutation.MediaInfoJSON(); !ok {
+		v := recordingversion.DefaultMediaInfoJSON
+		_c.mutation.SetMediaInfoJSON(v)
+	}
 	if _, ok := _c.mutation.AddedAt(); !ok {
 		v := recordingversion.DefaultAddedAt()
 		_c.mutation.SetAddedAt(v)
@@ -273,6 +291,9 @@ func (_c *RecordingVersionCreate) check() error {
 	}
 	if _, ok := _c.mutation.Notes(); !ok {
 		return &ValidationError{Name: "notes", err: errors.New(`ent: missing required field "RecordingVersion.notes"`)}
+	}
+	if _, ok := _c.mutation.MediaInfoJSON(); !ok {
+		return &ValidationError{Name: "media_info_json", err: errors.New(`ent: missing required field "RecordingVersion.media_info_json"`)}
 	}
 	if _, ok := _c.mutation.AddedAt(); !ok {
 		return &ValidationError{Name: "added_at", err: errors.New(`ent: missing required field "RecordingVersion.added_at"`)}
@@ -347,6 +368,10 @@ func (_c *RecordingVersionCreate) createSpec() (*RecordingVersion, *sqlgraph.Cre
 	if value, ok := _c.mutation.Notes(); ok {
 		_spec.SetField(recordingversion.FieldNotes, field.TypeString, value)
 		_node.Notes = value
+	}
+	if value, ok := _c.mutation.MediaInfoJSON(); ok {
+		_spec.SetField(recordingversion.FieldMediaInfoJSON, field.TypeString, value)
+		_node.MediaInfoJSON = value
 	}
 	if value, ok := _c.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)
@@ -536,6 +561,18 @@ func (u *RecordingVersionUpsert) SetNotes(v string) *RecordingVersionUpsert {
 // UpdateNotes sets the "notes" field to the value that was provided on create.
 func (u *RecordingVersionUpsert) UpdateNotes() *RecordingVersionUpsert {
 	u.SetExcluded(recordingversion.FieldNotes)
+	return u
+}
+
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (u *RecordingVersionUpsert) SetMediaInfoJSON(v string) *RecordingVersionUpsert {
+	u.Set(recordingversion.FieldMediaInfoJSON, v)
+	return u
+}
+
+// UpdateMediaInfoJSON sets the "media_info_json" field to the value that was provided on create.
+func (u *RecordingVersionUpsert) UpdateMediaInfoJSON() *RecordingVersionUpsert {
+	u.SetExcluded(recordingversion.FieldMediaInfoJSON)
 	return u
 }
 
@@ -741,6 +778,20 @@ func (u *RecordingVersionUpsertOne) SetNotes(v string) *RecordingVersionUpsertOn
 func (u *RecordingVersionUpsertOne) UpdateNotes() *RecordingVersionUpsertOne {
 	return u.Update(func(s *RecordingVersionUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (u *RecordingVersionUpsertOne) SetMediaInfoJSON(v string) *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.SetMediaInfoJSON(v)
+	})
+}
+
+// UpdateMediaInfoJSON sets the "media_info_json" field to the value that was provided on create.
+func (u *RecordingVersionUpsertOne) UpdateMediaInfoJSON() *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.UpdateMediaInfoJSON()
 	})
 }
 
@@ -1116,6 +1167,20 @@ func (u *RecordingVersionUpsertBulk) SetNotes(v string) *RecordingVersionUpsertB
 func (u *RecordingVersionUpsertBulk) UpdateNotes() *RecordingVersionUpsertBulk {
 	return u.Update(func(s *RecordingVersionUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetMediaInfoJSON sets the "media_info_json" field.
+func (u *RecordingVersionUpsertBulk) SetMediaInfoJSON(v string) *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.SetMediaInfoJSON(v)
+	})
+}
+
+// UpdateMediaInfoJSON sets the "media_info_json" field to the value that was provided on create.
+func (u *RecordingVersionUpsertBulk) UpdateMediaInfoJSON() *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.UpdateMediaInfoJSON()
 	})
 }
 

@@ -314,6 +314,7 @@ var (
 		{Name: "audio_codec", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "format_label", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "notes", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "media_info_json", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "added_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP", SchemaType: map[string]string{"sqlite3": "datetime"}},
 		{Name: "last_seen_at", Type: field.TypeTime, Default: "CURRENT_TIMESTAMP", SchemaType: map[string]string{"sqlite3": "datetime"}},
 		{Name: "recording_id", Type: field.TypeInt64},
@@ -326,7 +327,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "recording_versions_recordings_versions",
-				Columns:    []*schema.Column{RecordingVersionsColumns[11]},
+				Columns:    []*schema.Column{RecordingVersionsColumns[12]},
 				RefColumns: []*schema.Column{RecordingsColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -335,12 +336,12 @@ var (
 			{
 				Name:    "recordingversion_recording_id",
 				Unique:  false,
-				Columns: []*schema.Column{RecordingVersionsColumns[11]},
+				Columns: []*schema.Column{RecordingVersionsColumns[12]},
 			},
 			{
 				Name:    "recordingversion_recording_id_file_path",
 				Unique:  true,
-				Columns: []*schema.Column{RecordingVersionsColumns[11], RecordingVersionsColumns[1]},
+				Columns: []*schema.Column{RecordingVersionsColumns[12], RecordingVersionsColumns[1]},
 			},
 		},
 	}

@@ -247,6 +247,13 @@ func TestEngineIngestRealMove(t *testing.T) {
 	require.Len(t, versions, 1, "exactly one version row recorded")
 	assert.Equal(t, item.Plan.AbsoluteFile(), versions[0].FilePath)
 	assert.Equal(t, int64(len("video bytes")), versions[0].FileSizeBytes)
+	// The probe blob is JSON-encoded onto media_info_json so the
+	// recording detail page can render its Sonarr-style media-info
+	// card without re-running ffprobe at read time.
+	assert.NotEmpty(t, versions[0].MediaInfoJSON,
+		"media_info_json blob must be populated when probe ran")
+	assert.Contains(t, versions[0].MediaInfoJSON, `"videoCodec":"h264"`,
+		"persisted blob must carry the probe codec")
 }
 
 func TestEngineIngestSkipsUnknownID(t *testing.T) {

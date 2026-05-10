@@ -285,6 +285,14 @@ func (r *recordingResolver) CollectedAt(ctx context.Context, obj *ent.Recording)
 	return &s, nil
 }
 
+// MediaInfo is the resolver for the mediaInfo field. Pass-through to
+// the resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *recordingResolver) MediaInfo(ctx context.Context, obj *ent.Recording) (*MediaInfo, error) {
+	return r.Resolver.recordingMediaInfo(ctx, obj.ID)
+}
+
 // LocalBannerURL is the resolver for the localBannerURL field. Same
 // fall-through-to-placeholder semantics as RecordingPosterURL — the
 // SPA always gets a valid path.

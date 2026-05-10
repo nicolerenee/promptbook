@@ -917,6 +917,7 @@ type RecordingVersion implements Node {
   audioCodec: String!
   formatLabel: String!
   notes: String!
+  mediaInfoJSON: String!
   addedAt: Time!
   lastSeenAt: Time!
   recording: Recording!
@@ -1100,6 +1101,22 @@ input RecordingVersionWhereInput {
   notesHasSuffix: String
   notesEqualFold: String
   notesContainsFold: String
+  """
+  media_info_json field predicates
+  """
+  mediaInfoJSON: String
+  mediaInfoJSONNEQ: String
+  mediaInfoJSONIn: [String!]
+  mediaInfoJSONNotIn: [String!]
+  mediaInfoJSONGT: String
+  mediaInfoJSONGTE: String
+  mediaInfoJSONLT: String
+  mediaInfoJSONLTE: String
+  mediaInfoJSONContains: String
+  mediaInfoJSONHasPrefix: String
+  mediaInfoJSONHasSuffix: String
+  mediaInfoJSONEqualFold: String
+  mediaInfoJSONContainsFold: String
   """
   added_at field predicates
   """

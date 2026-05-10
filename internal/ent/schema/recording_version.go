@@ -45,6 +45,14 @@ func (RecordingVersion) Fields() []ent.Field {
 		field.Text("audio_codec").Default(""),
 		field.Text("format_label").Default(""),
 		field.Text("notes").Default(""),
+		// media_info_json is the JSON-encoded probe.MediaInfo for this
+		// version's source file. Persisted as a single TEXT blob (not
+		// normalized to columns) because the data is display-only and
+		// the shape evolves as ffprobe surfaces add fields. Empty
+		// string when no probe ran (legacy imports before the field
+		// existed); the GraphQL resolver decodes "" / "{}" / null as
+		// "no media info".
+		field.Text("media_info_json").Default(""),
 		field.Time("added_at").
 			Default(time.Now).
 			SchemaType(sqliteSchema(typeDatetime)).

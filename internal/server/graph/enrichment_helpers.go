@@ -24,6 +24,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
+	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
@@ -32,6 +33,90 @@ import (
 // description scan inspects before giving up. Most shows resolve on
 // the first row; 16 is overkill but cheap.
 const showDescriptionScanLimit = 16
+
+// recordingMediaInfo is the resolver body for Recording.mediaInfo. It
+// reads the latest recording_versions row (largest file first, the
+// same order ListVersions returns) and decodes its media_info_json
+// blob into the GraphQL MediaInfo shape. Returns nil — i.e. the
+// GraphQL field renders as null — when there is no version, the blob
+// is empty (legacy import before the field existed), or the JSON is
+// unparseable. The detail page hides the media-info card on null.
+func (r *Resolver) recordingMediaInfo(
+	ctx context.Context, recordingID int64,
+) (*MediaInfo, error) {
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	if len(versions) == 0 {
+		return nil, nil //nolint:nilnil // null when no version row exists.
+	}
+	blob := strings.TrimSpace(versions[0].MediaInfoJSON)
+	if blob == "" || blob == "null" || blob == "{}" {
+		return nil, nil //nolint:nilnil // null when no media info captured.
+	}
+	info, ok := decodeMediaInfoBlob(blob)
+	if !ok {
+		// Malformed blob is not fatal — a future re-ingest will fix
+		// it; in the meantime the SPA hides the card.
+		return nil, nil //nolint:nilnil // null when blob is unparseable.
+	}
+	return mediaInfoToGraphQL(info, versions[0].Container), nil
+}
+
+// decodeMediaInfoBlob unmarshals the persisted JSON blob into the
+// probe.MediaInfo shape. The bool reports whether decoding succeeded
+// — recordingMediaInfo treats a parse failure as "no media info" and
+// returns nil to the GraphQL field. Pulled out so the resolver-side
+// nil-on-error branch doesn't trip the nilerr lint.
+func decodeMediaInfoBlob(blob string) (probe.MediaInfo, bool) {
+	var info probe.MediaInfo
+	if err := json.Unmarshal([]byte(blob), &info); err != nil {
+		return probe.MediaInfo{}, false
+	}
+	return info, true
+}
+
+// mediaInfoToGraphQL projects probe.MediaInfo onto the GraphQL
+// MediaInfo type. Container falls back to the persisted
+// versions[0].Container value when the persisted blob doesn't carry
+// one (defensive — the encode path always sets it via filepath.Ext on
+// the destination, but legacy / partial blobs aren't guaranteed to).
+func mediaInfoToGraphQL(info probe.MediaInfo, fallbackContainer string) *MediaInfo {
+	out := &MediaInfo{
+		Container:       info.Container,
+		VideoCodec:      info.VideoCodec,
+		Width:           info.Width,
+		Height:          info.Height,
+		VideoBitDepth:   info.VideoBitDepth,
+		VideoFps:        info.VideoFps,
+		DurationSeconds: info.DurationSeconds,
+		ScanType:        info.ScanType,
+		AudioStreams:    make([]*AudioStream, 0, len(info.AudioStreams)),
+		SubtitleStreams: make([]*SubtitleStream, 0, len(info.SubtitleStreams)),
+	}
+	if out.Container == "" {
+		// Legacy fallback — strip dot, uppercase to match the rename
+		// path's convention.
+		out.Container = strings.ToUpper(fallbackContainer)
+	}
+	for _, a := range info.AudioStreams {
+		out.AudioStreams = append(out.AudioStreams, &AudioStream{
+			Codec:         a.Codec,
+			ChannelLayout: a.ChannelLayout,
+			Bitrate:       a.Bitrate,
+			Language:      a.Language,
+		})
+	}
+	for _, s := range info.SubtitleStreams {
+		out.SubtitleStreams = append(out.SubtitleStreams, &SubtitleStream{
+			Codec:    s.Codec,
+			Language: s.Language,
+		})
+	}
+	return out
+}
 
 // readRecordingNFO is the shared helper behind nfoContent +
 // nfoModifiedAt. Keeps the disk read in one place so both fields

@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+type AudioStream struct {
+	Codec         string `json:"codec"`
+	ChannelLayout string `json:"channelLayout"`
+	Bitrate       int    `json:"bitrate"`
+	Language      string `json:"language"`
+}
+
 type BannerLayout struct {
 	Position    string `json:"position"`
 	ImageRegion string `json:"imageRegion"`
@@ -27,6 +34,19 @@ type ImportQueueEntryPayload struct {
 	Action string `json:"action"`
 	Dest   string `json:"dest"`
 	Error  string `json:"error"`
+}
+
+type MediaInfo struct {
+	Container       string            `json:"container"`
+	VideoCodec      string            `json:"videoCodec"`
+	Width           int               `json:"width"`
+	Height          int               `json:"height"`
+	VideoBitDepth   int               `json:"videoBitDepth"`
+	VideoFps        float64           `json:"videoFps"`
+	DurationSeconds float64           `json:"durationSeconds"`
+	ScanType        string            `json:"scanType"`
+	AudioStreams    []*AudioStream    `json:"audioStreams"`
+	SubtitleStreams []*SubtitleStream `json:"subtitleStreams"`
 }
 
 type PersonDetail struct {
@@ -143,4 +163,9 @@ type ShowsListPage struct {
 	Total  int              `json:"total"`
 	Limit  int              `json:"limit"`
 	Offset int              `json:"offset"`
+}
+
+type SubtitleStream struct {
+	Codec    string `json:"codec"`
+	Language string `json:"language"`
 }

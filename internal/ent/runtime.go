@@ -336,12 +336,16 @@ func init() {
 	recordingversionDescNotes := recordingversionFields[9].Descriptor()
 	// recordingversion.DefaultNotes holds the default value on creation for the notes field.
 	recordingversion.DefaultNotes = recordingversionDescNotes.Default.(string)
+	// recordingversionDescMediaInfoJSON is the schema descriptor for media_info_json field.
+	recordingversionDescMediaInfoJSON := recordingversionFields[10].Descriptor()
+	// recordingversion.DefaultMediaInfoJSON holds the default value on creation for the media_info_json field.
+	recordingversion.DefaultMediaInfoJSON = recordingversionDescMediaInfoJSON.Default.(string)
 	// recordingversionDescAddedAt is the schema descriptor for added_at field.
-	recordingversionDescAddedAt := recordingversionFields[10].Descriptor()
+	recordingversionDescAddedAt := recordingversionFields[11].Descriptor()
 	// recordingversion.DefaultAddedAt holds the default value on creation for the added_at field.
 	recordingversion.DefaultAddedAt = recordingversionDescAddedAt.Default.(func() time.Time)
 	// recordingversionDescLastSeenAt is the schema descriptor for last_seen_at field.
-	recordingversionDescLastSeenAt := recordingversionFields[11].Descriptor()
+	recordingversionDescLastSeenAt := recordingversionFields[12].Descriptor()
 	// recordingversion.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
 	recordingversion.DefaultLastSeenAt = recordingversionDescLastSeenAt.Default.(func() time.Time)
 	showFields := schema.Show{}.Fields()

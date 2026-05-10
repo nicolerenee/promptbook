@@ -52,6 +52,37 @@ type ResolvedCastEntry {
   localHeadshotURL: String!
 }
 
+# AudioStream / SubtitleStream / MediaInfo are the Sonarr-style media
+# info shape the recording detail page renders as a table. Sourced
+# from probe.MediaInfo persisted on the latest recording_versions row
+# (media_info_json blob) at ingest time; legacy versions imported
+# before the field existed have a nil mediaInfo and the SPA hides the
+# card.
+type AudioStream {
+  codec: String!
+  channelLayout: String!
+  bitrate: Int!
+  language: String!
+}
+
+type SubtitleStream {
+  codec: String!
+  language: String!
+}
+
+type MediaInfo {
+  container: String!
+  videoCodec: String!
+  width: Int!
+  height: Int!
+  videoBitDepth: Int!
+  videoFps: Float!
+  durationSeconds: Float!
+  scanType: String!
+  audioStreams: [AudioStream!]!
+  subtitleStreams: [SubtitleStream!]!
+}
+
 # Recording field extensions. status comes from the storage.LoadState
 # reconciler; the URL fields and nfo* fields read from disk through
 # the image cache + filesystem helpers. bannerLayout +
@@ -76,6 +107,11 @@ extend type Recording {
   encoraFormat: String!
   localFormatString: String!
   collectedAt: String
+  # mediaInfo is the Sonarr-style probe data captured at ingest time.
+  # Reads the latest recording_versions row's media_info_json blob and
+  # decodes it; nil when there is no version yet or the blob is empty
+  # / unparseable (legacy imports stay nil until they're re-ingested).
+  mediaInfo: MediaInfo
 }
 
 # Show field extensions. localBannerURL + recordingCount + stateCounts
