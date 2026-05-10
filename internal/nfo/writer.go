@@ -18,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
@@ -154,19 +153,15 @@ func FromRecording(r encora.Recording) MovieNFO {
 // formatRole renders the cast row's role string, prefixing the status
 // abbreviation (u/s, alt, s/w, e/c, t/r) when present so understudies
 // + swings + alternates surface in the Jellyfin cast list. Mirrors
-// the prefix-the-role convention the legacy hand-rolled writer used.
-// Capitalizes the first letter of the abbreviation so "u/s Elsa"
-// renders as "U/s Elsa" — Jellyfin echoes the role as-is.
+// Encora's own display ("u/s Elsa") — abbreviation is passed through
+// lowercase as Encora returns it; whatever capitalization the media
+// server's CSS applies is up to that server.
 func formatRole(c encora.CastEntry) string {
 	role := c.Character.Name
 	if c.Status == nil || c.Status.Abbreviation == "" {
 		return role
 	}
 	abbrev := c.Status.Abbreviation
-	if r := []rune(abbrev); len(r) > 0 {
-		r[0] = unicode.ToUpper(r[0])
-		abbrev = string(r)
-	}
 	if role == "" {
 		return abbrev
 	}

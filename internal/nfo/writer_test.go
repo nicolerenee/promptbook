@@ -311,9 +311,9 @@ func TestFormatRoleWithStatus(t *testing.T) {
 	}{
 		{"no status", nil, "Elsa", "Elsa"},
 		{"empty abbrev", &encora.CastStatus{}, "Elsa", "Elsa"},
-		{"understudy", &encora.CastStatus{Abbreviation: "u/s"}, "Elsa", "U/s Elsa"},
-		{"alternate", &encora.CastStatus{Abbreviation: "alt"}, "Companion", "Alt Companion"},
-		{"swing", &encora.CastStatus{Abbreviation: "s/w"}, "", "S/w"},
+		{"understudy", &encora.CastStatus{Abbreviation: "u/s"}, "Elsa", "u/s Elsa"},
+		{"alternate", &encora.CastStatus{Abbreviation: "alt"}, "Companion", "alt Companion"},
+		{"swing", &encora.CastStatus{Abbreviation: "s/w"}, "", "s/w"},
 	}
 
 	for _, tt := range tests {
