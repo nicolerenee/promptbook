@@ -1266,7 +1266,10 @@ function renderHeader(loaded) {
   const statusMeta = STATUS_META[status] || STATUS_META.orphan;
   const owners = (meta.owners_count != null) ? Number(meta.owners_count) : 0;
   const wanters = (meta.wanters_count != null) ? Number(meta.wanters_count) : 0;
-  const nft = nftBadge(loaded);
+  // The standalone NFT pill is gone — tradingBadge already covers the
+  // NFT state (red until the date, green after, green when no NFT).
+  // A duplicate "NFT" chip sat next to "No Trading until ..." and
+  // duplicated the same signal.
   const badgeRow = [
     m('span', { class: 'badge ' + statusMeta.badge }, statusMeta.label),
     giftingBadge(meta.gifting_status || ''),
@@ -1279,7 +1282,6 @@ function renderHeader(loaded) {
       ? m('span', { class: 'badge badge-ghost badge-sm' },
           String(wanters) + ' wants')
       : null,
-    nft,
   ];
 
   // Plot — show the recording's trading/general notes (the per-
@@ -1368,9 +1370,12 @@ function giftingBadge(status) {
 
 // tradingBadge combines gifting_status + nft to render the trading
 // pill. Hard "No Trading" when the gifting status forbids it or NFT
-// is set forever; warning "No Trading until YYYY-MM-DD" when an NFT
-// expiry date applies; success "Trading OK" otherwise. Always returns
-// a badge so the row carries a clear trading-state signal.
+// is set forever. NFT-with-date keeps the "No Trading until {date}"
+// text either way but flips colour: warning yellow while the date is
+// in the future, success green once it's past — the constraint is
+// over but the audit-trail label still tells the user when it
+// expired. "Trading OK" when no constraints apply. Always returns a
+// badge so the row carries a clear trading-state signal.
 function tradingBadge(loaded) {
   const r = loaded.Recording || {};
   const meta = r.metadata || {};
@@ -1386,7 +1391,13 @@ function tradingBadge(loaded) {
     // RFC3339 timestamp depending on origin; either way the date
     // portion is the leading 10 chars.
     const stamp = String(nft.nft_date).substring(0, 10);
-    return m('span', { class: 'badge badge-warning' },
+    // Date-only ISO parses as UTC midnight; comparing to Date.now()
+    // gives the correct "is the constraint still active" answer
+    // regardless of the user's timezone.
+    const expiry = Date.parse(stamp);
+    const past = !isNaN(expiry) && expiry <= Date.now();
+    const colour = past ? 'badge-success' : 'badge-warning';
+    return m('span', { class: 'badge ' + colour },
       'No Trading until ' + stamp);
   }
   return m('span', { class: 'badge badge-success' }, 'Trading OK');
