@@ -825,6 +825,7 @@ function castRow(entry) {
 // collection but no files" and "no files registered".
 function renderVersionsCard(loaded) {
   const versions = loaded.Versions || [];
+  const mi = loaded && loaded.media_info;
   return m('div', { class: 'card bg-base-100 shadow-sm' },
     m('div', { class: 'card-body' }, [
       m('h2', { class: 'card-title text-base' },
@@ -843,19 +844,35 @@ function renderVersionsCard(loaded) {
                 m('th', 'Quality'),
                 m('th', { class: 'text-right' }, 'Size'),
               ])),
-              m('tbody', versions.map((v, idx) => versionRow(v, idx))),
+              m('tbody', versions.map((v, idx) => versionRow(v, idx, mi))),
             ])),
     ]));
 }
 
-function versionRow(v, idx) {
+// versionRow falls back to the recording-level MediaInfo when the
+// per-version typed columns (Container/VideoCodec/Quality/AudioCodec)
+// are empty — pre-mediainfo imports never populated those columns,
+// so without the fallback the card showed three em-dashes for files
+// whose real codec/quality is plain visible in the Media Info card
+// directly below.
+function versionRow(v, idx, mi) {
   const isPrimary = idx === 0;
   const name = basename(v.FilePath || '');
   const dir = dirname(v.FilePath || '');
-  const format = v.FormatLabel || v.Container || '—';
-  let codec = v.VideoCodec || '—';
-  if (v.AudioCodec) codec += ' / ' + v.AudioCodec;
-  const quality = v.Quality || '—';
+  // Format = container (just "MP4"/"MKV"). Drops the legacy
+  // FormatLabel string because it bundled size into the same field
+  // and produced "MP4 - 8.57 GB" — the Size column already shows it.
+  const format = v.Container || (mi && mi.container) || '—';
+  let videoCodec = v.VideoCodec || (mi && formatVideoCodec(mi.videoCodec)) || '';
+  let audioCodec = v.AudioCodec || '';
+  if (!audioCodec && mi && mi.audioStreams && mi.audioStreams[0]) {
+    audioCodec = String(mi.audioStreams[0].codec || '').toUpperCase();
+  }
+  let codec = videoCodec || '—';
+  if (audioCodec) codec += ' / ' + audioCodec;
+  let quality = v.Quality;
+  if (!quality && mi) quality = qualityFromHeight(mi.height);
+  if (!quality) quality = '—';
   return m('tr', [
     m('td', { class: 'font-mono text-xs', title: v.FilePath || '' }, [
       isPrimary ? m('span', { class: 'text-warning mr-1' }, '★') : null,
@@ -881,6 +898,31 @@ function formatMediaRunTime(seconds) {
   const pad = (n) => String(n).padStart(2, '0');
   if (h > 0) return h + ':' + pad(m) + ':' + pad(s);
   return pad(m) + ':' + pad(s);
+}
+
+// formatBitrate turns a bps integer into "317 kbps" — Sonarr's render.
+// Uses kbps with no decimals; bitrates in our domain are 96–640 kbps so
+// the precision drop is invisible.
+function formatBitrate(bps) {
+  const n = Number(bps) || 0;
+  if (n <= 0) return '—';
+  return Math.round(n / 1000) + ' kbps';
+}
+
+// qualityFromHeight is the same height→label map probe.MediaInfo's
+// Quality() helper applies server-side. Used as a fallback in the
+// versions table when the per-version typed column is empty (legacy
+// imports before mediainfo plumbing landed).
+function qualityFromHeight(h) {
+  const n = Number(h) || 0;
+  if (n >= 2160) return '2160p';
+  if (n >= 1440) return '1440p';
+  if (n >= 1080) return '1080p';
+  if (n >= 720)  return '720p';
+  if (n >= 480)  return '480p';
+  if (n >= 360)  return '360p';
+  if (n >= 240)  return '240p';
+  return '';
 }
 
 // formatVideoCodec maps ffprobe codec names onto the labels Sonarr
@@ -977,7 +1019,7 @@ function renderMediaInfoCard(loaded) {
   const firstAudio = audio[0] || null;
   const rows = [];
   if (firstAudio && firstAudio.bitrate > 0) {
-    rows.push(['Audio Bitrate', String(firstAudio.bitrate)]);
+    rows.push(['Audio Bitrate', formatBitrate(firstAudio.bitrate)]);
   }
   rows.push(['Audio Channels', audioChannelsDisplay(audio)]);
   if (firstAudio && firstAudio.codec) {
