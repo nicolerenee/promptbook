@@ -1818,7 +1818,7 @@ function renderExtrasSection(loaded, recordingFolder) {
   return m('section', { class: 'space-y-2' }, [
     m('h3', { class: 'text-sm font-semibold opacity-80' },
       'Extras · ' + extras.length),
-    m('div', { class: 'divide-y divide-base-200 rounded border border-base-200' }, [
+    m('div', { class: 'rounded border border-base-200' }, [
       ...topFiles.map((e) => extraFileRow(e, e.name || basename(e.path))),
       ...dirNames.map((name) => extraDirSection(name, dirChildren.get(name) || [])),
     ]),
