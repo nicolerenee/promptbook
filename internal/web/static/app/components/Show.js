@@ -40,19 +40,41 @@ const STATUS_META = {
 };
 
 // SORT_COLUMNS lists the recordings-table headers in render order.
-// Matches the Library/Person sortable-column pattern.
+// Status sits at the FAR RIGHT to match the Recordings + ShowsList
+// convention — row identity (date/tour/master) belongs on the left,
+// the at-a-glance status badge on the right.
 const SORT_COLUMNS = [
-  { key: 'status', label: 'Status',
-    compare: (a, b) => cmpStr(a.status, b.status) },
   { key: 'date',   label: 'Date',
     compare: (a, b) => cmpStr(a.date_full, b.date_full) },
   { key: 'tour',   label: 'Tour',
     compare: (a, b) => cmpStr(a.tour, b.tour) },
   { key: 'master', label: 'Master',
     compare: (a, b) => cmpStr(a.master, b.master) },
+  { key: 'status', label: 'Status',
+    compare: (a, b) => cmpStr(a.status, b.status) },
 ];
 
 const DEFAULT_SORT = { key: 'date', dir: 'asc' };
+
+// LS_VIEW persists the user's preferred recordings layout (list vs
+// grid) on the show-detail page. Mirrors the per-page-pref pattern
+// from Recordings.js + ShowsList.js. A separate key from those pages
+// since the show-detail recording grid is a different surface.
+const LS_RECORDINGS_VIEW = 'pb.show.recordings.view';
+
+function readStoredRecordingsView() {
+  try {
+    const v = window.localStorage.getItem(LS_RECORDINGS_VIEW);
+    return v === 'grid' || v === 'list' ? v : '';
+  } catch (_) {
+    return '';
+  }
+}
+function writeStoredRecordingsView(v) {
+  try {
+    window.localStorage.setItem(LS_RECORDINGS_VIEW, v);
+  } catch (_) { /* no-op */ }
+}
 
 function cmpStr(a, b) {
   const sa = a == null ? '' : String(a).toLowerCase();
@@ -438,6 +460,9 @@ function renderImagePickerModal(detail) {
 
 // Row renders one in-show recording. Click navigates to the
 // per-recording detail page.
+// Row renders one recording. Column order matches SORT_COLUMNS so
+// Date → Tour → Master → Status, with the status badge on the right
+// edge to match Recordings + ShowsList.
 function Row(it) {
   const meta = STATUS_META[it.status] || STATUS_META.orphan;
   const date = smartDate(it.date_full, it.date_month_known, it.date_day_known);
@@ -445,30 +470,150 @@ function Row(it) {
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/recordings/' + it.id),
   }, [
-    m('td', m('span', { class: 'badge ' + meta.badge }, meta.label)),
     m('td', { class: 'font-mono text-sm' }, date),
     m('td', it.tour || '—'),
     m('td', it.master || '—'),
+    m('td', m('span', { class: 'badge ' + meta.badge }, meta.label)),
   ]);
 }
 
-function renderRecordingsTable(detail) {
+// PosterCard renders one recording-poster cell for the grid view.
+// Mirrors Recordings.js's PosterCard so the visual rhythm reads as
+// the same component in two places. Status badge floats outside the
+// image-clip via DaisyUI's indicator pattern.
+function PosterCard(it) {
+  const meta = STATUS_META[it.status] || STATUS_META.orphan;
+  const poster = it.local_poster_url || '';
+  const onclick = () => m.route.set('/recordings/' + it.id);
+  const placeholder = m('div', {
+    class: 'aspect-[2/3] w-full bg-base-300 flex items-center ' +
+           'justify-center text-xs opacity-60 px-2 text-center',
+  }, m('span', { class: 'badge ' + meta.badge }, meta.label));
+  const image = m('img', {
+    src: poster,
+    alt: (it.tour || it.master || '') + ' poster',
+    loading: 'lazy',
+    class: 'aspect-[2/3] w-full object-cover',
+  });
+  const date = smartDate(it.date_full, it.date_month_known, it.date_day_known);
+  return m('div', {
+    class: 'card bg-base-200 shadow-sm hover:shadow-md ' +
+           'hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',
+    onclick,
+    role: 'button',
+    tabindex: 0,
+    onkeydown: (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onclick(); }
+    },
+  }, [
+    m('div', { class: 'indicator w-full' }, [
+      m('span', { class: 'indicator-item badge badge-sm ' + meta.badge },
+        meta.label),
+      m('div', { class: 'overflow-hidden rounded-t-box w-full' },
+        poster ? image : placeholder),
+    ]),
+    m('div', { class: 'card-body p-2 gap-0.5' }, [
+      m('div', { class: 'text-sm font-medium truncate', title: it.tour || '' },
+        it.tour || '—'),
+      m('div', { class: 'text-xs opacity-60 font-mono truncate' },
+        date + (it.master ? ' · ' + it.master : '')),
+    ]),
+  ]);
+}
+
+// IconList / IconGrid + ViewToggle mirror the Recordings.js helpers
+// so the segmented-button reads as the same control across pages.
+function IconList() {
+  return m('svg', {
+    width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+    'stroke-linejoin': 'round', 'aria-hidden': 'true',
+  }, [
+    m('line', { x1: 8, y1: 6, x2: 21, y2: 6 }),
+    m('line', { x1: 8, y1: 12, x2: 21, y2: 12 }),
+    m('line', { x1: 8, y1: 18, x2: 21, y2: 18 }),
+    m('line', { x1: 3, y1: 6, x2: 3.01, y2: 6 }),
+    m('line', { x1: 3, y1: 12, x2: 3.01, y2: 12 }),
+    m('line', { x1: 3, y1: 18, x2: 3.01, y2: 18 }),
+  ]);
+}
+function IconGrid() {
+  return m('svg', {
+    width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+    'stroke-linejoin': 'round', 'aria-hidden': 'true',
+  }, [
+    m('rect', { x: 3, y: 3, width: 7, height: 7 }),
+    m('rect', { x: 14, y: 3, width: 7, height: 7 }),
+    m('rect', { x: 3, y: 14, width: 7, height: 7 }),
+    m('rect', { x: 14, y: 14, width: 7, height: 7 }),
+  ]);
+}
+
+function setRecordingsView(key) {
+  if (key !== 'list' && key !== 'grid') return;
+  state.show.recordingsView = key;
+  writeStoredRecordingsView(key);
+}
+
+function ViewToggle(view) {
+  return m('div', { class: 'join', role: 'group', 'aria-label': 'View mode' }, [
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm join-item' + (view === 'list' ? ' btn-active' : ''),
+      'aria-pressed': view === 'list',
+      title: 'List view',
+      onclick: () => setRecordingsView('list'),
+    }, IconList()),
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm join-item' + (view === 'grid' ? ' btn-active' : ''),
+      'aria-pressed': view === 'grid',
+      title: 'Grid view',
+      onclick: () => setRecordingsView('grid'),
+    }, IconGrid()),
+  ]);
+}
+
+function renderRecordingsList(sorted) {
+  return m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
+    m('table', { class: 'table table-zebra' }, [
+      m('thead', m('tr',
+        SORT_COLUMNS.map((col) => HeaderCell(col, state.show.sortKey, state.show.sortDir)))),
+      m('tbody', sorted.length === 0
+        ? m('tr', m('td', {
+            colspan: SORT_COLUMNS.length, class: 'text-center opacity-60 py-8',
+          }, 'No recordings of this show in your library yet.'))
+        : sorted.map(Row)),
+    ]));
+}
+
+function renderRecordingsGrid(sorted) {
+  if (sorted.length === 0) {
+    return m('div', { class: 'text-center opacity-60 py-12' },
+      'No recordings of this show in your library yet.');
+  }
+  return m('div', {
+    class: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 ' +
+           'lg:grid-cols-5 xl:grid-cols-6 gap-4',
+  }, sorted.map(PosterCard));
+}
+
+function renderRecordingsSection(detail) {
   const recordings = detail.recordings || [];
   const sorted = sortRows(recordings,
     { key: state.show.sortKey, dir: state.show.sortDir });
+  const view = state.show.recordingsView || 'list';
   return m('div', { class: 'space-y-2' }, [
-    m('h2', { class: 'text-sm font-semibold uppercase tracking-wider opacity-70' },
-      'Recordings · ' + recordings.length),
-    m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
-      m('table', { class: 'table table-zebra' }, [
-        m('thead', m('tr',
-          SORT_COLUMNS.map((col) => HeaderCell(col, state.show.sortKey, state.show.sortDir)))),
-        m('tbody', sorted.length === 0
-          ? m('tr', m('td', {
-              colspan: SORT_COLUMNS.length, class: 'text-center opacity-60 py-8',
-            }, 'No recordings of this show in your library yet.'))
-          : sorted.map(Row)),
-      ])),
+    m('div', { class: 'flex items-center justify-between gap-3 flex-wrap' }, [
+      m('h2', {
+        class: 'text-sm font-semibold uppercase tracking-wider opacity-70',
+      }, 'Recordings · ' + recordings.length),
+      ViewToggle(view),
+    ]),
+    view === 'grid'
+      ? renderRecordingsGrid(sorted)
+      : renderRecordingsList(sorted),
   ]);
 }
 
@@ -483,6 +628,7 @@ const Show = {
     state.show.pickerOptionsError = null;
     state.show.sortKey = DEFAULT_SORT.key;
     state.show.sortDir = DEFAULT_SORT.dir;
+    state.show.recordingsView = readStoredRecordingsView() || 'list';
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.show.loading = false;
@@ -529,7 +675,7 @@ const Show = {
     }
     return m('div', { class: 'space-y-6' }, [
       renderHeader(detail),
-      renderRecordingsTable(detail),
+      renderRecordingsSection(detail),
       renderImagePickerModal(detail),
       renderImageErrorToast({
         error: state.show.imageError,
