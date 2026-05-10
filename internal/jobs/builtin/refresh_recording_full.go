@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -89,11 +90,38 @@ func (j *RefreshRecordingFullJob) Run(ctx context.Context, args jobs.JobArgs) er
 	}
 
 	j.refreshFromEncora(ctx, recID)
+	j.reconcileFiles(ctx, recID)
 	j.reprobeVersions(ctx, recID)
 	j.rewriteNFO(ctx, recID)
 	j.runImageRefresh(ctx, recID)
 
 	return nil
+}
+
+// reconcileFiles pairs version rows whose file_path is now ENOENT
+// against unmatched video files in the same folder, reassigning the
+// path in place when the count matches. Covers the
+// Radarr-replaced-the-file-and-renamed-it case where the version row
+// would otherwise stay pointing at a deleted path forever. Best-
+// effort: failures log + continue so the downstream reprobe + nfo
+// steps still run against whatever paths are valid.
+func (j *RefreshRecordingFullJob) reconcileFiles(ctx context.Context, recID int64) {
+	changes, err := storage.ReconcileRecordingFiles(ctx, j.DB, recID)
+	if err != nil {
+		j.Logger.Warn().
+			Err(err).
+			Int64("recording_id", recID).
+			Msg("refresh-recording-full: reconcile files failed; continuing")
+		return
+	}
+	for _, c := range changes {
+		j.Logger.Info().
+			Int64("recording_id", recID).
+			Int64("version_id", c.VersionID).
+			Str("from", c.OldPath).
+			Str("to", c.NewPath).
+			Msg("refresh-recording-full: version file_path reassigned (external rename detected)")
+	}
 }
 
 // refreshFromEncora pulls the recording detail from Encora and upserts
@@ -163,6 +191,21 @@ func (j *RefreshRecordingFullJob) reprobeVersion(
 	if v.FilePath == "" {
 		return
 	}
+	// Re-stat for the current size before probing. Without this, a
+	// same-path content change (Radarr replaces the file in place
+	// with a different encode) leaves the version row's
+	// file_size_bytes pointing at the old size — the displayed
+	// release-format string would carry the wrong "8.0 GB" forever.
+	stat, statErr := os.Stat(v.FilePath)
+	if statErr != nil {
+		j.Logger.Warn().
+			Err(statErr).
+			Int64("recording_id", recID).
+			Int64("version_id", v.ID).
+			Str("path", v.FilePath).
+			Msg("refresh-recording-full: stat failed; leaving prior version row untouched")
+		return
+	}
 	info, perr := j.Prober.Probe(ctx, v.FilePath)
 	if perr != nil {
 		j.Logger.Warn().
@@ -183,6 +226,7 @@ func (j *RefreshRecordingFullJob) reprobeVersion(
 		return
 	}
 	v.MediaInfoJSON = string(blob)
+	v.FileSizeBytes = stat.Size()
 	if uerr := storage.UpsertVersion(ctx, j.DB, v); uerr != nil {
 		j.Logger.Warn().
 			Err(uerr).
