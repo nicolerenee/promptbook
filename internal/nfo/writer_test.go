@@ -295,3 +295,42 @@ func TestWriteFile(t *testing.T) {
 	assert.Contains(t, string(got), `<?xml version="1.0"`)
 	assert.Contains(t, string(got), `<uniqueid type="encora" default="true">90100222</uniqueid>`)
 }
+
+// TestFormatRolePrefixesStatus asserts the role string carries the
+// understudy/swing/etc. abbreviation as a leading token, matching the
+// "U/s Elsa" convention the legacy hand-rolled writer used and that
+// Jellyfin echoes verbatim into the cast list.
+func TestFormatRoleWithStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status *encora.CastStatus
+		role   string
+		want   string
+	}{
+		{"no status", nil, "Elsa", "Elsa"},
+		{"empty abbrev", &encora.CastStatus{}, "Elsa", "Elsa"},
+		{"understudy", &encora.CastStatus{Abbreviation: "u/s"}, "Elsa", "U/s Elsa"},
+		{"alternate", &encora.CastStatus{Abbreviation: "alt"}, "Companion", "Alt Companion"},
+		{"swing", &encora.CastStatus{Abbreviation: "s/w"}, "", "S/w"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rec := encora.Recording{
+				ID:   1,
+				Show: "Velvet Antlers",
+				Cast: []encora.CastEntry{{
+					Performer: encora.Performer{ID: 99, Name: "Test Performer"},
+					Character: encora.Character{Name: tt.role, Order: 1},
+					Status:    tt.status,
+				}},
+			}
+			model := nfo.FromRecording(rec)
+			require.Len(t, model.Actors, 1)
+			assert.Equal(t, tt.want, model.Actors[0].Role)
+		})
+	}
+}

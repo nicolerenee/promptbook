@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
@@ -65,9 +66,22 @@ type Fanart struct {
 }
 
 // MovieSet groups related recordings (one show, many tours/dates) so
-// Jellyfin's "Collections" feature lights up automatically.
+// Jellyfin's "Collections" feature lights up automatically. Name is
+// the join key — every NFO sharing the same Name lands in the same
+// collection. Overview surfaces the show description on the
+// collection landing page; Thumb/Fanart point at the show banner so
+// the collection has art without manual setup.
 type MovieSet struct {
-	Name string `xml:"name"`
+	Name     string     `xml:"name"`
+	Overview string     `xml:"overview,omitempty"`
+	Thumb    string     `xml:"thumb,omitempty"`
+	Fanart   *SetFanart `xml:"fanart,omitempty"`
+}
+
+// SetFanart wraps the collection-level backdrop reference. Same shape
+// as the movie-level Fanart but scoped to the parent <set> element.
+type SetFanart struct {
+	Thumbs []string `xml:"thumb"`
 }
 
 // Actor mirrors the /library/MovieNfoSaver shape — performer name,
@@ -105,8 +119,11 @@ func FromRecording(r encora.Recording) MovieNFO {
 		Year:          yearOf(r.Date),
 		Premiered:     premieredOf(r.Date),
 		Plot:          stripHTML(r.Metadata.ShowDescription),
-		Set:           &MovieSet{Name: r.Show},
-		Tags:          tagsOf(r),
+		Set: &MovieSet{
+			Name:     r.Show,
+			Overview: stripHTML(r.Metadata.ShowDescription),
+		},
+		Tags: tagsOf(r),
 		UniqueIDs: []UniqueID{
 			{Type: "encora", Default: true, Value: strconv.FormatInt(r.ID, 10)},
 		},
@@ -115,7 +132,7 @@ func FromRecording(r encora.Recording) MovieNFO {
 	for _, c := range r.Cast {
 		nfo.Actors = append(nfo.Actors, Actor{
 			Name:  c.Performer.Name,
-			Role:  c.Character.Name,
+			Role:  formatRole(c),
 			Order: c.Character.Order,
 		})
 	}
@@ -132,6 +149,28 @@ func FromRecording(r encora.Recording) MovieNFO {
 	}
 
 	return nfo
+}
+
+// formatRole renders the cast row's role string, prefixing the status
+// abbreviation (u/s, alt, s/w, e/c, t/r) when present so understudies
+// + swings + alternates surface in the Jellyfin cast list. Mirrors
+// the prefix-the-role convention the legacy hand-rolled writer used.
+// Capitalizes the first letter of the abbreviation so "u/s Elsa"
+// renders as "U/s Elsa" — Jellyfin echoes the role as-is.
+func formatRole(c encora.CastEntry) string {
+	role := c.Character.Name
+	if c.Status == nil || c.Status.Abbreviation == "" {
+		return role
+	}
+	abbrev := c.Status.Abbreviation
+	if r := []rune(abbrev); len(r) > 0 {
+		r[0] = unicode.ToUpper(r[0])
+		abbrev = string(r)
+	}
+	if role == "" {
+		return abbrev
+	}
+	return abbrev + " " + role
 }
 
 // displayTitle prefers a "{Show} — {Tour} — {Date}" composite so each
@@ -366,6 +405,18 @@ func applyPublicURLImages(model *MovieNFO, rec encora.Recording, base string) {
 	model.Fanart = &Fanart{Thumbs: []Thumb{{
 		Path: fmt.Sprintf("%s/images/recordings/%d/fanart.jpg", base, rec.ID),
 	}}}
+	// Collection art reuses the show banner — Jellyfin's set merge keys
+	// on the set name, so every recording for a given show points at
+	// the same banner URL and the collection lights up with art on
+	// first import. Skipped when ShowID is missing (defensive; live
+	// data always carries it).
+	if model.Set != nil && rec.Metadata.ShowID > 0 {
+		bannerURL := fmt.Sprintf(
+			"%s/images/shows/%d/banner.jpg", base, rec.Metadata.ShowID,
+		)
+		model.Set.Thumb = bannerURL
+		model.Set.Fanart = &SetFanart{Thumbs: []string{bannerURL}}
+	}
 	// FromRecording emits one Actor per rec.Cast entry in order, so
 	// indexes align 1:1 — that's how we recover each performer's id
 	// for the headshot URL.
