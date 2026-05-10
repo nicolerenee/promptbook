@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
@@ -29,6 +30,13 @@ type ImageChoice struct {
 	OverlayTextOverride *string
 	OverlayStyleJSON    *string
 	OverlayDisabled     bool
+	// Explicit is true when a recording_image_choices row exists for
+	// this recording — the user has saved a choice. False means
+	// GetImageChoice returned the zero-value default; callers can
+	// infer per-recording defaults (e.g. pro-shot recordings ship the
+	// overlay disabled out of the box) without overwriting a user's
+	// explicit toggle.
+	Explicit bool
 }
 
 // ResolveOverlayText returns the user override when set, or the
@@ -39,6 +47,30 @@ func (c ImageChoice) ResolveOverlayText(fallback string) string {
 		return *c.OverlayTextOverride
 	}
 	return fallback
+}
+
+// ResolveOverlayDisabled returns the effective overlay-disabled flag
+// for the recording. When the user has explicitly saved a choice
+// (Explicit=true) we honour their value. Otherwise we infer a
+// sensible default from the recording's metadata.recording_type:
+// pro-shot recordings (a typed enum on encora) default to disabled
+// — professional broadcast posters arrive as finished art and the
+// burned-in band only obscures them.
+func (c ImageChoice) ResolveOverlayDisabled(recordingType string) bool {
+	if c.Explicit {
+		return c.OverlayDisabled
+	}
+	return IsProShotRecordingType(recordingType)
+}
+
+// IsProShotRecordingType reports whether the recording_type token
+// equals encora's "pro-shot" enum. The field is a typed dropdown on
+// encora's UI (Bootleg / Pro-Shot / Press Reel / Soundboard / House
+// Cam) so an exact match (case-insensitive) is the right test —
+// substring-matching the free-text master field was the previous
+// hack and could trip on legitimate words like "pro-shotgun-mic".
+func IsProShotRecordingType(recordingType string) bool {
+	return strings.EqualFold(strings.TrimSpace(recordingType), "pro-shot")
 }
 
 // GetImageChoice loads the recording's current overlay configuration.
@@ -65,6 +97,7 @@ func GetImageChoice(
 		choice.OverlayStyleJSON = &v
 	}
 	choice.OverlayDisabled = row.OverlayDisabled
+	choice.Explicit = true
 	return choice, nil
 }
 

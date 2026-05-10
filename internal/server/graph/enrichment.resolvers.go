@@ -192,13 +192,19 @@ func (r *recordingResolver) OverlayTextOverride(ctx context.Context, obj *ent.Re
 
 // OverlayDisabled is the resolver for the overlayDisabled field. When
 // true the renderer skips the playbill-style band and copies the raw
-// poster source verbatim to poster.jpg.
+// poster source verbatim to poster.jpg. Pro-shot recordings default
+// to disabled (their poster art is already finished broadcast
+// material); the user can flip it back on per-recording via the
+// detail page if they want.
 func (r *recordingResolver) OverlayDisabled(ctx context.Context, obj *ent.Recording) (bool, error) {
 	choice, err := storage.GetImageChoice(ctx, r.client, obj.ID)
 	if err != nil {
 		return false, fmt.Errorf("graphql: load image choice for recording %d: %w", obj.ID, err)
 	}
-	return choice.OverlayDisabled, nil
+	// recording_type is a typed enum on encora (Bootleg / Pro-Shot /
+	// Press Reel / Soundboard / House Cam). The ent column carries
+	// the lowercase token verbatim from the recording's raw_json.
+	return choice.ResolveOverlayDisabled(obj.RecordingType), nil
 }
 
 // ResolvedCast is the resolver for the resolvedCast field. Walks

@@ -188,7 +188,12 @@ func TestGraphQLRecordingEnrichment(t *testing.T) {
 	// The SPA renders the placeholder branch on empty strings.
 	assert.Empty(t, resp.Data.Recording.LocalPosterURL)
 	assert.Empty(t, resp.Data.Recording.LocalFanartURL)
-	assert.False(t, resp.Data.Recording.OverlayDisabled)
+	// Recording 90100222 (Marigold) has master "pro-shot" in the fixture.
+	// No row in recording_image_choices exists, so the resolver
+	// falls back to the per-master default which is "disabled" for
+	// pro-shot recordings — their poster art is finished broadcast
+	// material and shouldn't be overlaid by default.
+	assert.True(t, resp.Data.Recording.OverlayDisabled)
 	assert.Nil(t, resp.Data.Recording.OverlayTextOverride)
 	assert.Empty(t, resp.Data.Recording.BannerLayout.Position)
 	assert.Empty(t, resp.Data.Recording.BannerLayout.ImageRegion)

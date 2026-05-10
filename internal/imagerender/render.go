@@ -82,8 +82,10 @@ func (r *Renderer) Regenerate(ctx context.Context, recordingID int64) error {
 	// Burn-in opt-out: copy poster-src.jpg verbatim to poster.jpg so
 	// the NFO writer's <thumb> still resolves but the resulting file
 	// carries no compositing. We stream bytes (no decode/re-encode) so
-	// the user's chosen image lands on disk lossless.
-	if choice.OverlayDisabled {
+	// the user's chosen image lands on disk lossless. Pro-shot
+	// recordings default to disabled (their poster art is finished
+	// broadcast material) — see ImageChoice.ResolveOverlayDisabled.
+	if r.overlayDisabledFor(ctx, recordingID, choice) {
 		if copyErr := copyFileAtomic(srcPath, destPath); copyErr != nil {
 			return fmt.Errorf("imagerender: copy raw %s -> %s: %w", srcPath, destPath, copyErr)
 		}
@@ -156,8 +158,9 @@ func (r *Renderer) Preview(
 		return nil, fmt.Errorf("imagerender preview: load image choice for %d: %w",
 			recordingID, err)
 	}
-	if choice.OverlayDisabled {
-		// User turned the band off — preview is the raw image.
+	if r.overlayDisabledFor(ctx, recordingID, choice) {
+		// User turned the band off (or it's a pro-shot recording with
+		// no explicit choice) — preview is the raw image.
 		return src, nil
 	}
 	rows, style, err := r.overlayInputs(ctx, recordingID, choice)
@@ -179,6 +182,27 @@ func (r *Renderer) Preview(
 // the picker). The choice arg is passed in rather than re-loaded so
 // callers that already have it (Regenerate does) can avoid a
 // duplicate query.
+// overlayDisabledFor resolves the recording's effective overlay-
+// disabled flag, including the pro-shot per-recording-type default.
+// Loads the recording for its Metadata.RecordingType field; falls
+// back to the choice's stored value when the load fails (defensive
+// — the choice is already in hand).
+func (r *Renderer) overlayDisabledFor(
+	ctx context.Context, recordingID int64, choice storage.ImageChoice,
+) bool {
+	if choice.Explicit {
+		return choice.OverlayDisabled
+	}
+	loaded, err := storage.LoadRecording(ctx, r.DB, recordingID)
+	if err != nil {
+		// Couldn't load the recording — fall back to the stored
+		// (zero-value) flag. Pro-shot inference fails open as
+		// "overlay enabled".
+		return choice.OverlayDisabled
+	}
+	return choice.ResolveOverlayDisabled(loaded.Recording.Metadata.RecordingType)
+}
+
 func (r *Renderer) overlayInputs(
 	ctx context.Context, recordingID int64, choice storage.ImageChoice,
 ) ([]string, Style, error) {
