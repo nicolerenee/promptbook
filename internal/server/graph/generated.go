@@ -105,8 +105,10 @@ type ComplexityRoot struct {
 
 	ImportPreview struct {
 		DestAbsolute func(childComplexity int) int
+		DestExists   func(childComplexity int) int
 		DestFile     func(childComplexity int) int
 		DestFolder   func(childComplexity int) int
+		IsDuplicate  func(childComplexity int) int
 	}
 
 	ImportQueueEntryPayload struct {
@@ -818,6 +820,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ImportPreview.DestAbsolute(childComplexity), true
+	case "ImportPreview.destExists":
+		if e.ComplexityRoot.ImportPreview.DestExists == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportPreview.DestExists(childComplexity), true
 	case "ImportPreview.destFile":
 		if e.ComplexityRoot.ImportPreview.DestFile == nil {
 			break
@@ -830,6 +838,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ImportPreview.DestFolder(childComplexity), true
+	case "ImportPreview.isDuplicate":
+		if e.ComplexityRoot.ImportPreview.IsDuplicate == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportPreview.IsDuplicate(childComplexity), true
 
 	case "ImportQueueEntryPayload.action":
 		if e.ComplexityRoot.ImportQueueEntryPayload.Action == nil {
@@ -2908,6 +2922,10 @@ func (ec *executionContext) childFields_ImportPreview(ctx context.Context, field
 		return ec.fieldContext_ImportPreview_destFile(ctx, field)
 	case "destAbsolute":
 		return ec.fieldContext_ImportPreview_destAbsolute(ctx, field)
+	case "destExists":
+		return ec.fieldContext_ImportPreview_destExists(ctx, field)
+	case "isDuplicate":
+		return ec.fieldContext_ImportPreview_isDuplicate(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ImportPreview", field.Name)
 }
@@ -5613,6 +5631,52 @@ func (ec *executionContext) _ImportPreview_destAbsolute(ctx context.Context, fie
 }
 func (ec *executionContext) fieldContext_ImportPreview_destAbsolute(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ImportPreview_destExists(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportPreview_destExists(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DestExists, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportPreview_destExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ImportPreview_isDuplicate(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportPreview_isDuplicate(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IsDuplicate, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportPreview_isDuplicate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _ImportQueueEntryPayload_ok(ctx context.Context, field graphql.CollectedField, obj *ImportQueueEntryPayload) (ret graphql.Marshaler) {
@@ -15569,7 +15633,7 @@ func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Cont
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"queueID", "recordingID"}
+	fieldsInOrder := [...]string{"queueID", "recordingID", "overwrite"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -15590,6 +15654,13 @@ func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Cont
 				return it, err
 			}
 			it.RecordingID = data
+		case "overwrite":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("overwrite"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Overwrite = data
 		}
 	}
 	return it, nil
@@ -21280,6 +21351,16 @@ func (ec *executionContext) _ImportPreview(ctx context.Context, sel ast.Selectio
 			}
 		case "destAbsolute":
 			out.Values[i] = ec._ImportPreview_destAbsolute(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "destExists":
+			out.Values[i] = ec._ImportPreview_destExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isDuplicate":
+			out.Values[i] = ec._ImportPreview_isDuplicate(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

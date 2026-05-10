@@ -470,18 +470,33 @@ type RegenerateNFOResult {
 # modal renders as a code block. destAbsolute is the full path
 # (LibraryRoot + folder + file + ext); destFolder + destFile are the
 # split-apart pieces in case the UI wants to render them separately.
+#
+# destExists / isDuplicate surface a destination-conflict check the
+# modal renders as a warning banner so the user isn't silently
+# overwriting an existing file. destExists=true + isDuplicate=true →
+# the source and destination have identical content (size + sha256)
+# and the import would be a no-op; destExists=true + isDuplicate=false
+# → import would overwrite the existing file with different content
+# and requires explicit overwrite confirmation on the mutation.
 type ImportPreview {
   destFolder: String!
   destFile: String!
   destAbsolute: String!
+  destExists: Boolean!
+  isDuplicate: Boolean!
 }
 
 # ImportQueueEntryInput drives the importQueueEntry mutation.
 # recordingID is optional — when null, the queue entry's
 # suggestedRecordingID (which must be set) is used as the target.
+# overwrite, when true, allows the importer to replace an existing
+# different-content file at the destination. Required when the
+# preview's destExists is true and isDuplicate is false; otherwise
+# the mutation rejects the request rather than silently overwriting.
 input ImportQueueEntryInput {
   queueID: ID!
   recordingID: ID
+  overwrite: Boolean
 }
 
 # ImportQueueEntryPayload mirrors the legacy REST importQueueResponse.
