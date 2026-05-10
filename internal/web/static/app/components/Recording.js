@@ -1348,16 +1348,16 @@ function renderHeader(loaded) {
   // visually line up with the date text rather than dominating it.
   // flex-wrap so narrow viewports can stack the trailing chips
   // beneath the text rather than overflowing.
-  // Cataloged timestamp lives alongside the other "facts about the
-  // recording" chips so it sits with the metadata, not with the file
-  // listing. Hidden when missing (e.g. orphan recordings the catalog
-  // sync hasn't tagged with a CollectedAt yet). Short label so it
-  // doesn't dominate the subtitle row; full timestamp survives in
-  // the badge's title attr for hover.
+  // Cataloged timestamp anchors the bottom-right of the hero card —
+  // reference data that sits with the rest of the per-recording
+  // metadata but stays out of the way. Hidden when missing (orphan
+  // recordings the catalog sync hasn't tagged with a CollectedAt
+  // yet). Full timestamp survives in the badge's title attr for
+  // hover.
   const cataloged = loaded.CollectedAt || '';
   const catalogedBadge = cataloged
     ? m('span', {
-        class: 'badge badge-sm badge-ghost',
+        class: 'badge badge-sm badge-ghost font-mono',
         title: 'Cataloged ' + cataloged,
       }, 'Cataloged ' + cataloged)
     : null;
@@ -1378,7 +1378,6 @@ function renderHeader(loaded) {
           String(wanters) + ' wants')
       : null,
     ...renderLinkBadges(loaded),
-    catalogedBadge,
   ]);
 
   return m('div', {
@@ -1414,7 +1413,12 @@ function renderHeader(loaded) {
             class: 'text-base sm:text-lg max-w-3xl whitespace-pre-line opacity-80',
           }, plot)
         : null,
-      m('div', { class: 'flex flex-wrap gap-2 mt-2' }, badgeRow),
+      m('div', {
+        class: 'flex flex-wrap items-end justify-between gap-2 mt-2',
+      }, [
+        m('div', { class: 'flex flex-wrap gap-2' }, badgeRow),
+        catalogedBadge,
+      ]),
       state.recording.dangerError
         ? m('div', { role: 'alert', class: 'alert alert-error mt-2' },
             m('span', { class: 'text-sm' }, state.recording.dangerError))
