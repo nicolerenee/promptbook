@@ -1354,8 +1354,7 @@ func (r *Resolver) importQueueEntry(
 		return nil, err
 	}
 
-	early, conflictErr := r.maybeShortCircuitOnConflict(
-		ctx, entry, recordingID, input.QueueID, optBool(input.Overwrite))
+	early, conflictErr := r.preflightConflictCheck(ctx, entry, recordingID, input)
 	if conflictErr != nil {
 		return nil, conflictErr
 	}
@@ -1363,22 +1362,7 @@ func (r *Resolver) importQueueEntry(
 		return early, nil
 	}
 
-	// Folder-as-unit drops carry ExtrasCount > 0 — the queue row's
-	// FilePath is the main media file inside a folder that also holds
-	// per-track audio rips, photos, etc. Capture the parent directory
-	// as the version row's source_folder so the recording detail page
-	// can later enumerate sibling files as 'extras'. Loose-file imports
-	// (ExtrasCount == 0) leave source_folder empty: the recording's
-	// destination folder is the only location with content.
-	opts := ingest.Options{FlagEncoraID: int(recordingID)}
-	if entry.ExtrasCount > 0 {
-		opts.SourceFolder = filepath.Dir(entry.FilePath)
-	}
-	// FileAssignments, when supplied by the modal's multi-file picker,
-	// switches the engine into multi-file mode (multipart parts +
-	// typed extras). Empty / nil leaves opts.FileAssignments at zero
-	// so the legacy single-file flow runs unchanged.
-	opts.FileAssignments = importFileAssignmentsFromInput(input.FileAssignments)
+	opts := buildImportOptions(entry, recordingID, input)
 	res, err := r.ingestEngine.Ingest(ctx, entry.FilePath, opts)
 	if err != nil {
 		return nil, fmt.Errorf("graphql: ingest queue entry %d: %w", input.QueueID, err)
@@ -1389,7 +1373,13 @@ func (r *Resolver) importQueueEntry(
 
 	item := res.Items[0]
 	out := &ImportQueueEntryPayload{Action: item.Action}
-	if item.Plan != nil {
+	switch {
+	case item.ExternallyManaged:
+		// Catalog-only imports leave the file at its source path —
+		// surface that as the "destination" so the SPA's success
+		// toast points at the right path.
+		out.Dest = item.Source
+	case item.Plan != nil:
 		out.Dest = item.Plan.AbsoluteFile()
 	}
 	if item.Err != nil {
@@ -1430,6 +1420,50 @@ func (r *Resolver) importQueueEntry(
 	}
 
 	return out, nil
+}
+
+// preflightConflictCheck dispatches the destination-conflict check
+// when the import is moving the file. Externally-managed imports
+// never overwrite anything (the file stays at the source path) so
+// the check is skipped entirely.
+//
+// Returns (nil, nil) when the import should proceed, (payload, nil)
+// when the conflict pre-flight short-circuits with a duplicate /
+// overwrite-required outcome, and (nil, err) on a fatal probe /
+// plan-build failure.
+func (r *Resolver) preflightConflictCheck(
+	ctx context.Context,
+	entry *storage.QueueEntry,
+	recordingID int64,
+	input ImportQueueEntryInput,
+) (*ImportQueueEntryPayload, error) {
+	if optBool(input.ExternallyManaged) {
+		return nil, nil //nolint:nilnil // by design — caller proceeds.
+	}
+	return r.maybeShortCircuitOnConflict(
+		ctx, entry, recordingID, input.QueueID, optBool(input.Overwrite))
+}
+
+// buildImportOptions assembles the ingest.Options struct from the
+// queue entry + mutation input. Pulled out so the importQueueEntry
+// resolver stays under the gocognit threshold; the call site reads
+// the helper's name as a single decision step.
+//
+// Folder-as-unit drops (ExtrasCount > 0) stamp the parent dir on
+// SourceFolder so the recording detail page can enumerate sibling
+// files later. FileAssignments, when supplied, switches the engine
+// into multi-file mode. ExternallyManaged threads onto every per-
+// item ingest in a batch.
+func buildImportOptions(
+	entry *storage.QueueEntry, recordingID int64, input ImportQueueEntryInput,
+) ingest.Options {
+	opts := ingest.Options{FlagEncoraID: int(recordingID)}
+	if entry.ExtrasCount > 0 {
+		opts.SourceFolder = filepath.Dir(entry.FilePath)
+	}
+	opts.FileAssignments = importFileAssignmentsFromInput(input.FileAssignments)
+	opts.ExternallyManaged = optBool(input.ExternallyManaged)
+	return opts
 }
 
 // maybeShortCircuitOnConflict runs the destination-conflict check
@@ -1739,6 +1773,20 @@ func (r *Resolver) previewQueueImport(
 	}
 	if input.RecordingID <= 0 {
 		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	if optBool(input.ExternallyManaged) {
+		// Catalog-only previews short-circuit the Plan path: the
+		// "destination" IS the source path, no folder / file template
+		// applies, and the destination-conflict check is irrelevant
+		// (promptbook never moves the file). The modal renders a
+		// "File stays at source · {src}" line off this shape.
+		return &ImportPreview{
+			DestFolder:   filepath.Dir(entry.FilePath),
+			DestFile:     filepath.Base(entry.FilePath),
+			DestAbsolute: entry.FilePath,
+			DestExists:   false,
+			IsDuplicate:  false,
+		}, nil
 	}
 	loaded, err := storage.LoadRecording(ctx, r.client, input.RecordingID)
 	if err != nil {

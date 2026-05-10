@@ -15774,7 +15774,7 @@ func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Cont
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"queueID", "recordingID", "overwrite", "fileAssignments"}
+	fieldsInOrder := [...]string{"queueID", "recordingID", "overwrite", "fileAssignments", "externallyManaged"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -15809,6 +15809,13 @@ func (ec *executionContext) unmarshalInputImportQueueEntryInput(ctx context.Cont
 				return it, err
 			}
 			it.FileAssignments = data
+		case "externallyManaged":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("externallyManaged"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExternallyManaged = data
 		}
 	}
 	return it, nil
@@ -16295,7 +16302,7 @@ func (ec *executionContext) unmarshalInputPreviewQueueImportInput(ctx context.Co
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"queueID", "recordingID"}
+	fieldsInOrder := [...]string{"queueID", "recordingID", "externallyManaged"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -16316,6 +16323,13 @@ func (ec *executionContext) unmarshalInputPreviewQueueImportInput(ctx context.Co
 				return it, err
 			}
 			it.RecordingID = data
+		case "externallyManaged":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("externallyManaged"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ExternallyManaged = data
 		}
 	}
 	return it, nil

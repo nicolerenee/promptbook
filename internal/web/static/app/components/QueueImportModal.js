@@ -338,8 +338,9 @@ function runPreview(local, queueID, recordingID) {
 
   const variables = {
     input: {
-      queueID:     'queue-' + queueID,
-      recordingID: 'recording-' + recordingID,
+      queueID:           'queue-' + queueID,
+      recordingID:       'recording-' + recordingID,
+      externallyManaged: !!local.externallyManaged,
     },
   };
   graphql.query(PREVIEW_QUERY, variables)
@@ -522,11 +523,21 @@ function MatchSection(local, queueID) {
 // blocked by a preview error — the engine may know more than the
 // planner about the resolved id, e.g. it'll auto-fetch a missing
 // recording.
+//
+// Externally-managed mode collapses the section to a one-liner
+// — promptbook is NOT moving the file, so the canonical-path
+// preview + overwrite / duplicate banners don't apply.
 function PreviewSection(local) {
   const p = local.preview;
   if (!local.match) {
     return m('div', { class: 'opacity-60 text-sm italic' },
       'Pick a recording above to see the planned destination.');
+  }
+  if (local.externallyManaged) {
+    return m('div', { class: 'text-sm opacity-80' }, [
+      m('span', { class: 'opacity-60 mr-2' }, 'File stays at source ·'),
+      m('code', { class: 'font-mono text-xs break-all' }, p.dest || ''),
+    ]);
   }
   if (p.loading) {
     return m('div', { class: 'flex items-center gap-2 text-sm opacity-70' }, [
@@ -552,6 +563,45 @@ function PreviewSection(local) {
   ]);
 }
 
+// ExternallyManagedSection renders the catalog-only opt-in. A single
+// labelled checkbox + a one-line explainer; flipping the box re-fires
+// the destination preview so the user sees the source path echoed
+// back as the "destination" when checked, or the canonical path
+// computed from the rename templates when unchecked.
+function ExternallyManagedSection(local, queueID) {
+  return m('div', { class: 'space-y-2' }, [
+    m('h4', { class: 'text-xs uppercase opacity-60 tracking-wide' },
+      'Externally managed'),
+    m('label', {
+      class: 'flex items-start gap-2 cursor-pointer p-3 rounded-box ' +
+             'bg-base-200',
+    }, [
+      m('input', {
+        type: 'checkbox',
+        class: 'checkbox checkbox-sm mt-0.5',
+        checked: !!local.externallyManaged,
+        onchange: (ev) => {
+          local.externallyManaged = !!ev.target.checked;
+          // Re-fire the preview so the destination flips between the
+          // canonical path and "File stays at source".
+          if (local.match && local.match.id) {
+            runPreview(local, queueID, local.match.id);
+          }
+        },
+      }),
+      m('div', { class: 'text-sm' }, [
+        m('div', { class: 'font-medium' },
+          'Externally managed (Radarr/Plex owns this file)'),
+        m('div', { class: 'opacity-70 text-xs mt-0.5' },
+          'Catalog only — promptbook will not move the file, write ' +
+          'movie.nfo, or fetch subtitles. The .encora-id sidecar and ' +
+          'a .promptbook-externally-managed sentinel land next to the ' +
+          'source so a later scan still recognizes it.'),
+      ]),
+    ]),
+  ]);
+}
+
 // ConflictBanner renders the destination-conflict warning when the
 // preview reported destExists. Three states:
 //
@@ -568,6 +618,10 @@ function PreviewSection(local) {
 function ConflictBanner(local) {
   const p = local.preview;
   if (!p || !p.destExists) return null;
+  // Externally-managed imports never overwrite — the file stays at
+  // the source path. Suppress the banner so the user isn't prompted
+  // for confirmation that doesn't apply.
+  if (local.externallyManaged) return null;
   if (p.isDuplicate) {
     return m('div', {
       role: 'alert',
@@ -690,6 +744,52 @@ function renderFilesTable(local, item, rows) {
   ]);
 }
 
+// renderCompanionBadges renders the small ghost badges next to the
+// filename header that summarise the rest of the folder. The scanner's
+// extras_count lumps non-main parts in with true extras (parts - 1 +
+// extras), so we read classification.parts / classification.extras
+// directly to render an honest breakdown:
+//   - Multipart with no extras   → "Part 1 of N" (the file picker
+//     below shows the rest)
+//   - Single main + N extras     → "+N extras" (legacy shape, with the
+//     "extras stay in place" tooltip)
+//   - Multipart + extras         → both badges
+//   - Pre-classification rows    → fall back to the legacy
+//     "+extras_count extras" badge so we don't misreport on rows that
+//     have extras_count but no classification blob
+function renderCompanionBadges(item) {
+  const cls = item && item.classification;
+  if (!cls) {
+    if (!item || !item.extras_count) return [];
+    return [
+      m('span', {
+        class: 'badge badge-ghost badge-sm shrink-0 mt-0.5',
+        title: 'Other media files in the same folder. ' +
+               'Only the main file imports; extras stay in place.',
+      }, '+' + item.extras_count + ' extra' +
+         (item.extras_count === 1 ? '' : 's')),
+    ];
+  }
+  const partsLen  = (cls.parts  || []).length;
+  const extrasLen = (cls.extras || []).length;
+  const out = [];
+  if (partsLen >= 2) {
+    out.push(m('span', {
+      class: 'badge badge-ghost badge-sm shrink-0 mt-0.5',
+      title: 'This recording is split across ' + partsLen +
+             ' files. All parts will be imported together.',
+    }, 'Part 1 of ' + partsLen));
+  }
+  if (extrasLen > 0) {
+    out.push(m('span', {
+      class: 'badge badge-ghost badge-sm shrink-0 mt-0.5',
+      title: 'Bonus material in the same folder (featurettes, ' +
+             'photos, etc.). Imported alongside as extras.',
+    }, '+' + extrasLen + ' extra' + (extrasLen === 1 ? '' : 's')));
+  }
+  return out;
+}
+
 // sourceFolderForItem returns the folder under which the queue row's
 // classification entries live. Used by shortPath to relativize each
 // row's display path. Falls back to the dirname of file_path so loose
@@ -716,9 +816,10 @@ function runImport(local, queueID, onSuccess) {
   const assignments = fileAssignmentsForMutation(fileRows);
   const variables = {
     input: {
-      queueID:     'queue-' + queueID,
-      recordingID: 'recording-' + local.match.id,
-      overwrite:   !!local.overwrite,
+      queueID:           'queue-' + queueID,
+      recordingID:       'recording-' + local.match.id,
+      overwrite:         !!local.overwrite,
+      externallyManaged: !!local.externallyManaged,
     },
   };
   if (assignments && assignments.length > 0) {
@@ -790,7 +891,11 @@ const QueueImportModal = {
     // explicitly checks the overwrite confirmation. Duplicate +
     // no-conflict states leave the button enabled — the mutation
     // handles the duplicate path itself.
-    const overwriteBlocked = local.preview &&
+    //
+    // Externally-managed imports never move the file, so the
+    // overwrite gate doesn't apply.
+    const overwriteBlocked = !local.externallyManaged &&
+      local.preview &&
       local.preview.destExists &&
       !local.preview.isDuplicate &&
       !local.overwrite;
@@ -825,22 +930,15 @@ const QueueImportModal = {
 
         // Filename + size + directory header. The filename gets the
         // prominent line because the user reads it most when verifying
-        // a match. extras_count surfaces alongside so the user is
-        // reminded the folder also holds companion files — only the
-        // main file moves on import.
+        // a match. The companion-files badge breaks the count down
+        // into parts vs true extras so a multi-part drop with no real
+        // bonus material stops reading as "+N extras stay in place".
         m('div', { class: 'space-y-1 mb-4' }, [
           m('div', { class: 'flex items-start gap-2 min-w-0' }, [
             m('div', {
               class: 'font-mono text-sm break-all flex-1',
             }, fileName),
-            item.extras_count > 0
-              ? m('span', {
-                  class: 'badge badge-ghost badge-sm shrink-0 mt-0.5',
-                  title: 'Other media files in the same folder. ' +
-                         'Only the main file imports; extras stay in place.',
-                }, '+' + item.extras_count + ' extra' +
-                   (item.extras_count === 1 ? '' : 's'))
-              : null,
+            ...renderCompanionBadges(item),
           ]),
           m('div', { class: 'text-xs opacity-60 font-mono' }, size),
           dirPath
@@ -855,6 +953,15 @@ const QueueImportModal = {
           m('h4', { class: 'text-xs uppercase opacity-60 tracking-wide' }, 'Match'),
           MatchSection(local, item.id),
         ]),
+
+        // Externally-managed toggle. Sits between Match and the
+        // Files / Destination sections so the user sees it before
+        // they reason about per-file picker rows or the planned
+        // canonical path. Toggling it on collapses the Destination
+        // section to "File stays at source · {path}" and hides any
+        // overwrite / duplicate banners (those don't apply when
+        // promptbook isn't moving the file).
+        m('div', { class: 'mb-4' }, ExternallyManagedSection(local, item.id)),
 
         // Files-in-this-folder section. Renders nothing when the queue
         // row has no classification (legacy / single-loose-file imports);
@@ -943,6 +1050,13 @@ export function makeLocalState(item) {
     // reports destExists + !isDuplicate. The Import button stays
     // disabled until they check the box in the conflict banner.
     overwrite: false,
+    // externallyManaged flips the import into catalog-only mode:
+    // the source file stays in place, no movie.nfo gets written,
+    // no subtitles get fetched. Drives the section between Match
+    // and Destination — the Destination card collapses to a
+    // one-liner when checked. Default unchecked preserves the
+    // legacy move-the-file flow.
+    externallyManaged: false,
     // files holds the multi-file picker's per-row state. rows[] is
     // empty for queue entries with no classification (legacy /
     // single-loose-file imports); the FilesSection renderer skips the

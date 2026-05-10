@@ -430,9 +430,17 @@ extend type Query {
 # queue row's source path + the chosen target recording. Both ids
 # are prefixed strings (queue-N, recording-N) so the wire format
 # stays consistent with importQueueEntry.
+#
+# externallyManaged, when true, switches the preview into the
+# catalog-only flow: destAbsolute echoes the source path verbatim
+# (the file stays in place) and destExists / isDuplicate stay false
+# (no overwrite check applies — promptbook never moves the file).
+# Default false preserves the legacy preview behaviour for callers
+# that don't know about the option.
 input PreviewQueueImportInput {
   queueID: ID!
   recordingID: ID!
+  externallyManaged: Boolean
 }
 
 # RenamePreviewItem is one row in the per-recording rename preview.
@@ -513,6 +521,14 @@ input ImportQueueEntryInput {
   recordingID: ID
   overwrite: Boolean
   fileAssignments: [FileAssignmentInput!]
+  # externallyManaged, when true, runs the catalog-only ingest:
+  # promptbook does NOT move the file, write movie.nfo, or fetch
+  # subtitles. The recording_versions row's file_path is the source
+  # path verbatim; .encora-id + .promptbook-externally-managed
+  # sentinel land next to the source so a later scan recognizes the
+  # file even if the external tool (Radarr/Plex) renames the parent
+  # folder. Default false preserves the legacy move-the-file flow.
+  externallyManaged: Boolean
 }
 
 # FileAssignmentInput routes one source path to a role for the

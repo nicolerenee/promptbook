@@ -33,10 +33,11 @@ type ImportPreview struct {
 }
 
 type ImportQueueEntryInput struct {
-	QueueID         int64                  `json:"queueID"`
-	RecordingID     *int64                 `json:"recordingID,omitempty"`
-	Overwrite       *bool                  `json:"overwrite,omitempty"`
-	FileAssignments []*FileAssignmentInput `json:"fileAssignments,omitempty"`
+	QueueID           int64                  `json:"queueID"`
+	RecordingID       *int64                 `json:"recordingID,omitempty"`
+	Overwrite         *bool                  `json:"overwrite,omitempty"`
+	FileAssignments   []*FileAssignmentInput `json:"fileAssignments,omitempty"`
+	ExternallyManaged *bool                  `json:"externallyManaged,omitempty"`
 }
 
 type ImportQueueEntryPayload struct {
@@ -96,8 +97,9 @@ type PersonRecording struct {
 }
 
 type PreviewQueueImportInput struct {
-	QueueID     int64 `json:"queueID"`
-	RecordingID int64 `json:"recordingID"`
+	QueueID           int64 `json:"queueID"`
+	RecordingID       int64 `json:"recordingID"`
+	ExternallyManaged *bool `json:"externallyManaged,omitempty"`
 }
 
 type QueueClassification struct {
