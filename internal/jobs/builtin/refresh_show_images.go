@@ -9,6 +9,7 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
 
@@ -26,6 +27,12 @@ type RefreshShowImagesJob struct {
 	Cache  *imagecache.Cache
 	SM     pbsync.StagemediaImageClient
 	Logger zerolog.Logger
+	// NFORefresh, when non-nil, gets RewriteForShow(showID) called
+	// after a successful banner write so every recording for the
+	// show picks up the new banner-mtime in its <set><thumb> cache-
+	// buster. The headshot writes inside this job each get their own
+	// RewriteForPerformer call. nil leaves the NFOs untouched.
+	NFORefresh *nforefresh.Service
 }
 
 // jobNameRefreshShowImages is the registry key. Stable string —
@@ -78,7 +85,35 @@ func (j *RefreshShowImagesJob) Run(ctx context.Context, args jobs.JobArgs) error
 	if bannerErr := j.persistBanner(ctx, showID, imgs.Posters, force); bannerErr != nil {
 		return bannerErr
 	}
-	j.persistHeadshots(ctx, imgs.Performers)
+	// HasShowBanner is a cheap stat; check after persistBanner so the
+	// post-write fan-out only fires when the banner is actually on
+	// disk (StageMedia returning no posters is a successful no-op,
+	// not a write).
+	bannerWritten := j.Cache.HasShowBanner(showID)
+
+	headshotIDs := j.persistHeadshots(ctx, imgs.Performers)
+
+	// Banner change → rewrite every recording's NFO under the show.
+	// Headshot changes → rewrite each affected performer's recordings.
+	// Both fan-outs are best-effort and don't roll back on failure.
+	if j.NFORefresh != nil {
+		if bannerWritten {
+			if rerr := j.NFORefresh.RewriteForShow(ctx, showID); rerr != nil {
+				j.Logger.Warn().
+					Err(rerr).
+					Int64("show_id", showID).
+					Msg("refresh-show-images: nfo show fan-out failed")
+			}
+		}
+		for _, actorID := range headshotIDs {
+			if rerr := j.NFORefresh.RewriteForPerformer(ctx, actorID); rerr != nil {
+				j.Logger.Warn().
+					Err(rerr).
+					Int64("actor_id", actorID).
+					Msg("refresh-show-images: nfo performer fan-out failed")
+			}
+		}
+	}
 	return nil
 }
 
@@ -120,8 +155,13 @@ func (j *RefreshShowImagesJob) persistBanner(
 
 // persistHeadshots fetches each performer's headshot when it's not
 // already on disk. Failures are logged at debug and never bubble up —
-// a bad CDN url shouldn't fail the whole show refresh.
-func (j *RefreshShowImagesJob) persistHeadshots(ctx context.Context, performers []stagemediaPerformer) {
+// a bad CDN url shouldn't fail the whole show refresh. Returns the
+// actor ids whose headshots were actually written so the caller can
+// fan out an NFO refresh per affected performer.
+func (j *RefreshShowImagesJob) persistHeadshots(
+	ctx context.Context, performers []stagemediaPerformer,
+) []int64 {
+	var written []int64
 	for _, p := range performers {
 		if p.URL == "" || p.ID == 0 {
 			continue
@@ -133,13 +173,16 @@ func (j *RefreshShowImagesJob) persistHeadshots(ctx context.Context, performers 
 		}
 		if _, err := j.Cache.FetchHeadshot(ctx, p.ID, p.URL); err != nil {
 			if errors.Is(err, imagecache.ErrDisabled) {
-				return
+				return written
 			}
 			j.Logger.Debug().
 				Err(err).
 				Int64("actor_id", p.ID).
 				Str("url", p.URL).
 				Msg("refresh-show-images: headshot fetch failed")
+			continue
 		}
+		written = append(written, p.ID)
 	}
+	return written
 }

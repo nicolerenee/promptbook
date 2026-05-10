@@ -10,6 +10,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/storage"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
@@ -31,6 +32,12 @@ type RefreshRecordingImagesJob struct {
 	SM       pbsync.StagemediaImageClient
 	Renderer *imagerender.Renderer
 	Logger   zerolog.Logger
+	// NFORefresh, when non-nil, gets RewriteForRecording(recID) called
+	// after a successful image fetch + render so the recording's
+	// movie.nfo picks up the new mtime in its `?v=` cache-buster.
+	// nil leaves the NFO untouched — fine when the recording hasn't
+	// been imported yet, since there's no NFO on disk to refresh.
+	NFORefresh *nforefresh.Service
 }
 
 // jobNameRefreshRecordingImages is the registry key.
@@ -87,6 +94,20 @@ func (j *RefreshRecordingImagesJob) Run(ctx context.Context, args jobs.JobArgs) 
 			Err(posterErr).
 			Int64("recording_id", recID).
 			Msg("refresh-recording-images: poster fetch/render failed")
+	}
+
+	// Refresh the recording's movie.nfo so the writer's
+	// `?v={mtime}` cache-buster picks up whichever images we just
+	// wrote. Best-effort: a failure here doesn't roll back the image
+	// writes. RewriteForRecording is itself a no-op when the
+	// recording hasn't been imported yet (no version row on disk).
+	if j.NFORefresh != nil {
+		if rerr := j.NFORefresh.RewriteForRecording(ctx, recID); rerr != nil {
+			j.Logger.Warn().
+				Err(rerr).
+				Int64("recording_id", recID).
+				Msg("refresh-recording-images: nfo rewrite failed")
+		}
 	}
 
 	return nil

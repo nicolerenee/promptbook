@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -193,6 +195,151 @@ func TestNFO_WithPublicURL(t *testing.T) {
 			assert.NotContains(t, got, `//images/`)
 		})
 	}
+}
+
+// TestNFO_PublicURLCacheBust covers the `?v={mtime}` cache-buster
+// emission path: when opts.Cache is set and a slot file is on disk,
+// the writer must append `?v={file mtime in unix seconds}` to the
+// emitted URL. Files that aren't on disk yet emit the bare URL (no
+// `?v=0` suffix) so the wire shape distinguishes "no image yet" from
+// "image with timestamp 0".
+func TestNFO_PublicURLCacheBust(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t)
+	cacheRoot := t.TempDir()
+	cache := imagecache.New(cacheRoot, nil, zerologNop())
+
+	// Lay down each slot with a known mtime so we can assert against
+	// the exact unix-second value the writer reads. Use distinct
+	// mtimes per slot so a cross-wired implementation surfaces in
+	// the diff.
+	posterMtime := int64(1_700_000_001)
+	fanartMtime := int64(1_700_000_002)
+	bannerMtime := int64(1_700_000_003)
+	headshot1380Mtime := int64(1_700_000_004)
+	headshot3003Mtime := int64(1_700_000_005)
+	writeImageWithMtime(t, cache.RecordingPosterPath(rec.ID), posterMtime)
+	writeImageWithMtime(t, cache.RecordingFanartPath(rec.ID), fanartMtime)
+	writeImageWithMtime(t, cache.ShowBannerPath(rec.Metadata.ShowID), bannerMtime)
+	writeImageWithMtime(t, cache.HeadshotPath(90001001), headshot1380Mtime)
+	writeImageWithMtime(t, cache.HeadshotPath(90001018), headshot3003Mtime)
+
+	folder := t.TempDir()
+	written, err := nfo.WriteRecordingFile(
+		t.Context(), folder, rec,
+		nfo.WriteOptions{
+			Cache:     cache,
+			PublicURL: "https://promptbook.example.com",
+		},
+	)
+	require.NoError(t, err)
+
+	body, err := os.ReadFile(written)
+	require.NoError(t, err)
+	got := string(body)
+
+	// Each URL carries `?v={its-own-mtime}`. The XML encoder escapes
+	// ? as ? in chardata (it's a literal); the encoded form is the
+	// same plain string here since `?` is not a reserved character in
+	// XML chardata.
+	assert.Contains(t, got, fmt.Sprintf(
+		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg?v=%d</thumb>`,
+		posterMtime))
+	assert.Contains(t, got, fmt.Sprintf(
+		`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg?v=%d</thumb>`,
+		fanartMtime))
+	// Show banner appears in <set><thumb> + <set><fanart><thumb>.
+	bannerURL := fmt.Sprintf(
+		`https://promptbook.example.com/images/shows/%d/banner.jpg?v=%d`,
+		rec.Metadata.ShowID, bannerMtime)
+	assert.Contains(t, got, "<thumb>"+bannerURL+"</thumb>")
+	// Headshots carry the per-actor mtime.
+	assert.Contains(t, got, fmt.Sprintf(
+		`<thumb>https://promptbook.example.com/images/actors/90001001.jpg?v=%d</thumb>`,
+		headshot1380Mtime))
+	assert.Contains(t, got, fmt.Sprintf(
+		`<thumb>https://promptbook.example.com/images/actors/90001018.jpg?v=%d</thumb>`,
+		headshot3003Mtime))
+}
+
+// TestNFO_PublicURLNoCacheBareURLs covers the negative path:
+// PublicURL set, Cache nil → bare URLs without any `?v=` suffix.
+// Same as TestNFO_WithPublicURL above but spelled out so a future
+// regression that sneaks `?v=0` into the wire shape fails here.
+func TestNFO_PublicURLNoCacheBareURLs(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t)
+	folder := t.TempDir()
+
+	written, err := nfo.WriteRecordingFile(
+		t.Context(), folder, rec,
+		nfo.WriteOptions{PublicURL: "https://promptbook.example.com"},
+	)
+	require.NoError(t, err)
+	body, err := os.ReadFile(written)
+	require.NoError(t, err)
+	got := string(body)
+
+	// No `?v=` suffix anywhere — Cache was nil so every mtime returns
+	// 0 and versionedURL emits the bare URL.
+	assert.NotContains(t, got, "?v=")
+	// Bare URLs still present.
+	assert.Contains(t, got,
+		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg</thumb>`)
+}
+
+// TestNFO_PublicURLPartialMtime covers the mixed case: PublicURL set,
+// Cache set, but only some slot files are on disk. The slots that
+// have mtimes get `?v=`; the missing ones stay bare. Important
+// because a freshly-imported recording typically has poster +
+// fanart but no headshots yet.
+func TestNFO_PublicURLPartialMtime(t *testing.T) {
+	t.Parallel()
+
+	rec := loadMarigold(t)
+	cacheRoot := t.TempDir()
+	cache := imagecache.New(cacheRoot, nil, zerologNop())
+
+	// Only poster on disk; fanart, banner, headshots all missing.
+	posterMtime := int64(1_700_000_010)
+	writeImageWithMtime(t, cache.RecordingPosterPath(rec.ID), posterMtime)
+
+	folder := t.TempDir()
+	written, err := nfo.WriteRecordingFile(
+		t.Context(), folder, rec,
+		nfo.WriteOptions{
+			Cache:     cache,
+			PublicURL: "https://promptbook.example.com",
+		},
+	)
+	require.NoError(t, err)
+	body, err := os.ReadFile(written)
+	require.NoError(t, err)
+	got := string(body)
+
+	assert.Contains(t, got, fmt.Sprintf(
+		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg?v=%d</thumb>`,
+		posterMtime))
+	// Fanart bare — no `?v=` suffix.
+	assert.Contains(t, got,
+		`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg</thumb>`)
+	// Headshot 90001001 bare — file isn't on disk.
+	assert.Contains(t, got,
+		`<thumb>https://promptbook.example.com/images/actors/90001001.jpg</thumb>`)
+}
+
+// writeImageWithMtime writes a 1-byte placeholder at path and
+// sets its mtime to the given unix-seconds value. Lets cache-bust
+// tests assert against an exact `?v=<mtime>` string instead of a
+// wall-clock-tied near-now value.
+func writeImageWithMtime(t *testing.T, path string, mtime int64) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+	require.NoError(t, os.WriteFile(path, []byte{0xff}, 0o600))
+	ts := time.Unix(mtime, 0)
+	require.NoError(t, os.Chtimes(path, ts, ts))
 }
 
 // TestNFO_NoPublicURL is the symmetric guard: with PublicURL empty

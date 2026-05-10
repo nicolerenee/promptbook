@@ -11,6 +11,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
 
@@ -29,6 +30,11 @@ type RefreshActorHeadshotJob struct {
 	Cache  *imagecache.Cache
 	SM     pbsync.StagemediaImageClient
 	Logger zerolog.Logger
+	// NFORefresh, when non-nil, gets RewriteForPerformer(actorID)
+	// called after a successful headshot write so every recording the
+	// performer is credited on picks up the new mtime in its
+	// <actor><thumb> cache-buster.
+	NFORefresh *nforefresh.Service
 }
 
 // jobNameRefreshActorHeadshot is the registry key.
@@ -133,6 +139,18 @@ func (j *RefreshActorHeadshotJob) writeHeadshot(
 		Bool("force", force).
 		Str("dest", dest).
 		Msg("refresh-actor-headshot: headshot written")
+	// Fan out an NFO rewrite to every recording the performer is in
+	// so the headshot URL bumps its `?v={mtime}` suffix in the
+	// rendered XML. Best-effort: a failure here doesn't roll back the
+	// headshot write that already succeeded.
+	if j.NFORefresh != nil {
+		if rerr := j.NFORefresh.RewriteForPerformer(ctx, actorID); rerr != nil {
+			j.Logger.Warn().
+				Err(rerr).
+				Int64("actor_id", actorID).
+				Msg("refresh-actor-headshot: nfo fan-out failed")
+		}
+	}
 	return nil
 }
 

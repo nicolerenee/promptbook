@@ -24,6 +24,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
@@ -107,6 +108,12 @@ type Server struct {
 	// constructed without one (tests or jobs disabled); each handler
 	// returns 503 in that case so the rest of the API stays alive.
 	jobRunner *jobs.Runner
+	// nfoRefresh rewrites movie.nfo files on disk after an image
+	// changes (upload, set-from-URL, refresh job) so the writer's
+	// `?v={mtime}` cache-buster reaches the file media servers scan.
+	// nil when image caching is disabled — there's no NFO to refresh
+	// in that mode either way.
+	nfoRefresh *nforefresh.Service
 	// sleeper is the function the apply batch driver uses to honor a
 	// 429's Retry-After before issuing the next request. Defaults to
 	// time.Sleep; tests inject a recorder to assert the call without
@@ -243,6 +250,15 @@ func New(opts Options) (*Server, error) {
 		version:           version,
 		config:            opts.Config,
 		configSource:      configSource,
+	}
+	// Construct the NFO-refresh service when an image cache is
+	// configured. Without a cache there are no image-change events to
+	// react to, so the service stays nil and every fan-out trigger is
+	// a no-op via its own nil-check.
+	if opts.ImageCache != nil && !opts.ImageCache.Disabled() {
+		srv.nfoRefresh = nforefresh.New(
+			opts.DB, opts.ImageCache, opts.Config.Server.PublicURL, opts.Logger,
+		)
 	}
 	srv.routes()
 	srv.echo.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", web.StaticHandler())))

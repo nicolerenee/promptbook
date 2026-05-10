@@ -16,6 +16,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/jobs/builtin"
+	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server"
 	"github.com/nicolerenee/promptbook/internal/stagemedia"
@@ -151,7 +152,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// server uses powers Regenerate.
 	imgRenderer := imagerender.New(db, imgCache, log.Logger)
 
-	runner := buildJobRunner(ctx, db, encClient, smClient, imgCache, imgRenderer)
+	// NFO-refresh service is shared with the per-entity image-refresh
+	// jobs so the cascade fires both off the upload-handler triggers
+	// (Server constructs its own copy) and off background job writes.
+	nfoRefresh := buildNFORefresh(db, imgCache)
+
+	runner := buildJobRunner(ctx, db, encClient, smClient, imgCache, imgRenderer, nfoRefresh)
 
 	srv, err := server.New(server.Options{
 		DB:                db,
@@ -189,6 +195,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	return srv.Start(ctx, addr)
+}
+
+// buildNFORefresh returns the NFO-refresh service, or nil when image
+// caching is off. Pulled out of runServe so the function stays under
+// the funlen ceiling without disabling the lint outright.
+func buildNFORefresh(db *ent.Client, imgCache *imagecache.Cache) *nforefresh.Service {
+	if imgCache == nil || imgCache.Disabled() {
+		return nil
+	}
+	return nforefresh.New(db, imgCache, appConfig.Server.PublicURL, log.Logger)
 }
 
 // buildIngestEngine returns the queue-import ingest.Engine — wired
@@ -235,6 +251,7 @@ func buildJobRunner(
 	smClient *stagemedia.Client,
 	imgCache *imagecache.Cache,
 	imgRenderer *imagerender.Renderer,
+	nfoRefresh *nforefresh.Service,
 ) *jobs.Runner {
 	runner := jobs.New(jobs.Options{
 		DB:      db,
@@ -244,7 +261,9 @@ func buildJobRunner(
 
 	registered := 0
 	registered += registerRefreshEncora(runner, db, encClient, imgCache)
-	registered += registerImageRefreshJobs(runner, db, encClient, smClient, imgCache, imgRenderer)
+	registered += registerImageRefreshJobs(
+		runner, db, encClient, smClient, imgCache, imgRenderer, nfoRefresh,
+	)
 	registered += registerScanIncoming(runner, db)
 	registered += registerScanLibraryRoot(runner, db)
 
@@ -296,6 +315,7 @@ func registerImageRefreshJobs(
 	smClient *stagemedia.Client,
 	imgCache *imagecache.Cache,
 	imgRenderer *imagerender.Renderer,
+	nfoRefresh *nforefresh.Service,
 ) int {
 	if smClient == nil || imgCache == nil || imgCache.Disabled() {
 		return 0
@@ -310,13 +330,16 @@ func registerImageRefreshJobs(
 	jobsToRegister := []jobs.JobDef{
 		{Job: &builtin.RefreshShowImagesJob{
 			DB: db, Cache: imgCache, SM: smSync, Logger: log.Logger,
+			NFORefresh: nfoRefresh,
 		}},
 		{Job: &builtin.RefreshRecordingImagesJob{
 			DB: db, Cache: imgCache, Encora: encScreenshots, SM: smSync,
 			Renderer: imgRenderer, Logger: log.Logger,
+			NFORefresh: nfoRefresh,
 		}},
 		{Job: &builtin.RefreshActorHeadshotJob{
 			DB: db, Cache: imgCache, SM: smSync, Logger: log.Logger,
+			NFORefresh: nfoRefresh,
 		}},
 	}
 	for _, def := range jobsToRegister {

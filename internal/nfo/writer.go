@@ -370,6 +370,13 @@ type WriteOptions struct {
 // Image-reference resolution is best-effort: a missing slot file in
 // local mode simply omits the corresponding element rather than
 // emitting a broken reference.
+//
+// In URL mode each emitted image URL carries a `?v={mtime}` cache-
+// buster sourced from the on-disk file's modification time (0
+// suppresses the suffix entirely — bare URL — when the file isn't on
+// disk yet). The companion nforefresh.Service rewrites the NFO when
+// the underlying image actually changes; together they keep media-
+// server caches in sync with promptbook's view of the world.
 func WriteRecordingFile(
 	_ context.Context,
 	folder string,
@@ -378,7 +385,7 @@ func WriteRecordingFile(
 ) (string, error) {
 	model := FromRecording(rec)
 	if base := strings.TrimSuffix(opts.PublicURL, "/"); base != "" {
-		applyPublicURLImages(&model, rec, base)
+		applyPublicURLImages(&model, rec, base, opts.Cache)
 	} else {
 		applyLocalImages(&model, rec, folder, opts.Cache)
 	}
@@ -392,13 +399,23 @@ func WriteRecordingFile(
 // avoid pulling the cache into URL mode (the cache's URL helpers
 // short-circuit when Disabled, which would silently drop URLs in a
 // remote-only deployment).
-func applyPublicURLImages(model *MovieNFO, rec encora.Recording, base string) {
+//
+// When cache is non-nil the writer appends `?v={mtime}` to each URL
+// so a freshly-uploaded image bumps the URL and media servers
+// re-fetch on their next NFO scan. A missing-file mtime of 0
+// suppresses the suffix; the bare URL is emitted instead so the
+// wire shape stays clean for entities that don't have an image yet.
+func applyPublicURLImages(
+	model *MovieNFO, rec encora.Recording, base string, cache *imagecache.Cache,
+) {
+	posterURL := fmt.Sprintf("%s/images/recordings/%d/poster.jpg", base, rec.ID)
+	fanartURL := fmt.Sprintf("%s/images/recordings/%d/fanart.jpg", base, rec.ID)
 	model.Thumbs = []Thumb{{
 		Aspect: "poster",
-		Path:   fmt.Sprintf("%s/images/recordings/%d/poster.jpg", base, rec.ID),
+		Path:   versionedURL(posterURL, posterMTime(cache, rec.ID)),
 	}}
 	model.Fanart = &Fanart{Thumbs: []Thumb{{
-		Path: fmt.Sprintf("%s/images/recordings/%d/fanart.jpg", base, rec.ID),
+		Path: versionedURL(fanartURL, fanartMTime(cache, rec.ID)),
 	}}}
 	// Collection art reuses the show banner — Jellyfin's set merge keys
 	// on the set name, so every recording for a given show points at
@@ -409,8 +426,9 @@ func applyPublicURLImages(model *MovieNFO, rec encora.Recording, base string) {
 		bannerURL := fmt.Sprintf(
 			"%s/images/shows/%d/banner.jpg", base, rec.Metadata.ShowID,
 		)
-		model.Set.Thumb = bannerURL
-		model.Set.Fanart = &SetFanart{Thumbs: []string{bannerURL}}
+		bannerVersioned := versionedURL(bannerURL, bannerMTime(cache, rec.Metadata.ShowID))
+		model.Set.Thumb = bannerVersioned
+		model.Set.Fanart = &SetFanart{Thumbs: []string{bannerVersioned}}
 	}
 	// FromRecording emits one Actor per rec.Cast entry in order, so
 	// indexes align 1:1 — that's how we recover each performer's id
@@ -422,8 +440,53 @@ func applyPublicURLImages(model *MovieNFO, rec encora.Recording, base string) {
 			// id there's no canonical headshot URL to point at.
 			continue
 		}
-		model.Actors[i].Thumb = fmt.Sprintf("%s/images/actors/%d.jpg", base, performerID)
+		actorURL := fmt.Sprintf("%s/images/actors/%d.jpg", base, performerID)
+		model.Actors[i].Thumb = versionedURL(actorURL, headshotMTime(cache, performerID))
 	}
+}
+
+// versionedURL appends `?v={mtime}` when mtime > 0 and returns the
+// bare base URL otherwise. The bare-URL fallback is intentional: a
+// missing on-disk file means "no image yet"; emitting `?v=0` would
+// mask the case and make later debugging harder when comparing the
+// NFO against the cache state.
+func versionedURL(base string, mtime int64) string {
+	if mtime <= 0 {
+		return base
+	}
+	return fmt.Sprintf("%s?v=%d", base, mtime)
+}
+
+// posterMTime, fanartMTime, bannerMTime, headshotMTime are tiny
+// nil-safe wrappers around the imagecache.Cache mtime helpers so
+// applyPublicURLImages can stay readable. A nil cache returns 0,
+// which versionedURL converts to a bare URL.
+func posterMTime(cache *imagecache.Cache, recID int64) int64 {
+	if cache == nil {
+		return 0
+	}
+	return cache.RecordingPosterMTime(recID)
+}
+
+func fanartMTime(cache *imagecache.Cache, recID int64) int64 {
+	if cache == nil {
+		return 0
+	}
+	return cache.RecordingFanartMTime(recID)
+}
+
+func bannerMTime(cache *imagecache.Cache, showID int64) int64 {
+	if cache == nil {
+		return 0
+	}
+	return cache.ShowBannerMTime(showID)
+}
+
+func headshotMTime(cache *imagecache.Cache, actorID int64) int64 {
+	if cache == nil {
+		return 0
+	}
+	return cache.HeadshotMTime(actorID)
 }
 
 // applyLocalImages mutates model to reference cache-backed local

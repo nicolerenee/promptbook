@@ -213,6 +213,35 @@ func (c *Cache) HasRecordingPosterSrc(recordingID int64) bool {
 	return c.fileExists(c.RecordingPosterSrcPath(recordingID))
 }
 
+// HeadshotMTime returns the on-disk modification time of the actor's
+// headshot as a Unix timestamp, or 0 when the file (or cache) is
+// missing. NFO writers use this to cache-bust the absolute headshot
+// URL so a fresh upload propagates through media-server caches.
+func (c *Cache) HeadshotMTime(actorID int64) int64 {
+	return c.fileMTime(c.HeadshotPath(actorID))
+}
+
+// ShowBannerMTime returns the on-disk modification time of the show's
+// banner as a Unix timestamp, or 0 when the file (or cache) is
+// missing.
+func (c *Cache) ShowBannerMTime(showID int64) int64 {
+	return c.fileMTime(c.ShowBannerPath(showID))
+}
+
+// RecordingFanartMTime returns the on-disk modification time of the
+// recording's fanart as a Unix timestamp, or 0 when the file (or
+// cache) is missing.
+func (c *Cache) RecordingFanartMTime(recordingID int64) int64 {
+	return c.fileMTime(c.RecordingFanartPath(recordingID))
+}
+
+// RecordingPosterMTime returns the on-disk modification time of the
+// recording's burned-in poster as a Unix timestamp, or 0 when the
+// file (or cache) is missing.
+func (c *Cache) RecordingPosterMTime(recordingID int64) int64 {
+	return c.fileMTime(c.RecordingPosterPath(recordingID))
+}
+
 // HeadshotURL returns the canonical /images/... path for the actor's
 // headshot. ALWAYS returns the canonical path (even when the file
 // isn't on disk yet) — the server's /images/* route falls through to
@@ -378,6 +407,23 @@ func (c *Cache) fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+// fileMTime returns the file's mtime as a Unix timestamp, or 0 when
+// the path is empty, the file is missing, or the entry is a
+// directory. The 0 return is a deliberate signal: NFO writers
+// distinguish "no file yet" from "file with timestamp 0" so the URL
+// can be emitted without a cache-buster suffix when no image is on
+// disk.
+func (c *Cache) fileMTime(path string) int64 {
+	if path == "" {
+		return 0
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return 0
+	}
+	return info.ModTime().Unix()
 }
 
 // fetchTo downloads url into dest, idempotently and atomically. The

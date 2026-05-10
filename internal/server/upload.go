@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,53 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
+
+// nfoRefreshTrigger is the small kind enum the fan-out helper switches
+// on. Lifted into a named type so the upload + refresh-job sites
+// both spell the same value.
+type nfoRefreshTrigger int
+
+const (
+	nfoRefreshRecording nfoRefreshTrigger = iota
+	nfoRefreshShow
+	nfoRefreshPerformer
+)
+
+// triggerNFORefresh fires the NFO-rewrite cascade in a background
+// goroutine so the upload-handler call returns immediately. Errors
+// are logged at warn-level — they're never surfaced to the user
+// because a failed rewrite doesn't invalidate the underlying image
+// write that already succeeded. nil receivers and nil services are
+// silent no-ops so callers don't have to guard.
+//
+// The detached context.Background() is deliberate: the rewrite runs
+// off the caller's request lifecycle, so a cancelled request body
+// must not abort the cascade. The image is already on disk; we owe
+// the user the NFO rewrite even if their browser disconnected.
+func (s *Server) triggerNFORefresh(kind nfoRefreshTrigger, id int64) {
+	if s == nil || s.nfoRefresh == nil {
+		return
+	}
+	go func() {
+		ctx := context.Background()
+		var err error
+		switch kind {
+		case nfoRefreshRecording:
+			err = s.nfoRefresh.RewriteForRecording(ctx, id)
+		case nfoRefreshShow:
+			err = s.nfoRefresh.RewriteForShow(ctx, id)
+		case nfoRefreshPerformer:
+			err = s.nfoRefresh.RewriteForPerformer(ctx, id)
+		}
+		if err != nil {
+			s.logger.Warn().
+				Err(err).
+				Int("kind", int(kind)).
+				Int64("id", id).
+				Msg("nforefresh: cascade failed")
+		}
+	}()
+}
 
 // maxUploadBytes caps a single multipart upload. 10 MiB is comfortably
 // above realistic poster + fanart sizes (a 4K JPEG at quality 95 is
@@ -118,6 +166,7 @@ func (s *Server) handleUploadRecordingFanart(c echo.Context) error {
 		status, resp := mapUploadError(saveErr)
 		return c.JSON(status, resp)
 	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -156,6 +205,7 @@ func (s *Server) handleUploadRecordingPoster(c echo.Context) error {
 				Msg("poster-upload: regenerate failed; poster-src is on disk")
 		}
 	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -181,6 +231,7 @@ func (s *Server) handleUploadShowBanner(c echo.Context) error {
 		status, resp := mapUploadError(saveErr)
 		return c.JSON(status, resp)
 	}
+	s.triggerNFORefresh(nfoRefreshShow, showID)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -207,6 +258,7 @@ func (s *Server) handleUploadActorHeadshot(c echo.Context) error {
 		status, resp := mapUploadError(saveErr)
 		return c.JSON(status, resp)
 	}
+	s.triggerNFORefresh(nfoRefreshPerformer, actorID)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -237,6 +289,7 @@ func (s *Server) handleSetRecordingFanartFromURL(c echo.Context) error {
 		status, resp := mapUploadError(fetchErr)
 		return c.JSON(status, resp)
 	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -284,6 +337,7 @@ func (s *Server) handleSetRecordingPosterFromURL(c echo.Context) error {
 				Msg("poster-from-url: regenerate failed")
 		}
 	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -310,6 +364,7 @@ func (s *Server) handleSetShowBannerFromURL(c echo.Context) error {
 		status, resp := mapUploadError(fetchErr)
 		return c.JSON(status, resp)
 	}
+	s.triggerNFORefresh(nfoRefreshShow, showID)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
@@ -333,6 +388,7 @@ func (s *Server) handleSetActorHeadshotFromURL(c echo.Context) error {
 		status, resp := mapUploadError(fetchErr)
 		return c.JSON(status, resp)
 	}
+	s.triggerNFORefresh(nfoRefreshPerformer, actorID)
 	return c.JSON(http.StatusOK, uploadResponse{OK: true})
 }
 
