@@ -20,9 +20,56 @@
 // Library + Wants pages use. URL persists ?sort=&dir=.
 
 import m from 'https://esm.sh/mithril@2.2.2';
-import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import { relativeTime } from '../utils/format.js';
+
+// SYNC_RUNS_QUERY pulls the most recent SyncRun rows via the entgql
+// `syncRuns` Relay connection. Limited to 30 rows to match the legacy
+// REST cap (syncRunsListLimit). Field names are camelCase per gqlgen
+// convention; mapSyncRun normalizes them back to the snake_case shape
+// the legacy renderer was written against.
+const SYNC_RUNS_QUERY = `
+  query SyncRuns($first: Int!) {
+    syncRuns(first: $first, orderBy: { field: STARTED_AT, direction: DESC }) {
+      edges {
+        node {
+          id
+          kind
+          startedAt
+          finishedAt
+          okCount
+          errorCount
+          rateLimitRemaining
+          errorText
+        }
+      }
+    }
+  }
+`;
+
+// SYNC_RUNS_LIMIT mirrors the server-side syncRunsListLimit constant;
+// kept here so a future tweak only has to land in two places.
+const SYNC_RUNS_LIMIT = 30;
+
+// mapSyncRun rewrites a GraphQL SyncRun node into the snake_case shape
+// the renderer + sort comparators expect. Time fields stay as
+// RFC3339 strings (gqlgen's MarshalTime default) — Date.parse handles
+// both that and the legacy "2006-01-02 15:04:05" format the REST
+// endpoint used to emit, so the renderer keeps reading correctly.
+function mapSyncRun(node) {
+  if (!node) return null;
+  return {
+    id:                   node.id,
+    kind:                 node.kind || '',
+    started_at:           node.startedAt || '',
+    finished_at:          node.finishedAt || null,
+    ok_count:             node.okCount || 0,
+    error_count:          node.errorCount || 0,
+    rate_limit_remaining: node.rateLimitRemaining || 0,
+    error_text:           node.errorText || '',
+  };
+}
 
 // Encora is hard-capped at 30 requests/minute; the rate budget cell
 // renders as remaining / RATE_CEILING.
@@ -289,8 +336,9 @@ const Sync = {
     readURLParams();
     state.sync.loading = true;
     state.sync.error = null;
-    api.get('/sync/runs').then((body) => {
-      state.sync.items = (body && body.items) || [];
+    graphql.query(SYNC_RUNS_QUERY, { first: SYNC_RUNS_LIMIT }).then((data) => {
+      const edges = (data && data.syncRuns && data.syncRuns.edges) || [];
+      state.sync.items = edges.map((e) => mapSyncRun(e && e.node)).filter(Boolean);
       state.sync.loading = false;
     }).catch((err) => {
       state.sync.error = err;
