@@ -167,7 +167,6 @@ const (
 	sortKeyDate        = "date"
 	sortKeyMaster      = "master"
 	sortKeyLocalFormat = "local_format"
-	sortKeyShowName    = "name"
 	sortKeyRecCount    = "recording_count"
 	sortKeyFirstYear   = "first_year"
 	sortKeyLastYear    = "last_year"
