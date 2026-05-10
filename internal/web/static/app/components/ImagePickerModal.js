@@ -227,16 +227,19 @@ function renderUpstreamStrip(attrs) {
     return m('div', { class: 'opacity-60 text-sm py-2' },
       'No upstream options found. Upload a custom image instead.');
   }
-  // loadGen is bumped by the caller each time fresh options are
-  // fetched. We append it as a `?_=` query param so the browser
-  // doesn't reuse a previously-failed cached load on Re-fetch, and
-  // we fold it into the Mithril key so remounting forces the <img>
-  // to re-issue the request rather than hold the stale node.
+  // Thumbnails route through /api/v1/upstream-image so the browser
+  // makes a same-origin fetch instead of a cross-origin one to
+  // stagemedia.me / encora.it. Safari was aborting the cross-origin
+  // loads with "network connection lost" even with no-referrer.
+  // The raw url stays in opt.url so onPick still POSTs the upstream
+  // URL to /poster-from-url; only the rendered <img> goes through
+  // the proxy.
   //
-  // referrerpolicy="no-referrer" is the StageMedia workaround:
-  // their CDN serves a 403 placeholder when the Referer header
-  // points at a host they don't recognize (e.g. localhost:8080).
-  // Stripping the referrer entirely lets the request through.
+  // loadGen is bumped by the caller each time fresh options are
+  // fetched and folded into both the proxy URL (?gen=) and the
+  // Mithril key, so a Re-fetch after a failed load forces the
+  // browser to re-issue the request rather than serve the cached
+  // failure.
   const gen = attrs.loadGen || 0;
   return m('div', { class: 'flex gap-3 overflow-x-auto py-2' },
     options.map((opt, idx) => m('button', {
@@ -251,22 +254,22 @@ function renderUpstreamStrip(attrs) {
       disabled: busy,
       onclick: () => onPick(opt.url),
     }, m('img', {
-      src: gen ? bustCache(opt.url, gen) : opt.url,
+      src: proxyURL(opt.url, gen),
       alt: opt.source || 'upstream option ' + (idx + 1),
       class: 'w-full h-full object-cover',
       loading: 'lazy',
-      referrerpolicy: 'no-referrer',
     }))));
 }
 
-// bustCache appends a `?_=<gen>` query param to url so a re-fetch
-// after a failed load forces the browser to re-request rather than
-// reuse the cached failure. Preserves any existing query string by
-// switching the separator to `&`.
-function bustCache(url, gen) {
+// proxyURL wraps an upstream URL in /api/v1/upstream-image so the
+// browser fetches it same-origin. gen, when non-zero, is appended as
+// &gen= (outside the encoded url param) so a Re-fetch evicts the
+// cached load without changing the upstream URL the server forwards.
+function proxyURL(url, gen) {
   if (!url) return url;
-  const sep = url.indexOf('?') >= 0 ? '&' : '?';
-  return url + sep + '_=' + gen;
+  let out = '/api/v1/upstream-image?url=' + encodeURIComponent(url);
+  if (gen) out += '&gen=' + gen;
+  return out;
 }
 
 // uploadButton mirrors the renderUploadButton helper from

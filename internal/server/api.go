@@ -113,6 +113,11 @@ func (s *Server) routes() {
 	api.GET("/recordings/:id/poster-options", s.handleListRecordingPosterOptions)
 	api.GET("/recordings/:id/fanart-options", s.handleListRecordingFanartOptions)
 	api.GET("/actors/:id/headshot-options", s.handleListActorHeadshotOptions)
+	// Upstream image proxy. The picker thumbnails route through here
+	// because Safari aborts cross-origin <img> loads from localhost to
+	// stagemedia.me even with no-referrer. Allowlisted to StageMedia
+	// + Encora hosts only.
+	api.GET("/upstream-image", s.handleUpstreamImageProxy)
 	// "Refresh from upstream" endpoints: fire the per-entity
 	// refresh-images job with optional force=true. The picker modal
 	// footer calls these when the user wants to re-pull StageMedia /
