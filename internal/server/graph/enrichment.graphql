@@ -382,10 +382,17 @@ type QueueEntry {
 # Extras for everything else, and an Ambiguous flag for "two similar-
 # sized videos at root, no markers" cases the modal needs to surface
 # to the user.
+#
+# externalIDs are the third-party provider ids (TMDB / IMDB / …) the
+# scanner pulled out of the folder basename — Radarr-managed pro-shot
+# drops carry [tmdbid-N] / {imdb-ttN} markers that map straight onto
+# this list. Empty for plain folders with no tags. The ingest engine
+# persists these into the external_ids table once the recording lands.
 type QueueClassification {
   parts: [QueueClassifiedFile!]!
   extras: [QueueClassifiedFile!]!
   ambiguous: Boolean!
+  externalIDs: [QueueExternalID!]!
 }
 
 # QueueClassifiedFile is one media file inside a QueueClassification.
@@ -397,6 +404,17 @@ type QueueClassifiedFile {
   sizeBytes: Int!
   suggestedKind: String!
   partIndex: Int!
+}
+
+# QueueExternalID is one parsed-from-folder-name provider id. provider
+# is the lowercase provider token ("tmdb", "imdb"); externalID is the
+# raw wire-format id (digits for TMDB, "tt"+digits for IMDB). url is
+# the canonical public web link for the id, or null when the provider
+# has no known url template.
+type QueueExternalID {
+  provider: String!
+  externalID: String!
+  url: String
 }
 
 extend type Query {

@@ -22,6 +22,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/performer"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/show"
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
@@ -1243,8 +1244,9 @@ func queueEntryToGraphQL(e storage.QueueEntry) *QueueEntry {
 // promise still holds for legacy rows.
 func decodeQueueClassification(raw string) *QueueClassification {
 	out := &QueueClassification{
-		Parts:  []*QueueClassifiedFile{},
-		Extras: []*QueueClassifiedFile{},
+		Parts:       []*QueueClassifiedFile{},
+		Extras:      []*QueueClassifiedFile{},
+		ExternalIDs: []*QueueExternalID{},
 	}
 	if raw == "" {
 		return out
@@ -1263,6 +1265,16 @@ func decodeQueueClassification(raw string) *QueueClassification {
 			PartIndex     int    `json:"partIndex"`
 		} `json:"extras"`
 		Ambiguous bool `json:"ambiguous"`
+		// ExternalIDs mirrors the externalids.ExternalID JSON shape;
+		// the externalids package owns the wire tag casing (lower
+		// camelCase). omitempty at the source means the field is
+		// absent on pre-tag rows — json.Unmarshal leaves the local
+		// slice nil in that case, which is the empty-classification
+		// branch we want.
+		ExternalIDs []struct {
+			Provider   string `json:"provider"`
+			ExternalID string `json:"externalID"`
+		} `json:"externalIDs"`
 	}
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		// Defensive: a row with a corrupt blob still surfaces as an
@@ -1285,6 +1297,18 @@ func decodeQueueClassification(raw string) *QueueClassification {
 			SuggestedKind: x.SuggestedKind,
 			PartIndex:     x.PartIndex,
 		})
+	}
+	for _, eid := range decoded.ExternalIDs {
+		url := externalids.URLFor(externalids.Provider(eid.Provider), eid.ExternalID)
+		entry := &QueueExternalID{
+			Provider:   eid.Provider,
+			ExternalID: eid.ExternalID,
+		}
+		if url != "" {
+			urlCopy := url
+			entry.URL = &urlCopy
+		}
+		out.ExternalIDs = append(out.ExternalIDs, entry)
 	}
 	return out
 }

@@ -226,9 +226,10 @@ type ComplexityRoot struct {
 	}
 
 	QueueClassification struct {
-		Ambiguous func(childComplexity int) int
-		Extras    func(childComplexity int) int
-		Parts     func(childComplexity int) int
+		Ambiguous   func(childComplexity int) int
+		ExternalIDs func(childComplexity int) int
+		Extras      func(childComplexity int) int
+		Parts       func(childComplexity int) int
 	}
 
 	QueueClassifiedFile struct {
@@ -250,6 +251,12 @@ type ComplexityRoot struct {
 		SuggestedConfidence  func(childComplexity int) int
 		SuggestedRecording   func(childComplexity int) int
 		SuggestedRecordingID func(childComplexity int) int
+	}
+
+	QueueExternalID struct {
+		ExternalID func(childComplexity int) int
+		Provider   func(childComplexity int) int
+		URL        func(childComplexity int) int
 	}
 
 	Recording struct {
@@ -1457,6 +1464,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.QueueClassification.Ambiguous(childComplexity), true
+	case "QueueClassification.externalIDs":
+		if e.ComplexityRoot.QueueClassification.ExternalIDs == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassification.ExternalIDs(childComplexity), true
 	case "QueueClassification.extras":
 		if e.ComplexityRoot.QueueClassification.Extras == nil {
 			break
@@ -1561,6 +1574,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.QueueEntry.SuggestedRecordingID(childComplexity), true
+
+	case "QueueExternalID.externalID":
+		if e.ComplexityRoot.QueueExternalID.ExternalID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueExternalID.ExternalID(childComplexity), true
+	case "QueueExternalID.provider":
+		if e.ComplexityRoot.QueueExternalID.Provider == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueExternalID.Provider(childComplexity), true
+	case "QueueExternalID.url":
+		if e.ComplexityRoot.QueueExternalID.URL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueExternalID.URL(childComplexity), true
 
 	case "Recording.amountRecorded":
 		if e.ComplexityRoot.Recording.AmountRecorded == nil {
@@ -3139,6 +3171,8 @@ func (ec *executionContext) childFields_QueueClassification(ctx context.Context,
 		return ec.fieldContext_QueueClassification_extras(ctx, field)
 	case "ambiguous":
 		return ec.fieldContext_QueueClassification_ambiguous(ctx, field)
+	case "externalIDs":
+		return ec.fieldContext_QueueClassification_externalIDs(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type QueueClassification", field.Name)
 }
@@ -3183,6 +3217,18 @@ func (ec *executionContext) childFields_QueueEntry(ctx context.Context, field gr
 		return ec.fieldContext_QueueEntry_classification(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type QueueEntry", field.Name)
+}
+
+func (ec *executionContext) childFields_QueueExternalID(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "provider":
+		return ec.fieldContext_QueueExternalID_provider(ctx, field)
+	case "externalID":
+		return ec.fieldContext_QueueExternalID_externalID(ctx, field)
+	case "url":
+		return ec.fieldContext_QueueExternalID_url(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type QueueExternalID", field.Name)
 }
 
 func (ec *executionContext) childFields_Recording(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -8284,6 +8330,38 @@ func (ec *executionContext) fieldContext_QueueClassification_ambiguous(_ context
 	return graphql.NewScalarFieldContext("QueueClassification", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _QueueClassification_externalIDs(ctx context.Context, field graphql.CollectedField, obj *QueueClassification) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassification_externalIDs(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExternalIDs, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*QueueExternalID) graphql.Marshaler {
+			return ec.marshalNQueueExternalID2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueExternalIDᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassification_externalIDs(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "QueueClassification",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_QueueExternalID(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _QueueClassifiedFile_path(ctx context.Context, field graphql.CollectedField, obj *QueueClassifiedFile) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -8645,6 +8723,75 @@ func (ec *executionContext) fieldContext_QueueEntry_classification(_ context.Con
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _QueueExternalID_provider(ctx context.Context, field graphql.CollectedField, obj *QueueExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueExternalID_provider(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Provider, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueExternalID_provider(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueExternalID", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueExternalID_externalID(ctx context.Context, field graphql.CollectedField, obj *QueueExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueExternalID_externalID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExternalID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueExternalID_externalID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueExternalID", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueExternalID_url(ctx context.Context, field graphql.CollectedField, obj *QueueExternalID) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueExternalID_url(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.URL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_QueueExternalID_url(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueExternalID", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Recording_id(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
@@ -22850,6 +22997,11 @@ func (ec *executionContext) _QueueClassification(ctx context.Context, sel ast.Se
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "externalIDs":
+			out.Values[i] = ec._QueueClassification_externalIDs(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -22987,6 +23139,52 @@ func (ec *executionContext) _QueueEntry(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var queueExternalIDImplementors = []string{"QueueExternalID"}
+
+func (ec *executionContext) _QueueExternalID(ctx context.Context, sel ast.SelectionSet, obj *QueueExternalID) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, queueExternalIDImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("QueueExternalID")
+		case "provider":
+			out.Values[i] = ec._QueueExternalID_provider(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "externalID":
+			out.Values[i] = ec._QueueExternalID_externalID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "url":
+			out.Values[i] = ec._QueueExternalID_url(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -26358,6 +26556,32 @@ func (ec *executionContext) marshalNQueueEntry2ᚖgithubᚗcomᚋnicolereneeᚋp
 		return graphql.Null
 	}
 	return ec._QueueEntry(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNQueueExternalID2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueExternalIDᚄ(ctx context.Context, sel ast.SelectionSet, v []*QueueExternalID) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNQueueExternalID2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueExternalID(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNQueueExternalID2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueExternalID(ctx context.Context, sel ast.SelectionSet, v *QueueExternalID) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._QueueExternalID(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNRecording2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecording(ctx context.Context, sel ast.SelectionSet, v ent.Recording) graphql.Marshaler {

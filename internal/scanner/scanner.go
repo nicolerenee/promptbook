@@ -273,6 +273,12 @@ func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result)
 		return
 	}
 	cls := classifyFolder(folder, media)
+	// External-id tags (TMDB / IMDB) live in the folder basename for
+	// Radarr-managed pro-shot drops. Parsing here keeps the JSON blob
+	// self-contained — the queue-import modal and the eventual ingest
+	// engine read the ids straight off Classification.ExternalIDs
+	// without re-parsing the path.
+	cls.ExternalIDs = ParseExternalIDsFromName(filepath.Base(folder))
 	if len(cls.Parts) == 0 {
 		// classifyFolder returns no Parts when the folder has files
 		// but none are video / audio — a photos-only or

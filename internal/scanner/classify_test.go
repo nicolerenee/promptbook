@@ -15,9 +15,22 @@ import (
 // tests can decode the queue row's classification_json blob without
 // reaching for unexported types in the scanner package.
 type classification struct {
-	Parts     []classifiedFile `json:"parts"`
-	Extras    []classifiedFile `json:"extras"`
-	Ambiguous bool             `json:"ambiguous"`
+	Parts       []classifiedFile     `json:"parts"`
+	Extras      []classifiedFile     `json:"extras"`
+	Ambiguous   bool                 `json:"ambiguous"`
+	ExternalIDs []classifiedExternal `json:"externalIDs,omitempty"`
+}
+
+// classifiedExternal mirrors externalids.ExternalID's wire shape for
+// the JSON-decoded fixture. Local to the tests so the scanner test
+// package doesn't have to import externalids just to compare. Tag
+// casing matches the externalids package's lowerCamelCase json tags.
+type classifiedExternal struct {
+	Provider   string `json:"provider"`
+	ExternalID string `json:"externalID"`
+	// RecordingID is omitempty on the wire — the scanner persists
+	// pre-ingest entries with id=0 and the blob skips the field.
+	RecordingID int64 `json:"recordingID,omitempty"`
 }
 
 type classifiedFile struct {

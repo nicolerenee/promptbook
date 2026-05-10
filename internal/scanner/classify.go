@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
 )
@@ -16,10 +17,18 @@ import (
 // tagged with a heuristic-suggested kind. Ambiguous flags cases the
 // modal needs to surface to the user — multiple similar-sized videos
 // at the folder root with no part markers.
+//
+// ExternalIDs holds the third-party provider ids parsed from the
+// folder basename (Radarr-style [tmdbid-N] / {imdb-ttN} markers; see
+// ParseExternalIDsFromName for the supported tag families). The
+// RecordingID field on each entry is 0 — the ingest engine stamps it
+// once the recording is upserted. Empty slice for folders with no
+// recognizable tag.
 type Classification struct {
-	Parts     []ClassifiedFile `json:"parts"`
-	Extras    []ClassifiedFile `json:"extras"`
-	Ambiguous bool             `json:"ambiguous"`
+	Parts       []ClassifiedFile         `json:"parts"`
+	Extras      []ClassifiedFile         `json:"extras"`
+	Ambiguous   bool                     `json:"ambiguous"`
+	ExternalIDs []externalids.ExternalID `json:"externalIDs,omitempty"`
 }
 
 // ClassifiedFile is one media file within a Classification. Path is

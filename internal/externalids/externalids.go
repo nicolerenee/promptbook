@@ -53,10 +53,18 @@ const (
 // as both the input shape for UpsertMany and the output shape for
 // ListForRecording — the column set is small enough that a single
 // struct serves both directions.
+//
+// The json tags are explicit so the scanner's classification blob
+// (which embeds a []ExternalID inside scanner.Classification) and
+// the GraphQL decode helper both round-trip through a stable wire
+// shape. Tag casing matches the GraphQL QueueExternalID type: lower
+// camelCase provider / externalID. RecordingID stays omitempty
+// because the scanner persists pre-ingest entries with id=0 and the
+// blob doesn't need the placeholder.
 type ExternalID struct {
-	RecordingID int64
-	Provider    Provider
-	ExternalID  string
+	RecordingID int64    `json:"recordingID,omitempty"`
+	Provider    Provider `json:"provider"`
+	ExternalID  string   `json:"externalID"`
 }
 
 // Execer is the subset of *sql.DB / *sql.Tx the persistence helpers

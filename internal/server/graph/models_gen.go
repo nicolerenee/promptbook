@@ -103,9 +103,10 @@ type PreviewQueueImportInput struct {
 }
 
 type QueueClassification struct {
-	Parts     []*QueueClassifiedFile `json:"parts"`
-	Extras    []*QueueClassifiedFile `json:"extras"`
-	Ambiguous bool                   `json:"ambiguous"`
+	Parts       []*QueueClassifiedFile `json:"parts"`
+	Extras      []*QueueClassifiedFile `json:"extras"`
+	Ambiguous   bool                   `json:"ambiguous"`
+	ExternalIDs []*QueueExternalID     `json:"externalIDs"`
 }
 
 type QueueClassifiedFile struct {
@@ -127,6 +128,12 @@ type QueueEntry struct {
 	Notes                string               `json:"notes"`
 	ExtrasCount          int                  `json:"extrasCount"`
 	Classification       *QueueClassification `json:"classification"`
+}
+
+type QueueExternalID struct {
+	Provider   string  `json:"provider"`
+	ExternalID string  `json:"externalID"`
+	URL        *string `json:"url,omitempty"`
 }
 
 type RecordingExtra struct {
