@@ -1204,12 +1204,14 @@ function renderHero(loaded) {
   ]);
 }
 
-// renderCastCard lists every performer with their role + per-recording
-// status badge. Performer names link to /people/:id when the catalog
-// has a canonical performer row; otherwise they render as plain text.
-// Headshots aren't returned by the recordings endpoint today, so this
-// page renders a neutral monogram-free row — the people detail page is
-// where headshots live.
+// renderCastCard lists every performer as a portrait card in a
+// horizontally-scrolling DaisyUI tideflyer — Radarr-style. Cards hold
+// a 2:3 portrait headshot (matching the placeholder generator's
+// aspect ratio so missing-headshot performers fill the frame the same
+// as real headshots), name, role string (already prefixed with u/s,
+// s/w, etc. by the cast resolver), and route to /people/:id on click.
+// Native scroll-button is the affordance — no chevron buttons, since
+// the page already carries plenty of UI complexity.
 function renderCastCard(loaded) {
   const cast = loaded.Cast || [];
   return m('div', { class: 'card bg-base-100 shadow-sm' },
@@ -1217,37 +1219,64 @@ function renderCastCard(loaded) {
       m('h2', { class: 'card-title text-base' }, 'Cast · ' + cast.length),
       cast.length === 0
         ? m('div', { class: 'opacity-60 text-sm' }, 'No cast recorded.')
-        : m('ul', { class: 'divide-y divide-base-200' },
-            cast.map((entry) => castRow(entry))),
+        : m('div', {
+            class: 'tideflyer tideflyer-center w-full p-2 space-x-3 rounded-box bg-base-200/40',
+          }, cast.map((entry, idx) => castTideflyerItem(entry, idx))),
     ]));
 }
 
-function castRow(entry) {
+// castTideflyerItem renders one performer card. Width is fixed at
+// w-32 (128px) so a typical desktop viewport fits ~7-8 cards before
+// the strip needs to scroll. The portrait frame is aspect-[2/3] so
+// the placeholder SVG and real headshot both crop the same way via
+// object-cover.
+function castTideflyerItem(entry, idx) {
   const perf = entry.Performer || {};
   const char = entry.Character || {};
   const status = entry.Status;
   const name = perf.Name || '—';
-  const role = char.Name || '—';
+  const role = char.Name || '';
   const pid = perf.PerformerID;
-  const nameNode = (pid && pid > 0)
-    ? m('a', {
-        class: 'link link-hover font-medium',
-        href: '#',
-        onclick: (ev) => {
-          ev.preventDefault();
-          m.route.set('/people/' + encodeURIComponent(String(pid)));
-        },
-      }, name)
-    : m('span', { class: 'font-medium' }, name);
-  return m('li', { class: 'py-2 flex items-start justify-between gap-3' }, [
-    m('div', { class: 'min-w-0' }, [
-      nameNode,
-      m('div', { class: 'text-xs font-mono opacity-60 truncate' }, role),
-    ]),
-    status && status.Label
-      ? m('span', { class: 'badge badge-ghost badge-sm shrink-0' }, status.Label)
+  const headshot = entry.local_headshot_url || '';
+  const clickable = !!(pid && pid > 0);
+  const onclick = clickable
+    ? (ev) => {
+        ev.preventDefault();
+        m.route.set('/people/' + encodeURIComponent(String(pid)));
+      }
+    : null;
+  // The role line carries the status prefix (u/s, s/w, etc.) when
+  // the resolver attached one — but the resolver also emits a
+  // separate Status.Label for badge use elsewhere. Render the role
+  // verbatim; if it's empty fall back to the status label so a
+  // performer with no character mapping still gets a meaningful
+  // second line.
+  const roleLine = role || (status && status.Label) || '';
+  return m('div', {
+    key: 'cast-' + idx,
+    class: 'tideflyer-item',
+  }, m('a', {
+    class: 'block w-32 group ' + (clickable ? 'cursor-pointer' : 'cursor-default'),
+    href: clickable ? '/people/' + encodeURIComponent(String(pid)) : '#',
+    onclick: onclick,
+    'aria-label': clickable ? 'Open ' + name : name,
+  }, [
+    m('div', {
+      class: 'aspect-[2/3] w-full overflow-hidden rounded-md bg-base-300',
+    }, headshot
+      ? m('img', {
+          src: headshot,
+          alt: name,
+          loading: 'lazy',
+          class: 'w-full h-full object-cover ' +
+            (clickable ? 'transition-opacity group-hover:opacity-90' : ''),
+        })
+      : null),
+    m('div', { class: 'mt-2 font-semibold text-sm break-words leading-tight' }, name),
+    roleLine
+      ? m('div', { class: 'text-xs opacity-70 break-words leading-tight' }, roleLine)
       : null,
-  ]);
+  ]));
 }
 
 // renderVersionsTable tabulates the recording's local files. Each row
