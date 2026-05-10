@@ -266,6 +266,7 @@ function Row(r) {
   const meta = STATUS_META[r.state] || STATUS_META.orphan;
   const subtitle = (r.tour ? r.tour + ' · ' : '') + 'enc-' + r.id;
   return m('tr', {
+    key: 'rec-' + r.id,
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/recordings/' + r.id),
   }, [

@@ -285,6 +285,10 @@ function StateBadgeCluster(stateCounts) {
 // Row renders one performer.
 function Row(it) {
   return m('tr', {
+    // Keyed-list reconciliation — see Recordings.js Row's `key`
+    // comment. Stops the back-navigation refresh from rebuilding
+    // every row's DOM + scroll-resetting.
+    key: 'perf-' + it.performer_id,
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/people/' + it.performer_id),
   }, [

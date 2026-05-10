@@ -153,9 +153,22 @@ function mapShowItem(node) {
   };
 }
 
+// FRESHNESS_MS — see Recordings.js's loadRecordings for the rationale.
+// Browser back-navigation lands on this code path; if the cached
+// items are still fresh and the query inputs match, skip the round-
+// trip so the user keeps scroll position + sees the list instantly.
+const FRESHNESS_MS = 30_000;
+
 function loadShows() {
   const s = state.showsList;
-  s.loading = true;
+  if (s.lastLoadedAt && s.items && s.items.length > 0 &&
+      Date.now() - s.lastLoadedAt < FRESHNESS_MS &&
+      s.lastQuery === showsQueryKey(s)) {
+    return Promise.resolve();
+  }
+  if (!s.items || s.items.length === 0) {
+    s.loading = true;
+  }
   s.error = null;
   const variables = {
     limit:  s.limit,
@@ -163,16 +176,24 @@ function loadShows() {
     sort:   s.sortKey,
     dir:    s.sortDir,
   };
+  const queryAtFire = showsQueryKey(s);
   return graphql.query(SHOWS_LIST_QUERY, variables).then((data) => {
+    if (queryAtFire !== showsQueryKey(s)) return;
     const env = (data && data.showsList) || {};
     const items = Array.isArray(env.items) ? env.items : [];
     s.items = items.map(mapShowItem).filter(Boolean);
     s.total = env.total || 0;
     s.loading = false;
+    s.lastLoadedAt = Date.now();
+    s.lastQuery = queryAtFire;
   }).catch((err) => {
     s.error = err;
     s.loading = false;
   });
+}
+
+function showsQueryKey(s) {
+  return [s.sortKey, s.sortDir, s.offset, s.limit].join('|');
 }
 
 function setView(key) {
@@ -263,6 +284,11 @@ function yearSpan(first, last) {
 // Recordings.js where Status is rightmost.
 function Row(s) {
   return m('tr', {
+    // Mithril `key` lets the diff reconcile rows by id when the
+    // server returns a fresh items array (back-navigation refresh,
+    // etc.) — without it every row's DOM node is destroyed and
+    // recreated, which kicks fresh poster fetches and resets scroll.
+    key: 'show-' + s.id,
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/shows/' + s.id),
   }, [
@@ -290,6 +316,9 @@ function ShowCard(show) {
     class: 'aspect-[2/3] w-full object-cover',
   });
   return m('div', {
+    // See Row's `key` — same reasoning, doubly important for the
+    // grid view where each card fires its own poster fetch.
+    key: 'show-' + show.id,
     class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',
     onclick,
     role: 'button',

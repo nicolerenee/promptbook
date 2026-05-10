@@ -204,9 +204,33 @@ function mapRecordingItem(node) {
   };
 }
 
+// FRESHNESS_MS caps how long a previous load is considered "fresh"
+// for the back-navigation skip path. ~30s leaves a noticeable
+// latency budget if the user genuinely returns mid-session, but
+// short enough that a multi-minute round-trip will refresh on
+// re-mount.
+const FRESHNESS_MS = 30_000;
+
 function loadRecordings() {
   const r = state.recordings;
-  r.loading = true;
+  // Cached items + same query params + recent fetch → skip the
+  // round-trip. Browser back-navigation lands on this path; the
+  // user keeps their scroll position + the list renders
+  // immediately from already-mapped state.
+  if (r.lastLoadedAt && r.items && r.items.length > 0 &&
+      Date.now() - r.lastLoadedAt < FRESHNESS_MS &&
+      r.lastQuery === queryKey(r)) {
+    return Promise.resolve();
+  }
+  // Don't toggle loading=true when we already have a list to show
+  // — the empty-state placeholder only fires on first paint, and
+  // a silent in-place refresh with no UI churn is what the user
+  // asked for. The view check `loading && items.length === 0`
+  // handles this naturally; we just keep the flag scoped to the
+  // empty case.
+  if (!r.items || r.items.length === 0) {
+    r.loading = true;
+  }
   r.error = null;
   const variables = {
     limit:  r.limit,
@@ -215,16 +239,30 @@ function loadRecordings() {
     dir:    r.sortDir,
     status: r.status || null,
   };
+  const queryAtFire = queryKey(r);
   return graphql.query(RECORDINGS_LIST_QUERY, variables).then((data) => {
+    // Stale-response guard: if the user's filters/page changed
+    // mid-flight, drop this response so the UI doesn't flash an
+    // older result over the newer query's items.
+    if (queryAtFire !== queryKey(r)) return;
     const env = (data && data.recordingsList) || {};
     const items = Array.isArray(env.items) ? env.items : [];
     r.items = items.map(mapRecordingItem).filter(Boolean);
     r.total = env.total || 0;
     r.loading = false;
+    r.lastLoadedAt = Date.now();
+    r.lastQuery = queryAtFire;
   }).catch((err) => {
     r.error = err;
     r.loading = false;
   });
+}
+
+// queryKey is a deterministic string of the inputs that affect
+// the result set so the freshness check + the stale-response guard
+// can compare with === instead of structural equality.
+function queryKey(r) {
+  return [r.status || '', r.sortKey, r.sortDir, r.offset, r.limit].join('|');
 }
 
 function setStatus(key) {
@@ -309,6 +347,12 @@ function Row(it) {
   const meta = STATUS_META[it.status] || STATUS_META.orphan;
   const subtitle = (it.tour ? it.tour + ' · ' : '') + 'enc-' + it.id;
   return m('tr', {
+    // Mithril `key` lets the diff reconcile rows by id when the
+    // server returns a fresh items array (e.g. on back-navigation
+    // refresh) — without it every row's DOM node is destroyed +
+    // recreated, which kicks 50 fresh poster fetches and resets
+    // the user's scroll position.
+    key: 'rec-' + it.id,
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/recordings/' + it.id),
   }, [
@@ -339,6 +383,11 @@ function PosterCard(it) {
     class: 'aspect-[2/3] w-full object-cover',
   });
   return m('div', {
+    // See Row's `key` comment — same reasoning. The grid view's
+    // PosterCards each fire their own poster network request, so a
+    // keyed diff is doubly important here: without it, every
+    // back-navigation refresh re-fetches all 50 thumbnails.
+    key: 'rec-' + it.id,
     class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',
     onclick,
     role: 'button',
