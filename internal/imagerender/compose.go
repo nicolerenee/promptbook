@@ -58,6 +58,16 @@ const renderDPI = 72
 // correctly across the embedded serif.
 const ellipsis = "…"
 
+// ellipsisTrimChars is the set of trailing characters stripped off a
+// truncated string before the ellipsis is appended. We pull off
+// whitespace, separators (- – — · , . ; :), and orphan openers
+// (( [ { " ' “ ‘ «) so the result reads as the start of a phrase
+// trailed by ellipsis rather than something like "TOUR (…" or
+// "TOUR -…". Closing punctuation is intentionally not included since
+// "TOUR)…" is already broken (the opener is gone) and we don't want
+// to chew further than the truncation point would already.
+const ellipsisTrimChars = " -–—·,.;:([{\"'“‘«"
+
 // loadFont parses one of the embedded TTFs and caches the result.
 func loadFont(weight string) (*opentype.Font, error) {
 	switch weight {
@@ -411,7 +421,7 @@ func truncateToCharLimit(text string, maxChars int) string {
 	if keep < 1 {
 		return ellipsis
 	}
-	cut := strings.TrimRight(string(runes[:keep]), " -·,.")
+	cut := strings.TrimRight(string(runes[:keep]), ellipsisTrimChars)
 	return cut + ellipsis
 }
 
@@ -434,7 +444,7 @@ func truncateToFit(f font.Face, text string, maxWidth int) string {
 	runes := []rune(text)
 	for len(runes) > 1 {
 		runes = runes[:len(runes)-1]
-		candidate := strings.TrimRight(string(runes), " -·,.") + ellipsis
+		candidate := strings.TrimRight(string(runes), ellipsisTrimChars) + ellipsis
 		if measureWidth(f, candidate) <= maxWidth {
 			return candidate
 		}
