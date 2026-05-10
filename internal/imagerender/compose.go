@@ -60,16 +60,19 @@ const renderDPI = 72
 const ellipsis = "…"
 
 // minRenderHeight is the floor for the rendered poster's pixel
-// height. When the source comes in below this (StageMedia thumbnails
-// are typically 230×345), the renderer upscales the source canvas
-// before compositing so the band — and the text drawn on it — get a
+// height. When the source comes in below this — StageMedia images
+// are user-uploaded so sizes vary widely; some posters land in the
+// 200-300-tall range — the renderer upscales the canvas before
+// compositing so the band, and the text drawn on it, get a
 // reasonable absolute pixel size. The image content can't really
 // gain detail from upscaling, but TEXT renders fresh on the larger
 // canvas and stays crisp at the higher resolution.
 //
-// 1000 puts the title font at ~68 px (vs ~23 px on a 345-tall source)
-// while keeping the JPEG well under 200 KB at quality 90.
-const minRenderHeight = 1000
+// 600 brings a 345-tall source up to a band height of 120 px and a
+// title font of ~40 px — sharp on disk and noticeably better than
+// the native ~23 px while keeping the upscale gentle enough that
+// already-readable images don't take a quality hit.
+const minRenderHeight = 600
 
 // ensureMinHeight returns src unchanged when its height is already
 // >= minH. Otherwise it scales src up via CatmullRom interpolation
