@@ -1718,35 +1718,40 @@ function renderNFORow(loaded) {
   ]);
 }
 
-// NFOBody renders the highlighted XML pane. Pulled out as a Mithril
-// component so the oncreate / onupdate hooks can call hljs.highlight
-// against the freshly-mounted DOM node — m.trust(...) is the only
-// way to inject the highlighted markup, and we want the highlight
-// invocation gated on hljs being available rather than guessing at
-// import time.
+// NFOBody renders the highlighted XML pane. Plain content goes into
+// the DOM via Mithril, then oncreate / onupdate calls hljs.highlight
+// Element on the rendered <code> — no m.trust, no race with hljs's
+// load timing. When hljs isn't available the pane stays plain;
+// readable enough.
 const NFOBody = {
+  oncreate(vnode) { applyHighlight(vnode); },
+  onupdate(vnode) { applyHighlight(vnode); },
   view(vnode) {
     const content = (vnode.attrs && vnode.attrs.content) || '';
-    if (typeof window !== 'undefined' && window.hljs &&
-        typeof window.hljs.highlight === 'function') {
-      let html;
-      try {
-        html = window.hljs.highlight(content, { language: 'xml' }).value;
-      } catch (_) {
-        html = null;
-      }
-      if (html) {
-        return m('pre', {
-          class: 'hljs bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
-        }, m('code', { class: 'language-xml' }, m.trust(html)));
-      }
-    }
-    // Fallback: plain pre. Readable, just not coloured.
     return m('pre', {
-      class: 'bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
-    }, content);
+      class: 'hljs bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
+    }, m('code', { class: 'language-xml' }, content));
   },
 };
+
+// applyHighlight runs hljs.highlightElement against the <code> child
+// of the supplied Mithril vnode. The data-highlighted attribute reset
+// is required so re-applying highlight after content changes (NFO
+// rewrite, recording id swap) actually re-tokenizes the new text —
+// hljs short-circuits when it sees the marker.
+function applyHighlight(vnode) {
+  if (typeof window === 'undefined' || !window.hljs) return;
+  const code = vnode.dom && vnode.dom.querySelector('code');
+  if (!code) return;
+  if (code.dataset) delete code.dataset.highlighted;
+  code.removeAttribute('data-highlighted');
+  try {
+    window.hljs.highlightElement(code);
+  } catch (_) {
+    // If hljs throws (unregistered language, malformed input, etc.)
+    // leave the plain text in place.
+  }
+}
 
 // loadOptions fetches /api/v1/<entity>/<id>/<kind>-options and parks
 // the result on state.recording.pickerOptions[kind]. Errors land on
