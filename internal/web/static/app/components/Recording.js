@@ -979,77 +979,29 @@ function ellipsisIcon() {
   ]);
 }
 
-// chevronDownIcon is the small caret used by the inline Links
-// dropdown in the header subtitle row. Smaller (size-3) so it sits
-// flush with the surrounding badge-sm pill.
-function chevronDownIcon() {
-  return m('svg', {
-    xmlns: 'http://www.w3.org/2000/svg',
-    fill: 'none',
-    viewBox: '0 0 24 24',
-    'stroke-width': 1.5,
-    stroke: 'currentColor',
-    'aria-hidden': 'true',
-    class: 'size-3',
-  }, [
-    m('path', {
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      d: 'm19.5 8.25-7.5 7.5-7.5-7.5',
-    }),
-  ]);
-}
-
-// linkIcon is the small chain-link glyph used by the inline Links
-// dropdown trigger.
-function linkIcon() {
-  return m('svg', {
-    xmlns: 'http://www.w3.org/2000/svg',
-    fill: 'none',
-    viewBox: '0 0 24 24',
-    'stroke-width': 1.5,
-    stroke: 'currentColor',
-    'aria-hidden': 'true',
-    class: 'size-3.5',
-  }, [
-    m('path', {
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      d: 'M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244',
-    }),
-  ]);
-}
-
-// renderLinksDropdown is the inline "Links" affordance in the header
-// subtitle row. Surfaces every external pointer the recording carries
-// behind a single DaisyUI dropdown so the subtitle row stays compact
-// even when more sources land later (Stagemedia, IMDB, …). Each menu
-// item opens in a new tab. Today the only entry is Encora.
-function renderLinksDropdown(id) {
+// renderLinkBadges renders one small badge-link per external source
+// the recording carries. Inline (no dropdown) so the badges line up
+// at the same size as the master / counts chips that share the
+// subtitle row — DaisyUI's dropdown trigger sits at btn-height even
+// inside a badge wrapper, which made it visibly larger than the
+// neighbouring badge-sm chips. Today the only source is Encora;
+// when more land (Stagemedia, IMDB, …) they slot in as siblings.
+// Past ~3 sources the row will get crowded — that's the point at
+// which it's worth folding back into a dropdown.
+function renderLinkBadges(id) {
   const links = [
     {
       label: 'Encora',
       href: 'https://encora.it/recordings/' + encodeURIComponent(String(id)),
     },
   ];
-  return m('div', { class: 'dropdown dropdown-end' }, [
-    m('div', {
-      tabindex: 0,
-      role: 'button',
-      class: 'badge badge-ghost gap-1 cursor-pointer',
-      'aria-label': 'Links',
-    }, [linkIcon(), m('span', 'Links'), chevronDownIcon()]),
-    m('ul', {
-      tabindex: 0,
-      class: 'dropdown-content menu menu-sm z-10 mt-1 w-44 rounded-box ' +
-             'bg-base-100 shadow border border-base-200 p-2',
-    }, links.map((l) => m('li',
-      m('a', {
-        href: l.href,
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      }, [externalLinkIcon(), m('span', l.label)])))),
-  ]);
+  return links.map((l) => m('a', {
+    href: l.href,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    class: 'badge badge-sm badge-ghost gap-1 hover:badge-neutral',
+    'aria-label': l.label + ' (opens in new tab)',
+  }, [externalLinkIcon(), m('span', l.label)]));
 }
 
 // renderActionsCluster is the icon-button trio that anchors the
@@ -1257,30 +1209,19 @@ function renderHeader(loaded) {
       { class: 'text-sm opacity-70' }, parts);
   }
 
-  // Badge row (bottom of info column) — Status / Gifting / Trading /
-  // Owners / Wanters. The enc-{id} chip moved to the eyebrow; the NFT
-  // pill (when present) sits at the end so the destructive cue
-  // anchors the row.
+  // Badge row (bottom of info column) is "state about me" only —
+  // Status (synced/missing/wanted/etc.) + Gifting + Trading reflect
+  // the user's relationship to the recording. The "facts about the
+  // recording itself" badges (master, owners count, wanters count,
+  // external links) live in the subtitle row up top instead.
   const status = statusForRecording(loaded);
   const statusMeta = STATUS_META[status] || STATUS_META.orphan;
   const owners = (meta.owners_count != null) ? Number(meta.owners_count) : 0;
   const wanters = (meta.wanters_count != null) ? Number(meta.wanters_count) : 0;
-  // The standalone NFT pill is gone — tradingBadge already covers the
-  // NFT state (red until the date, green after, green when no NFT).
-  // A duplicate "NFT" chip sat next to "No Trading until ..." and
-  // duplicated the same signal.
   const badgeRow = [
     m('span', { class: 'badge ' + statusMeta.badge }, statusMeta.label),
     giftingBadge(meta.gifting_status || ''),
     tradingBadge(loaded),
-    owners > 0
-      ? m('span', { class: 'badge badge-ghost badge-sm' },
-          String(owners) + ' owners')
-      : null,
-    wanters > 0
-      ? m('span', { class: 'badge badge-ghost badge-sm' },
-          String(wanters) + ' wants')
-      : null,
   ];
 
   // Plot — show the recording's trading/general notes (the per-
@@ -1291,10 +1232,12 @@ function renderHeader(loaded) {
   // <plot>. Empty notes leaves the plot collapsed.
   const plot = stripHTML(r.notes || '');
 
-  // Subtitle row — Tour · Date text, followed by the master/Pro-Shot
-  // chip and an inline Links dropdown. flex-wrap so narrow viewports
-  // can stack the trailing chips beneath the text rather than
-  // overflowing.
+  // Subtitle row — Tour · Date text + the "facts about the recording"
+  // chip cluster: master / Pro-Shot, owners count, wanters count, and
+  // each external link (Encora today). All sized as badge-sm so they
+  // visually line up with the date text rather than dominating it.
+  // flex-wrap so narrow viewports can stack the trailing chips
+  // beneath the text rather than overflowing.
   const subtitleRow = m('div', {
     class: 'flex flex-wrap items-center gap-2 text-sm opacity-70',
   }, [
@@ -1302,7 +1245,15 @@ function renderHeader(loaded) {
       ? m('span', { class: 'font-mono' }, subtitleText)
       : null,
     masterBadge,
-    renderLinksDropdown(id),
+    owners > 0
+      ? m('span', { class: 'badge badge-sm badge-ghost' },
+          String(owners) + ' owners')
+      : null,
+    wanters > 0
+      ? m('span', { class: 'badge badge-sm badge-ghost' },
+          String(wanters) + ' wants')
+      : null,
+    ...renderLinkBadges(id),
   ]);
 
   return m('div', {
