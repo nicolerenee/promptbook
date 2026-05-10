@@ -161,6 +161,20 @@ func (_c *RecordingVersionCreate) SetNillableSourceFolder(v *string) *RecordingV
 	return _c
 }
 
+// SetPartIndex sets the "part_index" field.
+func (_c *RecordingVersionCreate) SetPartIndex(v int) *RecordingVersionCreate {
+	_c.mutation.SetPartIndex(v)
+	return _c
+}
+
+// SetNillablePartIndex sets the "part_index" field if the given value is not nil.
+func (_c *RecordingVersionCreate) SetNillablePartIndex(v *int) *RecordingVersionCreate {
+	if v != nil {
+		_c.SetPartIndex(*v)
+	}
+	return _c
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_c *RecordingVersionCreate) SetAddedAt(v time.Time) *RecordingVersionCreate {
 	_c.mutation.SetAddedAt(v)
@@ -271,6 +285,10 @@ func (_c *RecordingVersionCreate) defaults() {
 		v := recordingversion.DefaultSourceFolder
 		_c.mutation.SetSourceFolder(v)
 	}
+	if _, ok := _c.mutation.PartIndex(); !ok {
+		v := recordingversion.DefaultPartIndex
+		_c.mutation.SetPartIndex(v)
+	}
 	if _, ok := _c.mutation.AddedAt(); !ok {
 		v := recordingversion.DefaultAddedAt()
 		_c.mutation.SetAddedAt(v)
@@ -315,6 +333,9 @@ func (_c *RecordingVersionCreate) check() error {
 	}
 	if _, ok := _c.mutation.SourceFolder(); !ok {
 		return &ValidationError{Name: "source_folder", err: errors.New(`ent: missing required field "RecordingVersion.source_folder"`)}
+	}
+	if _, ok := _c.mutation.PartIndex(); !ok {
+		return &ValidationError{Name: "part_index", err: errors.New(`ent: missing required field "RecordingVersion.part_index"`)}
 	}
 	if _, ok := _c.mutation.AddedAt(); !ok {
 		return &ValidationError{Name: "added_at", err: errors.New(`ent: missing required field "RecordingVersion.added_at"`)}
@@ -397,6 +418,10 @@ func (_c *RecordingVersionCreate) createSpec() (*RecordingVersion, *sqlgraph.Cre
 	if value, ok := _c.mutation.SourceFolder(); ok {
 		_spec.SetField(recordingversion.FieldSourceFolder, field.TypeString, value)
 		_node.SourceFolder = value
+	}
+	if value, ok := _c.mutation.PartIndex(); ok {
+		_spec.SetField(recordingversion.FieldPartIndex, field.TypeInt, value)
+		_node.PartIndex = value
 	}
 	if value, ok := _c.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)
@@ -610,6 +635,24 @@ func (u *RecordingVersionUpsert) SetSourceFolder(v string) *RecordingVersionUpse
 // UpdateSourceFolder sets the "source_folder" field to the value that was provided on create.
 func (u *RecordingVersionUpsert) UpdateSourceFolder() *RecordingVersionUpsert {
 	u.SetExcluded(recordingversion.FieldSourceFolder)
+	return u
+}
+
+// SetPartIndex sets the "part_index" field.
+func (u *RecordingVersionUpsert) SetPartIndex(v int) *RecordingVersionUpsert {
+	u.Set(recordingversion.FieldPartIndex, v)
+	return u
+}
+
+// UpdatePartIndex sets the "part_index" field to the value that was provided on create.
+func (u *RecordingVersionUpsert) UpdatePartIndex() *RecordingVersionUpsert {
+	u.SetExcluded(recordingversion.FieldPartIndex)
+	return u
+}
+
+// AddPartIndex adds v to the "part_index" field.
+func (u *RecordingVersionUpsert) AddPartIndex(v int) *RecordingVersionUpsert {
+	u.Add(recordingversion.FieldPartIndex, v)
 	return u
 }
 
@@ -843,6 +886,27 @@ func (u *RecordingVersionUpsertOne) SetSourceFolder(v string) *RecordingVersionU
 func (u *RecordingVersionUpsertOne) UpdateSourceFolder() *RecordingVersionUpsertOne {
 	return u.Update(func(s *RecordingVersionUpsert) {
 		s.UpdateSourceFolder()
+	})
+}
+
+// SetPartIndex sets the "part_index" field.
+func (u *RecordingVersionUpsertOne) SetPartIndex(v int) *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.SetPartIndex(v)
+	})
+}
+
+// AddPartIndex adds v to the "part_index" field.
+func (u *RecordingVersionUpsertOne) AddPartIndex(v int) *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.AddPartIndex(v)
+	})
+}
+
+// UpdatePartIndex sets the "part_index" field to the value that was provided on create.
+func (u *RecordingVersionUpsertOne) UpdatePartIndex() *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.UpdatePartIndex()
 	})
 }
 
@@ -1246,6 +1310,27 @@ func (u *RecordingVersionUpsertBulk) SetSourceFolder(v string) *RecordingVersion
 func (u *RecordingVersionUpsertBulk) UpdateSourceFolder() *RecordingVersionUpsertBulk {
 	return u.Update(func(s *RecordingVersionUpsert) {
 		s.UpdateSourceFolder()
+	})
+}
+
+// SetPartIndex sets the "part_index" field.
+func (u *RecordingVersionUpsertBulk) SetPartIndex(v int) *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.SetPartIndex(v)
+	})
+}
+
+// AddPartIndex adds v to the "part_index" field.
+func (u *RecordingVersionUpsertBulk) AddPartIndex(v int) *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.AddPartIndex(v)
+	})
+}
+
+// UpdatePartIndex sets the "part_index" field to the value that was provided on create.
+func (u *RecordingVersionUpsertBulk) UpdatePartIndex() *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.UpdatePartIndex()
 	})
 }
 

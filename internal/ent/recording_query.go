@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/predicate"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
@@ -29,10 +30,12 @@ type RecordingQuery struct {
 	withShow             *ShowQuery
 	withCastEntries      *CastEntryQuery
 	withVersions         *RecordingVersionQuery
+	withExtras           *ExtraEntryQuery
 	loadTotal            []func(context.Context, []*Recording) error
 	modifiers            []func(*sql.Selector)
 	withNamedCastEntries map[string]*CastEntryQuery
 	withNamedVersions    map[string]*RecordingVersionQuery
+	withNamedExtras      map[string]*ExtraEntryQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -128,6 +131,28 @@ func (_q *RecordingQuery) QueryVersions() *RecordingVersionQuery {
 			sqlgraph.From(recording.Table, recording.FieldID, selector),
 			sqlgraph.To(recordingversion.Table, recordingversion.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, recording.VersionsTable, recording.VersionsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryExtras chains the current query on the "extras" edge.
+func (_q *RecordingQuery) QueryExtras() *ExtraEntryQuery {
+	query := (&ExtraEntryClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(recording.Table, recording.FieldID, selector),
+			sqlgraph.To(extraentry.Table, extraentry.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, recording.ExtrasTable, recording.ExtrasColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -330,6 +355,7 @@ func (_q *RecordingQuery) Clone() *RecordingQuery {
 		withShow:        _q.withShow.Clone(),
 		withCastEntries: _q.withCastEntries.Clone(),
 		withVersions:    _q.withVersions.Clone(),
+		withExtras:      _q.withExtras.Clone(),
 		// clone intermediate query.
 		sql:       _q.sql.Clone(),
 		path:      _q.path,
@@ -367,6 +393,17 @@ func (_q *RecordingQuery) WithVersions(opts ...func(*RecordingVersionQuery)) *Re
 		opt(query)
 	}
 	_q.withVersions = query
+	return _q
+}
+
+// WithExtras tells the query-builder to eager-load the nodes that are connected to
+// the "extras" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *RecordingQuery) WithExtras(opts ...func(*ExtraEntryQuery)) *RecordingQuery {
+	query := (&ExtraEntryClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withExtras = query
 	return _q
 }
 
@@ -448,10 +485,11 @@ func (_q *RecordingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Re
 	var (
 		nodes       = []*Recording{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			_q.withShow != nil,
 			_q.withCastEntries != nil,
 			_q.withVersions != nil,
+			_q.withExtras != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -495,6 +533,13 @@ func (_q *RecordingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Re
 			return nil, err
 		}
 	}
+	if query := _q.withExtras; query != nil {
+		if err := _q.loadExtras(ctx, query, nodes,
+			func(n *Recording) { n.Edges.Extras = []*ExtraEntry{} },
+			func(n *Recording, e *ExtraEntry) { n.Edges.Extras = append(n.Edges.Extras, e) }); err != nil {
+			return nil, err
+		}
+	}
 	for name, query := range _q.withNamedCastEntries {
 		if err := _q.loadCastEntries(ctx, query, nodes,
 			func(n *Recording) { n.appendNamedCastEntries(name) },
@@ -506,6 +551,13 @@ func (_q *RecordingQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Re
 		if err := _q.loadVersions(ctx, query, nodes,
 			func(n *Recording) { n.appendNamedVersions(name) },
 			func(n *Recording, e *RecordingVersion) { n.appendNamedVersions(name, e) }); err != nil {
+			return nil, err
+		}
+	}
+	for name, query := range _q.withNamedExtras {
+		if err := _q.loadExtras(ctx, query, nodes,
+			func(n *Recording) { n.appendNamedExtras(name) },
+			func(n *Recording, e *ExtraEntry) { n.appendNamedExtras(name, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -591,6 +643,36 @@ func (_q *RecordingQuery) loadVersions(ctx context.Context, query *RecordingVers
 	}
 	query.Where(predicate.RecordingVersion(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(recording.VersionsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.RecordingID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "recording_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *RecordingQuery) loadExtras(ctx context.Context, query *ExtraEntryQuery, nodes []*Recording, init func(*Recording), assign func(*Recording, *ExtraEntry)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Recording)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(extraentry.FieldRecordingID)
+	}
+	query.Where(predicate.ExtraEntry(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(recording.ExtrasColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {
@@ -728,6 +810,20 @@ func (_q *RecordingQuery) WithNamedVersions(name string, opts ...func(*Recording
 		_q.withNamedVersions = make(map[string]*RecordingVersionQuery)
 	}
 	_q.withNamedVersions[name] = query
+	return _q
+}
+
+// WithNamedExtras tells the query-builder to eager-load the nodes that are connected to the "extras"
+// edge with the given name. The optional arguments are used to configure the query builder of the edge.
+func (_q *RecordingQuery) WithNamedExtras(name string, opts ...func(*ExtraEntryQuery)) *RecordingQuery {
+	query := (&ExtraEntryClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	if _q.withNamedExtras == nil {
+		_q.withNamedExtras = make(map[string]*ExtraEntryQuery)
+	}
+	_q.withNamedExtras[name] = query
 	return _q
 }
 

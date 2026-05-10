@@ -61,6 +61,13 @@ func (RecordingVersion) Fields() []ent.Field {
 		// recording's destination folder is the only location with
 		// content.
 		field.Text("source_folder").Default(""),
+		// part_index is the 1-based ordinal of this file when the
+		// version is split across multiple files (act-1 + act-2, pt-1
+		// + pt-2, etc.). Zero means single-file (the default — most
+		// recordings). Multiple rows with the same recording_id and
+		// part_index >= 1 form one multipart version. Surfaced through
+		// the rename engine's {Part} token.
+		field.Int("part_index").Default(0),
 		field.Time("added_at").
 			Default(time.Now).
 			SchemaType(sqliteSchema(typeDatetime)).

@@ -191,6 +191,27 @@ func (_u *RecordingVersionUpdate) SetNillableSourceFolder(v *string) *RecordingV
 	return _u
 }
 
+// SetPartIndex sets the "part_index" field.
+func (_u *RecordingVersionUpdate) SetPartIndex(v int) *RecordingVersionUpdate {
+	_u.mutation.ResetPartIndex()
+	_u.mutation.SetPartIndex(v)
+	return _u
+}
+
+// SetNillablePartIndex sets the "part_index" field if the given value is not nil.
+func (_u *RecordingVersionUpdate) SetNillablePartIndex(v *int) *RecordingVersionUpdate {
+	if v != nil {
+		_u.SetPartIndex(*v)
+	}
+	return _u
+}
+
+// AddPartIndex adds value to the "part_index" field.
+func (_u *RecordingVersionUpdate) AddPartIndex(v int) *RecordingVersionUpdate {
+	_u.mutation.AddPartIndex(v)
+	return _u
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_u *RecordingVersionUpdate) SetAddedAt(v time.Time) *RecordingVersionUpdate {
 	_u.mutation.SetAddedAt(v)
@@ -320,6 +341,12 @@ func (_u *RecordingVersionUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.SourceFolder(); ok {
 		_spec.SetField(recordingversion.FieldSourceFolder, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PartIndex(); ok {
+		_spec.SetField(recordingversion.FieldPartIndex, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPartIndex(); ok {
+		_spec.AddField(recordingversion.FieldPartIndex, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)
@@ -539,6 +566,27 @@ func (_u *RecordingVersionUpdateOne) SetNillableSourceFolder(v *string) *Recordi
 	return _u
 }
 
+// SetPartIndex sets the "part_index" field.
+func (_u *RecordingVersionUpdateOne) SetPartIndex(v int) *RecordingVersionUpdateOne {
+	_u.mutation.ResetPartIndex()
+	_u.mutation.SetPartIndex(v)
+	return _u
+}
+
+// SetNillablePartIndex sets the "part_index" field if the given value is not nil.
+func (_u *RecordingVersionUpdateOne) SetNillablePartIndex(v *int) *RecordingVersionUpdateOne {
+	if v != nil {
+		_u.SetPartIndex(*v)
+	}
+	return _u
+}
+
+// AddPartIndex adds value to the "part_index" field.
+func (_u *RecordingVersionUpdateOne) AddPartIndex(v int) *RecordingVersionUpdateOne {
+	_u.mutation.AddPartIndex(v)
+	return _u
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_u *RecordingVersionUpdateOne) SetAddedAt(v time.Time) *RecordingVersionUpdateOne {
 	_u.mutation.SetAddedAt(v)
@@ -698,6 +746,12 @@ func (_u *RecordingVersionUpdateOne) sqlSave(ctx context.Context) (_node *Record
 	}
 	if value, ok := _u.mutation.SourceFolder(); ok {
 		_spec.SetField(recordingversion.FieldSourceFolder, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PartIndex(); ok {
+		_spec.SetField(recordingversion.FieldPartIndex, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPartIndex(); ok {
+		_spec.AddField(recordingversion.FieldPartIndex, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)

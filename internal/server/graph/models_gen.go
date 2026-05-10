@@ -107,6 +107,8 @@ type RecordingExtra struct {
 	Name      string `json:"name"`
 	SizeBytes int    `json:"sizeBytes"`
 	IsDir     bool   `json:"isDir"`
+	Kind      string `json:"kind"`
+	Label     string `json:"label"`
 }
 
 type RecordingsListItem struct {

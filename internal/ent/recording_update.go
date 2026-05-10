@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/predicate"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
@@ -581,6 +582,21 @@ func (_u *RecordingUpdate) AddVersions(v ...*RecordingVersion) *RecordingUpdate 
 	return _u.AddVersionIDs(ids...)
 }
 
+// AddExtraIDs adds the "extras" edge to the ExtraEntry entity by IDs.
+func (_u *RecordingUpdate) AddExtraIDs(ids ...int64) *RecordingUpdate {
+	_u.mutation.AddExtraIDs(ids...)
+	return _u
+}
+
+// AddExtras adds the "extras" edges to the ExtraEntry entity.
+func (_u *RecordingUpdate) AddExtras(v ...*ExtraEntry) *RecordingUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExtraIDs(ids...)
+}
+
 // Mutation returns the RecordingMutation object of the builder.
 func (_u *RecordingUpdate) Mutation() *RecordingMutation {
 	return _u.mutation
@@ -632,6 +648,27 @@ func (_u *RecordingUpdate) RemoveVersions(v ...*RecordingVersion) *RecordingUpda
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveVersionIDs(ids...)
+}
+
+// ClearExtras clears all "extras" edges to the ExtraEntry entity.
+func (_u *RecordingUpdate) ClearExtras() *RecordingUpdate {
+	_u.mutation.ClearExtras()
+	return _u
+}
+
+// RemoveExtraIDs removes the "extras" edge to ExtraEntry entities by IDs.
+func (_u *RecordingUpdate) RemoveExtraIDs(ids ...int64) *RecordingUpdate {
+	_u.mutation.RemoveExtraIDs(ids...)
+	return _u
+}
+
+// RemoveExtras removes "extras" edges to ExtraEntry entities.
+func (_u *RecordingUpdate) RemoveExtras(v ...*ExtraEntry) *RecordingUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExtraIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -916,6 +953,51 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExtrasCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExtrasIDs(); len(nodes) > 0 && !_u.mutation.ExtrasCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExtrasIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1494,6 +1576,21 @@ func (_u *RecordingUpdateOne) AddVersions(v ...*RecordingVersion) *RecordingUpda
 	return _u.AddVersionIDs(ids...)
 }
 
+// AddExtraIDs adds the "extras" edge to the ExtraEntry entity by IDs.
+func (_u *RecordingUpdateOne) AddExtraIDs(ids ...int64) *RecordingUpdateOne {
+	_u.mutation.AddExtraIDs(ids...)
+	return _u
+}
+
+// AddExtras adds the "extras" edges to the ExtraEntry entity.
+func (_u *RecordingUpdateOne) AddExtras(v ...*ExtraEntry) *RecordingUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExtraIDs(ids...)
+}
+
 // Mutation returns the RecordingMutation object of the builder.
 func (_u *RecordingUpdateOne) Mutation() *RecordingMutation {
 	return _u.mutation
@@ -1545,6 +1642,27 @@ func (_u *RecordingUpdateOne) RemoveVersions(v ...*RecordingVersion) *RecordingU
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveVersionIDs(ids...)
+}
+
+// ClearExtras clears all "extras" edges to the ExtraEntry entity.
+func (_u *RecordingUpdateOne) ClearExtras() *RecordingUpdateOne {
+	_u.mutation.ClearExtras()
+	return _u
+}
+
+// RemoveExtraIDs removes the "extras" edge to ExtraEntry entities by IDs.
+func (_u *RecordingUpdateOne) RemoveExtraIDs(ids ...int64) *RecordingUpdateOne {
+	_u.mutation.RemoveExtraIDs(ids...)
+	return _u
+}
+
+// RemoveExtras removes "extras" edges to ExtraEntry entities.
+func (_u *RecordingUpdateOne) RemoveExtras(v ...*ExtraEntry) *RecordingUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExtraIDs(ids...)
 }
 
 // Where appends a list predicates to the RecordingUpdate builder.
@@ -1859,6 +1977,51 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(recordingversion.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExtrasCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExtrasIDs(); len(nodes) > 0 && !_u.mutation.ExtrasCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExtrasIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   recording.ExtrasTable,
+			Columns: []string{recording.ExtrasColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(extraentry.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

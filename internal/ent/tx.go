@@ -18,6 +18,8 @@ type Tx struct {
 	Character *CharacterClient
 	// CollectionEntry is the client for interacting with the CollectionEntry builders.
 	CollectionEntry *CollectionEntryClient
+	// ExtraEntry is the client for interacting with the ExtraEntry builders.
+	ExtraEntry *ExtraEntryClient
 	// HistoryEvent is the client for interacting with the HistoryEvent builders.
 	HistoryEvent *HistoryEventClient
 	// JobRun is the client for interacting with the JobRun builders.
@@ -176,6 +178,7 @@ func (tx *Tx) init() {
 	tx.CastEntry = NewCastEntryClient(tx.config)
 	tx.Character = NewCharacterClient(tx.config)
 	tx.CollectionEntry = NewCollectionEntryClient(tx.config)
+	tx.ExtraEntry = NewExtraEntryClient(tx.config)
 	tx.HistoryEvent = NewHistoryEventClient(tx.config)
 	tx.JobRun = NewJobRunClient(tx.config)
 	tx.JobState = NewJobStateClient(tx.config)

@@ -14,6 +14,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
 	"github.com/nicolerenee/promptbook/internal/ent/character"
 	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
 	"github.com/nicolerenee/promptbook/internal/ent/jobrun"
 	"github.com/nicolerenee/promptbook/internal/ent/jobstate"
@@ -41,6 +42,7 @@ const (
 	TypeCastEntry            = "CastEntry"
 	TypeCharacter            = "Character"
 	TypeCollectionEntry      = "CollectionEntry"
+	TypeExtraEntry           = "ExtraEntry"
 	TypeHistoryEvent         = "HistoryEvent"
 	TypeJobRun               = "JobRun"
 	TypeJobState             = "JobState"
@@ -2332,6 +2334,698 @@ func (m *CollectionEntryMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *CollectionEntryMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown CollectionEntry edge %s", name)
+}
+
+// ExtraEntryMutation represents an operation that mutates the ExtraEntry nodes in the graph.
+type ExtraEntryMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int64
+	file_path          *string
+	kind               *string
+	label              *string
+	file_size_bytes    *int64
+	addfile_size_bytes *int64
+	added_at           *time.Time
+	clearedFields      map[string]struct{}
+	recording          *int64
+	clearedrecording   bool
+	done               bool
+	oldValue           func(context.Context) (*ExtraEntry, error)
+	predicates         []predicate.ExtraEntry
+}
+
+var _ ent.Mutation = (*ExtraEntryMutation)(nil)
+
+// extraentryOption allows management of the mutation configuration using functional options.
+type extraentryOption func(*ExtraEntryMutation)
+
+// newExtraEntryMutation creates new mutation for the ExtraEntry entity.
+func newExtraEntryMutation(c config, op Op, opts ...extraentryOption) *ExtraEntryMutation {
+	m := &ExtraEntryMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeExtraEntry,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withExtraEntryID sets the ID field of the mutation.
+func withExtraEntryID(id int64) extraentryOption {
+	return func(m *ExtraEntryMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ExtraEntry
+		)
+		m.oldValue = func(ctx context.Context) (*ExtraEntry, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ExtraEntry.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withExtraEntry sets the old ExtraEntry of the mutation.
+func withExtraEntry(node *ExtraEntry) extraentryOption {
+	return func(m *ExtraEntryMutation) {
+		m.oldValue = func(context.Context) (*ExtraEntry, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ExtraEntryMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ExtraEntryMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ExtraEntry entities.
+func (m *ExtraEntryMutation) SetID(id int64) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ExtraEntryMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ExtraEntryMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ExtraEntry.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRecordingID sets the "recording_id" field.
+func (m *ExtraEntryMutation) SetRecordingID(i int64) {
+	m.recording = &i
+}
+
+// RecordingID returns the value of the "recording_id" field in the mutation.
+func (m *ExtraEntryMutation) RecordingID() (r int64, exists bool) {
+	v := m.recording
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecordingID returns the old "recording_id" field's value of the ExtraEntry entity.
+// If the ExtraEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExtraEntryMutation) OldRecordingID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecordingID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecordingID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecordingID: %w", err)
+	}
+	return oldValue.RecordingID, nil
+}
+
+// ResetRecordingID resets all changes to the "recording_id" field.
+func (m *ExtraEntryMutation) ResetRecordingID() {
+	m.recording = nil
+}
+
+// SetFilePath sets the "file_path" field.
+func (m *ExtraEntryMutation) SetFilePath(s string) {
+	m.file_path = &s
+}
+
+// FilePath returns the value of the "file_path" field in the mutation.
+func (m *ExtraEntryMutation) FilePath() (r string, exists bool) {
+	v := m.file_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFilePath returns the old "file_path" field's value of the ExtraEntry entity.
+// If the ExtraEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExtraEntryMutation) OldFilePath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFilePath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFilePath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFilePath: %w", err)
+	}
+	return oldValue.FilePath, nil
+}
+
+// ResetFilePath resets all changes to the "file_path" field.
+func (m *ExtraEntryMutation) ResetFilePath() {
+	m.file_path = nil
+}
+
+// SetKind sets the "kind" field.
+func (m *ExtraEntryMutation) SetKind(s string) {
+	m.kind = &s
+}
+
+// Kind returns the value of the "kind" field in the mutation.
+func (m *ExtraEntryMutation) Kind() (r string, exists bool) {
+	v := m.kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKind returns the old "kind" field's value of the ExtraEntry entity.
+// If the ExtraEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExtraEntryMutation) OldKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKind: %w", err)
+	}
+	return oldValue.Kind, nil
+}
+
+// ResetKind resets all changes to the "kind" field.
+func (m *ExtraEntryMutation) ResetKind() {
+	m.kind = nil
+}
+
+// SetLabel sets the "label" field.
+func (m *ExtraEntryMutation) SetLabel(s string) {
+	m.label = &s
+}
+
+// Label returns the value of the "label" field in the mutation.
+func (m *ExtraEntryMutation) Label() (r string, exists bool) {
+	v := m.label
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLabel returns the old "label" field's value of the ExtraEntry entity.
+// If the ExtraEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExtraEntryMutation) OldLabel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLabel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLabel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLabel: %w", err)
+	}
+	return oldValue.Label, nil
+}
+
+// ResetLabel resets all changes to the "label" field.
+func (m *ExtraEntryMutation) ResetLabel() {
+	m.label = nil
+}
+
+// SetFileSizeBytes sets the "file_size_bytes" field.
+func (m *ExtraEntryMutation) SetFileSizeBytes(i int64) {
+	m.file_size_bytes = &i
+	m.addfile_size_bytes = nil
+}
+
+// FileSizeBytes returns the value of the "file_size_bytes" field in the mutation.
+func (m *ExtraEntryMutation) FileSizeBytes() (r int64, exists bool) {
+	v := m.file_size_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFileSizeBytes returns the old "file_size_bytes" field's value of the ExtraEntry entity.
+// If the ExtraEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExtraEntryMutation) OldFileSizeBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFileSizeBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFileSizeBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFileSizeBytes: %w", err)
+	}
+	return oldValue.FileSizeBytes, nil
+}
+
+// AddFileSizeBytes adds i to the "file_size_bytes" field.
+func (m *ExtraEntryMutation) AddFileSizeBytes(i int64) {
+	if m.addfile_size_bytes != nil {
+		*m.addfile_size_bytes += i
+	} else {
+		m.addfile_size_bytes = &i
+	}
+}
+
+// AddedFileSizeBytes returns the value that was added to the "file_size_bytes" field in this mutation.
+func (m *ExtraEntryMutation) AddedFileSizeBytes() (r int64, exists bool) {
+	v := m.addfile_size_bytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFileSizeBytes resets all changes to the "file_size_bytes" field.
+func (m *ExtraEntryMutation) ResetFileSizeBytes() {
+	m.file_size_bytes = nil
+	m.addfile_size_bytes = nil
+}
+
+// SetAddedAt sets the "added_at" field.
+func (m *ExtraEntryMutation) SetAddedAt(t time.Time) {
+	m.added_at = &t
+}
+
+// AddedAt returns the value of the "added_at" field in the mutation.
+func (m *ExtraEntryMutation) AddedAt() (r time.Time, exists bool) {
+	v := m.added_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAddedAt returns the old "added_at" field's value of the ExtraEntry entity.
+// If the ExtraEntry object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExtraEntryMutation) OldAddedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAddedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAddedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAddedAt: %w", err)
+	}
+	return oldValue.AddedAt, nil
+}
+
+// ResetAddedAt resets all changes to the "added_at" field.
+func (m *ExtraEntryMutation) ResetAddedAt() {
+	m.added_at = nil
+}
+
+// ClearRecording clears the "recording" edge to the Recording entity.
+func (m *ExtraEntryMutation) ClearRecording() {
+	m.clearedrecording = true
+	m.clearedFields[extraentry.FieldRecordingID] = struct{}{}
+}
+
+// RecordingCleared reports if the "recording" edge to the Recording entity was cleared.
+func (m *ExtraEntryMutation) RecordingCleared() bool {
+	return m.clearedrecording
+}
+
+// RecordingIDs returns the "recording" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RecordingID instead. It exists only for internal usage by the builders.
+func (m *ExtraEntryMutation) RecordingIDs() (ids []int64) {
+	if id := m.recording; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRecording resets all changes to the "recording" edge.
+func (m *ExtraEntryMutation) ResetRecording() {
+	m.recording = nil
+	m.clearedrecording = false
+}
+
+// Where appends a list predicates to the ExtraEntryMutation builder.
+func (m *ExtraEntryMutation) Where(ps ...predicate.ExtraEntry) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ExtraEntryMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ExtraEntryMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ExtraEntry, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ExtraEntryMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ExtraEntryMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ExtraEntry).
+func (m *ExtraEntryMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ExtraEntryMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.recording != nil {
+		fields = append(fields, extraentry.FieldRecordingID)
+	}
+	if m.file_path != nil {
+		fields = append(fields, extraentry.FieldFilePath)
+	}
+	if m.kind != nil {
+		fields = append(fields, extraentry.FieldKind)
+	}
+	if m.label != nil {
+		fields = append(fields, extraentry.FieldLabel)
+	}
+	if m.file_size_bytes != nil {
+		fields = append(fields, extraentry.FieldFileSizeBytes)
+	}
+	if m.added_at != nil {
+		fields = append(fields, extraentry.FieldAddedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ExtraEntryMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case extraentry.FieldRecordingID:
+		return m.RecordingID()
+	case extraentry.FieldFilePath:
+		return m.FilePath()
+	case extraentry.FieldKind:
+		return m.Kind()
+	case extraentry.FieldLabel:
+		return m.Label()
+	case extraentry.FieldFileSizeBytes:
+		return m.FileSizeBytes()
+	case extraentry.FieldAddedAt:
+		return m.AddedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ExtraEntryMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case extraentry.FieldRecordingID:
+		return m.OldRecordingID(ctx)
+	case extraentry.FieldFilePath:
+		return m.OldFilePath(ctx)
+	case extraentry.FieldKind:
+		return m.OldKind(ctx)
+	case extraentry.FieldLabel:
+		return m.OldLabel(ctx)
+	case extraentry.FieldFileSizeBytes:
+		return m.OldFileSizeBytes(ctx)
+	case extraentry.FieldAddedAt:
+		return m.OldAddedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ExtraEntry field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ExtraEntryMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case extraentry.FieldRecordingID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecordingID(v)
+		return nil
+	case extraentry.FieldFilePath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFilePath(v)
+		return nil
+	case extraentry.FieldKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKind(v)
+		return nil
+	case extraentry.FieldLabel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLabel(v)
+		return nil
+	case extraentry.FieldFileSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFileSizeBytes(v)
+		return nil
+	case extraentry.FieldAddedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAddedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ExtraEntry field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ExtraEntryMutation) AddedFields() []string {
+	var fields []string
+	if m.addfile_size_bytes != nil {
+		fields = append(fields, extraentry.FieldFileSizeBytes)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ExtraEntryMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case extraentry.FieldFileSizeBytes:
+		return m.AddedFileSizeBytes()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ExtraEntryMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case extraentry.FieldFileSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFileSizeBytes(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ExtraEntry numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ExtraEntryMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ExtraEntryMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ExtraEntryMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown ExtraEntry nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ExtraEntryMutation) ResetField(name string) error {
+	switch name {
+	case extraentry.FieldRecordingID:
+		m.ResetRecordingID()
+		return nil
+	case extraentry.FieldFilePath:
+		m.ResetFilePath()
+		return nil
+	case extraentry.FieldKind:
+		m.ResetKind()
+		return nil
+	case extraentry.FieldLabel:
+		m.ResetLabel()
+		return nil
+	case extraentry.FieldFileSizeBytes:
+		m.ResetFileSizeBytes()
+		return nil
+	case extraentry.FieldAddedAt:
+		m.ResetAddedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ExtraEntry field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ExtraEntryMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.recording != nil {
+		edges = append(edges, extraentry.EdgeRecording)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ExtraEntryMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case extraentry.EdgeRecording:
+		if id := m.recording; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ExtraEntryMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ExtraEntryMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ExtraEntryMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedrecording {
+		edges = append(edges, extraentry.EdgeRecording)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ExtraEntryMutation) EdgeCleared(name string) bool {
+	switch name {
+	case extraentry.EdgeRecording:
+		return m.clearedrecording
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ExtraEntryMutation) ClearEdge(name string) error {
+	switch name {
+	case extraentry.EdgeRecording:
+		m.ClearRecording()
+		return nil
+	}
+	return fmt.Errorf("unknown ExtraEntry unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ExtraEntryMutation) ResetEdge(name string) error {
+	switch name {
+	case extraentry.EdgeRecording:
+		m.ResetRecording()
+		return nil
+	}
+	return fmt.Errorf("unknown ExtraEntry edge %s", name)
 }
 
 // HistoryEventMutation represents an operation that mutates the HistoryEvent nodes in the graph.
@@ -6637,6 +7331,9 @@ type RecordingMutation struct {
 	versions              map[int64]struct{}
 	removedversions       map[int64]struct{}
 	clearedversions       bool
+	extras                map[int64]struct{}
+	removedextras         map[int64]struct{}
+	clearedextras         bool
 	done                  bool
 	oldValue              func(context.Context) (*Recording, error)
 	predicates            []predicate.Recording
@@ -8197,6 +8894,60 @@ func (m *RecordingMutation) ResetVersions() {
 	m.removedversions = nil
 }
 
+// AddExtraIDs adds the "extras" edge to the ExtraEntry entity by ids.
+func (m *RecordingMutation) AddExtraIDs(ids ...int64) {
+	if m.extras == nil {
+		m.extras = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.extras[ids[i]] = struct{}{}
+	}
+}
+
+// ClearExtras clears the "extras" edge to the ExtraEntry entity.
+func (m *RecordingMutation) ClearExtras() {
+	m.clearedextras = true
+}
+
+// ExtrasCleared reports if the "extras" edge to the ExtraEntry entity was cleared.
+func (m *RecordingMutation) ExtrasCleared() bool {
+	return m.clearedextras
+}
+
+// RemoveExtraIDs removes the "extras" edge to the ExtraEntry entity by IDs.
+func (m *RecordingMutation) RemoveExtraIDs(ids ...int64) {
+	if m.removedextras == nil {
+		m.removedextras = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.extras, ids[i])
+		m.removedextras[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedExtras returns the removed IDs of the "extras" edge to the ExtraEntry entity.
+func (m *RecordingMutation) RemovedExtrasIDs() (ids []int64) {
+	for id := range m.removedextras {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ExtrasIDs returns the "extras" edge IDs in the mutation.
+func (m *RecordingMutation) ExtrasIDs() (ids []int64) {
+	for id := range m.extras {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetExtras resets all changes to the "extras" edge.
+func (m *RecordingMutation) ResetExtras() {
+	m.extras = nil
+	m.clearedextras = false
+	m.removedextras = nil
+}
+
 // Where appends a list predicates to the RecordingMutation builder.
 func (m *RecordingMutation) Where(ps ...predicate.Recording) {
 	m.predicates = append(m.predicates, ps...)
@@ -8945,7 +9696,7 @@ func (m *RecordingMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *RecordingMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.show != nil {
 		edges = append(edges, recording.EdgeShow)
 	}
@@ -8954,6 +9705,9 @@ func (m *RecordingMutation) AddedEdges() []string {
 	}
 	if m.versions != nil {
 		edges = append(edges, recording.EdgeVersions)
+	}
+	if m.extras != nil {
+		edges = append(edges, recording.EdgeExtras)
 	}
 	return edges
 }
@@ -8978,18 +9732,27 @@ func (m *RecordingMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case recording.EdgeExtras:
+		ids := make([]ent.Value, 0, len(m.extras))
+		for id := range m.extras {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *RecordingMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedcast_entries != nil {
 		edges = append(edges, recording.EdgeCastEntries)
 	}
 	if m.removedversions != nil {
 		edges = append(edges, recording.EdgeVersions)
+	}
+	if m.removedextras != nil {
+		edges = append(edges, recording.EdgeExtras)
 	}
 	return edges
 }
@@ -9010,13 +9773,19 @@ func (m *RecordingMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case recording.EdgeExtras:
+		ids := make([]ent.Value, 0, len(m.removedextras))
+		for id := range m.removedextras {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *RecordingMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedshow {
 		edges = append(edges, recording.EdgeShow)
 	}
@@ -9025,6 +9794,9 @@ func (m *RecordingMutation) ClearedEdges() []string {
 	}
 	if m.clearedversions {
 		edges = append(edges, recording.EdgeVersions)
+	}
+	if m.clearedextras {
+		edges = append(edges, recording.EdgeExtras)
 	}
 	return edges
 }
@@ -9039,6 +9811,8 @@ func (m *RecordingMutation) EdgeCleared(name string) bool {
 		return m.clearedcast_entries
 	case recording.EdgeVersions:
 		return m.clearedversions
+	case recording.EdgeExtras:
+		return m.clearedextras
 	}
 	return false
 }
@@ -9066,6 +9840,9 @@ func (m *RecordingMutation) ResetEdge(name string) error {
 		return nil
 	case recording.EdgeVersions:
 		m.ResetVersions()
+		return nil
+	case recording.EdgeExtras:
+		m.ResetExtras()
 		return nil
 	}
 	return fmt.Errorf("unknown Recording edge %s", name)
@@ -9623,6 +10400,8 @@ type RecordingVersionMutation struct {
 	notes              *string
 	media_info_json    *string
 	source_folder      *string
+	part_index         *int
+	addpart_index      *int
 	added_at           *time.Time
 	last_seen_at       *time.Time
 	clearedFields      map[string]struct{}
@@ -10153,6 +10932,62 @@ func (m *RecordingVersionMutation) ResetSourceFolder() {
 	m.source_folder = nil
 }
 
+// SetPartIndex sets the "part_index" field.
+func (m *RecordingVersionMutation) SetPartIndex(i int) {
+	m.part_index = &i
+	m.addpart_index = nil
+}
+
+// PartIndex returns the value of the "part_index" field in the mutation.
+func (m *RecordingVersionMutation) PartIndex() (r int, exists bool) {
+	v := m.part_index
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPartIndex returns the old "part_index" field's value of the RecordingVersion entity.
+// If the RecordingVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RecordingVersionMutation) OldPartIndex(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPartIndex is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPartIndex requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPartIndex: %w", err)
+	}
+	return oldValue.PartIndex, nil
+}
+
+// AddPartIndex adds i to the "part_index" field.
+func (m *RecordingVersionMutation) AddPartIndex(i int) {
+	if m.addpart_index != nil {
+		*m.addpart_index += i
+	} else {
+		m.addpart_index = &i
+	}
+}
+
+// AddedPartIndex returns the value that was added to the "part_index" field in this mutation.
+func (m *RecordingVersionMutation) AddedPartIndex() (r int, exists bool) {
+	v := m.addpart_index
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPartIndex resets all changes to the "part_index" field.
+func (m *RecordingVersionMutation) ResetPartIndex() {
+	m.part_index = nil
+	m.addpart_index = nil
+}
+
 // SetAddedAt sets the "added_at" field.
 func (m *RecordingVersionMutation) SetAddedAt(t time.Time) {
 	m.added_at = &t
@@ -10286,7 +11121,7 @@ func (m *RecordingVersionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RecordingVersionMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.recording != nil {
 		fields = append(fields, recordingversion.FieldRecordingID)
 	}
@@ -10319,6 +11154,9 @@ func (m *RecordingVersionMutation) Fields() []string {
 	}
 	if m.source_folder != nil {
 		fields = append(fields, recordingversion.FieldSourceFolder)
+	}
+	if m.part_index != nil {
+		fields = append(fields, recordingversion.FieldPartIndex)
 	}
 	if m.added_at != nil {
 		fields = append(fields, recordingversion.FieldAddedAt)
@@ -10356,6 +11194,8 @@ func (m *RecordingVersionMutation) Field(name string) (ent.Value, bool) {
 		return m.MediaInfoJSON()
 	case recordingversion.FieldSourceFolder:
 		return m.SourceFolder()
+	case recordingversion.FieldPartIndex:
+		return m.PartIndex()
 	case recordingversion.FieldAddedAt:
 		return m.AddedAt()
 	case recordingversion.FieldLastSeenAt:
@@ -10391,6 +11231,8 @@ func (m *RecordingVersionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldMediaInfoJSON(ctx)
 	case recordingversion.FieldSourceFolder:
 		return m.OldSourceFolder(ctx)
+	case recordingversion.FieldPartIndex:
+		return m.OldPartIndex(ctx)
 	case recordingversion.FieldAddedAt:
 		return m.OldAddedAt(ctx)
 	case recordingversion.FieldLastSeenAt:
@@ -10481,6 +11323,13 @@ func (m *RecordingVersionMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetSourceFolder(v)
 		return nil
+	case recordingversion.FieldPartIndex:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPartIndex(v)
+		return nil
 	case recordingversion.FieldAddedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -10506,6 +11355,9 @@ func (m *RecordingVersionMutation) AddedFields() []string {
 	if m.addfile_size_bytes != nil {
 		fields = append(fields, recordingversion.FieldFileSizeBytes)
 	}
+	if m.addpart_index != nil {
+		fields = append(fields, recordingversion.FieldPartIndex)
+	}
 	return fields
 }
 
@@ -10516,6 +11368,8 @@ func (m *RecordingVersionMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case recordingversion.FieldFileSizeBytes:
 		return m.AddedFileSizeBytes()
+	case recordingversion.FieldPartIndex:
+		return m.AddedPartIndex()
 	}
 	return nil, false
 }
@@ -10531,6 +11385,13 @@ func (m *RecordingVersionMutation) AddField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddFileSizeBytes(v)
+		return nil
+	case recordingversion.FieldPartIndex:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPartIndex(v)
 		return nil
 	}
 	return fmt.Errorf("unknown RecordingVersion numeric field %s", name)
@@ -10591,6 +11452,9 @@ func (m *RecordingVersionMutation) ResetField(name string) error {
 		return nil
 	case recordingversion.FieldSourceFolder:
 		m.ResetSourceFolder()
+		return nil
+	case recordingversion.FieldPartIndex:
+		m.ResetPartIndex()
 		return nil
 	case recordingversion.FieldAddedAt:
 		m.ResetAddedAt()

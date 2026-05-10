@@ -15,6 +15,9 @@ type Character func(*sql.Selector)
 // CollectionEntry is the predicate function for collectionentry builders.
 type CollectionEntry func(*sql.Selector)
 
+// ExtraEntry is the predicate function for extraentry builders.
+type ExtraEntry func(*sql.Selector)
+
 // HistoryEvent is the predicate function for historyevent builders.
 type HistoryEvent func(*sql.Selector)
 

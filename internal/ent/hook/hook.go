@@ -45,6 +45,18 @@ func (f CollectionEntryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CollectionEntryMutation", m)
 }
 
+// The ExtraEntryFunc type is an adapter to allow the use of ordinary
+// function as ExtraEntry mutator.
+type ExtraEntryFunc func(context.Context, *ent.ExtraEntryMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ExtraEntryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ExtraEntryMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ExtraEntryMutation", m)
+}
+
 // The HistoryEventFunc type is an adapter to allow the use of ordinary
 // function as HistoryEvent mutator.
 type HistoryEventFunc func(context.Context, *ent.HistoryEventMutation) (ent.Value, error)

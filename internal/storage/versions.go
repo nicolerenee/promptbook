@@ -33,6 +33,14 @@ import (
 // page can enumerate sibling files (audio/, photos/, etc.) as
 // 'extras'. Empty for loose-file imports — the recording's
 // destination folder is the only location with content in that case.
+//
+// PartIndex is the 1-based ordinal of this file when the version
+// is split across multiple files (act-1 + act-2, pt-1 + pt-2,
+// etc.). Zero means single-file (the default — most recordings).
+// Multiple rows with the same recording_id and part_index >= 1
+// form one multipart version. Surfaced through the rename engine's
+// {Part} token; the ingest pipeline stamps it from the source-file
+// classification.
 type RecordingVersion struct {
 	ID            int64
 	RecordingID   int64
@@ -46,6 +54,7 @@ type RecordingVersion struct {
 	Notes         string
 	MediaInfoJSON string
 	SourceFolder  string
+	PartIndex     int
 	AddedAt       time.Time
 	LastSeenAt    time.Time
 }
@@ -124,6 +133,7 @@ func upsertVersion(
 		SetNotes(v.Notes).
 		SetMediaInfoJSON(v.MediaInfoJSON).
 		SetSourceFolder(v.SourceFolder).
+		SetPartIndex(v.PartIndex).
 		SetLastSeenAt(v.lastSeenOrNow()).
 		OnConflictColumns(
 			recordingversion.FieldRecordingID,
@@ -139,6 +149,7 @@ func upsertVersion(
 			u.UpdateNotes()
 			u.UpdateMediaInfoJSON()
 			u.UpdateSourceFolder()
+			u.UpdatePartIndex()
 			u.UpdateLastSeenAt()
 		}).
 		Exec(ctx)
@@ -238,6 +249,7 @@ func recordingVersionFromEnt(r *ent.RecordingVersion) RecordingVersion {
 		Notes:         r.Notes,
 		MediaInfoJSON: r.MediaInfoJSON,
 		SourceFolder:  r.SourceFolder,
+		PartIndex:     r.PartIndex,
 		AddedAt:       r.AddedAt,
 		LastSeenAt:    r.LastSeenAt,
 	}

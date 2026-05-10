@@ -70,6 +70,64 @@ func TestUpsertAndListVersions(t *testing.T) {
 	assert.NotZero(t, got[0].LastSeenAt, "last_seen_at populated by upsert")
 }
 
+// TestUpsertVersionRoundTripsPartIndex pins the part_index column
+// added in the multipart-and-extras phase 1 schema migration. Two
+// rows with the same recording_id and consecutive part indices
+// model one multipart version (act-1 + act-2); single-file
+// recordings keep part_index at 0.
+func TestUpsertVersionRoundTripsPartIndex(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	tests := []struct {
+		name     string
+		filePath string
+		part     int
+	}{
+		{
+			name:     "single-file leaves part_index at 0",
+			filePath: "/store/greenwich-beacon/single.mkv",
+			part:     0,
+		},
+		{
+			name:     "multipart part 1",
+			filePath: "/store/greenwich-beacon/greenwich-beacon - part-1.mkv",
+			part:     1,
+		},
+		{
+			name:     "multipart part 2",
+			filePath: "/store/greenwich-beacon/greenwich-beacon - part-2.mkv",
+			part:     2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+				RecordingID: recordingID,
+				FilePath:    tt.filePath,
+				FormatLabel: "MKV",
+				PartIndex:   tt.part,
+			}))
+
+			versions, err := storage.ListVersions(ctx, db, recordingID)
+			require.NoError(t, err)
+			var got storage.RecordingVersion
+			for _, v := range versions {
+				if v.FilePath == tt.filePath {
+					got = v
+					break
+				}
+			}
+			require.NotZero(t, got.ID, "version row not found for %s", tt.filePath)
+			assert.Equal(t, tt.part, got.PartIndex)
+		})
+	}
+}
+
 // TestUpsertVersionPersistsSourceFolder pins the source_folder column
 // added in the recording-detail phase 2 schema migration. Folder-as-
 // unit drops record the original directory so the recording detail

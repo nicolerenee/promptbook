@@ -36,161 +36,41 @@ import (
 // the first row; 16 is overkill but cheap.
 const showDescriptionScanLimit = 16
 
-// extrasMaxDepth caps how deep the source-folder walk descends from
-// the version's source_folder root. Defensive: a runaway symlink loop
-// or pathological nested structure shouldn't fan out an unbounded
-// list. Three levels is well past the audio/, photos/, scans/ patterns
-// real-world drops use.
-const extrasMaxDepth = 3
-
-// recordingExtras is the resolver body for Recording.extras. Walks the
-// source folder of any version with a non-empty source_folder field and
-// returns a flat list of sibling files + folders. Returns [] when no
-// version has a source_folder, the folder is gone on disk, or only the
-// main file lives there.
+// recordingExtras is the resolver body for Recording.extras. Reads
+// the typed `recording_extras` table — phase 1 of multipart-and-extras
+// swapped this resolver from the legacy "walk source_folder at read
+// time" pattern to the persisted shape so kind/label metadata
+// captured at ingest time survives.
 //
-// The walk skips:
-//   - The main version file itself (compared against the version's
-//     basename — the canonical move only carries the main file out, so
-//     the source folder still holds it; we don't want to surface it as
-//     its own extra).
-//   - Hidden dot-files (.DS_Store, ._junk, …).
-//   - Anything beneath extrasMaxDepth — defensive bound.
+// Recordings that pre-date the new table (legacy folder-as-unit
+// imports whose source_folder was walked at read time) get an empty
+// list; backfilling those rows is intentionally out of scope for
+// phase 1.
 //
-// Directories surface as their own rows with isDir=true so the SPA can
-// render them as <details> nodes; their children appear as flat
-// follow-on rows under the directory's relative path.
+// Each row's IsDir is always false — phase 1 routes per-file extras
+// into Jellyfin-shaped subfolders at ingest time, so directories
+// aren't first-class rows. The IsDir field stays on the GraphQL type
+// for SPA backward compatibility with the legacy walking resolver.
 func (r *Resolver) recordingExtras(
 	ctx context.Context, recordingID int64,
 ) ([]*RecordingExtra, error) {
-	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	rows, err := storage.ListExtras(ctx, r.client, recordingID)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"graphql: list versions for recording %d: %w", recordingID, err)
+			"graphql: list extras for recording %d: %w", recordingID, err)
 	}
-	out := make([]*RecordingExtra, 0)
-	for _, v := range versions {
-		folder := strings.TrimSpace(v.SourceFolder)
-		if folder == "" {
-			continue
-		}
-		info, statErr := os.Stat(folder)
-		if statErr != nil {
-			// Folder gone on disk — not fatal, just nothing to show.
-			if errors.Is(statErr, fs.ErrNotExist) {
-				continue
-			}
-			return nil, fmt.Errorf(
-				"graphql: stat source folder %s: %w", folder, statErr)
-		}
-		if !info.IsDir() {
-			continue
-		}
-		mainBasename := filepath.Base(v.FilePath)
-		extras, walkErr := walkRecordingExtras(folder, mainBasename)
-		if walkErr != nil {
-			return nil, fmt.Errorf(
-				"graphql: walk source folder %s: %w", folder, walkErr)
-		}
-		out = append(out, extras...)
-		// Only the first version's source folder contributes — extras
-		// are conceptually one source-folder buttonshot per recording, not
-		// a fan-out across every version row. Multi-version recordings
-		// pick the first version (largest by size, per ListVersions
-		// order) as the canonical extras source.
-		break
+	out := make([]*RecordingExtra, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &RecordingExtra{
+			Path:      row.FilePath,
+			Name:      filepath.Base(row.FilePath),
+			SizeBytes: int(row.FileSizeBytes),
+			IsDir:     false,
+			Kind:      row.Kind,
+			Label:     row.Label,
+		})
 	}
 	return out, nil
-}
-
-// walkRecordingExtras walks folder and returns its contents as a flat
-// list of RecordingExtra rows, skipping the main file, dot-files, and
-// anything past extrasMaxDepth. Sorted by relative path so the SPA's
-// tree renderer sees children adjacent to their parent directory.
-func walkRecordingExtras(folder, mainBasename string) ([]*RecordingExtra, error) {
-	var rows []*RecordingExtra
-	walkErr := filepath.WalkDir(folder, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			//nolint:nilerr // intentional: keep walking past per-entry errors so a single permission blip doesn't drop the whole list.
-			return nil
-		}
-		if path == folder {
-			// The root entry itself isn't an "extra" — its children are.
-			return nil
-		}
-		row, action := classifyExtraEntry(folder, path, d, mainBasename)
-		if action != nil {
-			return action
-		}
-		if row != nil {
-			rows = append(rows, row)
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return nil, fmt.Errorf("walk: %w", walkErr)
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		return rows[i].Path < rows[j].Path
-	})
-	return rows, nil
-}
-
-// classifyExtraEntry decides what to do with one entry in the
-// source-folder walk: emit a row, skip silently, or short-circuit a
-// whole subtree. Pulled out of walkRecordingExtras so the closure body
-// stays under the gocognit threshold.
-//
-// Return contract — exactly one of the two values is non-nil:
-//   - row != nil, action == nil → emit row + keep walking.
-//   - row == nil, action != nil → return that error/action verbatim
-//     (filepath.SkipDir or nil) from the WalkDirFunc.
-//   - row == nil, action == nil → skip this entry, keep walking.
-func classifyExtraEntry(
-	folder, path string, d fs.DirEntry, mainBasename string,
-) (*RecordingExtra, error) {
-	rel, relErr := filepath.Rel(folder, path)
-	if relErr != nil {
-		// Can't relativize — silently skip rather than poison the list.
-		//nolint:nilerr,nilnil // intentional: skip-this-entry signal; the relErr is logged-by-caller scope and the WalkDirFunc treats nil as "keep walking".
-		return nil, nil
-	}
-	// Skip dot-files at any depth (.DS_Store, ._junk, etc.). Folders
-	// short-circuit the whole subtree to avoid descending into hidden
-	// scaffolding (e.g. .git inside a recovered folder).
-	if strings.HasPrefix(d.Name(), ".") {
-		if d.IsDir() {
-			return nil, filepath.SkipDir
-		}
-		return nil, nil //nolint:nilnil // skip-this-entry signal.
-	}
-	// Skip the main file at the root of the source folder. A nested
-	// file with the same basename inside a subfolder still surfaces —
-	// that's a different physical file.
-	if !d.IsDir() && rel == mainBasename {
-		return nil, nil //nolint:nilnil // skip-this-entry signal.
-	}
-	// Defensive depth bound — a path with N separators is N+1 deep
-	// from the folder root. extrasMaxDepth=3 keeps audio/01/foo.mp3
-	// (depth 3) but cuts off audio/01/02/foo.mp3 (depth 4).
-	if depth := strings.Count(rel, string(os.PathSeparator)) + 1; depth > extrasMaxDepth {
-		if d.IsDir() {
-			return nil, filepath.SkipDir
-		}
-		return nil, nil //nolint:nilnil // skip-this-entry signal.
-	}
-	row := &RecordingExtra{
-		Path:  filepath.ToSlash(rel),
-		Name:  d.Name(),
-		IsDir: d.IsDir(),
-	}
-	if !d.IsDir() {
-		info, infoErr := d.Info()
-		if infoErr == nil {
-			row.SizeBytes = int(info.Size())
-		}
-	}
-	return row, nil
 }
 
 // recordingMediaInfo is the resolver body for Recording.mediaInfo. It

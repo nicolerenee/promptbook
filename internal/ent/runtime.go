@@ -8,6 +8,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/castentry"
 	"github.com/nicolerenee/promptbook/internal/ent/character"
 	"github.com/nicolerenee/promptbook/internal/ent/collectionentry"
+	"github.com/nicolerenee/promptbook/internal/ent/extraentry"
 	"github.com/nicolerenee/promptbook/internal/ent/historyevent"
 	"github.com/nicolerenee/promptbook/internal/ent/jobrun"
 	"github.com/nicolerenee/promptbook/internal/ent/manualimportqueue"
@@ -76,6 +77,20 @@ func init() {
 	collectionentryDescLastSyncedAt := collectionentryFields[6].Descriptor()
 	// collectionentry.DefaultLastSyncedAt holds the default value on creation for the last_synced_at field.
 	collectionentry.DefaultLastSyncedAt = collectionentryDescLastSyncedAt.Default.(func() time.Time)
+	extraentryFields := schema.ExtraEntry{}.Fields()
+	_ = extraentryFields
+	// extraentryDescLabel is the schema descriptor for label field.
+	extraentryDescLabel := extraentryFields[4].Descriptor()
+	// extraentry.DefaultLabel holds the default value on creation for the label field.
+	extraentry.DefaultLabel = extraentryDescLabel.Default.(string)
+	// extraentryDescFileSizeBytes is the schema descriptor for file_size_bytes field.
+	extraentryDescFileSizeBytes := extraentryFields[5].Descriptor()
+	// extraentry.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
+	extraentry.DefaultFileSizeBytes = extraentryDescFileSizeBytes.Default.(int64)
+	// extraentryDescAddedAt is the schema descriptor for added_at field.
+	extraentryDescAddedAt := extraentryFields[6].Descriptor()
+	// extraentry.DefaultAddedAt holds the default value on creation for the added_at field.
+	extraentry.DefaultAddedAt = extraentryDescAddedAt.Default.(func() time.Time)
 	historyeventFields := schema.HistoryEvent{}.Fields()
 	_ = historyeventFields
 	// historyeventDescOccurredAt is the schema descriptor for occurred_at field.
@@ -344,12 +359,16 @@ func init() {
 	recordingversionDescSourceFolder := recordingversionFields[11].Descriptor()
 	// recordingversion.DefaultSourceFolder holds the default value on creation for the source_folder field.
 	recordingversion.DefaultSourceFolder = recordingversionDescSourceFolder.Default.(string)
+	// recordingversionDescPartIndex is the schema descriptor for part_index field.
+	recordingversionDescPartIndex := recordingversionFields[12].Descriptor()
+	// recordingversion.DefaultPartIndex holds the default value on creation for the part_index field.
+	recordingversion.DefaultPartIndex = recordingversionDescPartIndex.Default.(int)
 	// recordingversionDescAddedAt is the schema descriptor for added_at field.
-	recordingversionDescAddedAt := recordingversionFields[12].Descriptor()
+	recordingversionDescAddedAt := recordingversionFields[13].Descriptor()
 	// recordingversion.DefaultAddedAt holds the default value on creation for the added_at field.
 	recordingversion.DefaultAddedAt = recordingversionDescAddedAt.Default.(func() time.Time)
 	// recordingversionDescLastSeenAt is the schema descriptor for last_seen_at field.
-	recordingversionDescLastSeenAt := recordingversionFields[13].Descriptor()
+	recordingversionDescLastSeenAt := recordingversionFields[14].Descriptor()
 	// recordingversion.DefaultLastSeenAt holds the default value on creation for the last_seen_at field.
 	recordingversion.DefaultLastSeenAt = recordingversionDescLastSeenAt.Default.(func() time.Time)
 	showFields := schema.Show{}.Fields()

@@ -113,6 +113,40 @@ type Options struct {
 	// and the recording's destination folder is the only location with
 	// content.
 	SourceFolder string
+	// FileAssignments, when non-empty, switches the engine into
+	// multi-file mode: each entry routes one source path to a role
+	// (main / part-N / extra-{kind} / skip) so the importer can land
+	// multipart recordings (act-1 + act-2) and typed extras
+	// (featurettes, audio rips, photos, ...) in one ingest call.
+	//
+	// When nil / empty, ingest runs the legacy single-file flow —
+	// SRC's whole content is the main file, no extras processed —
+	// preserving today's behaviour exactly for callers that don't yet
+	// know about multipart/extras.
+	FileAssignments []FileAssignment
+}
+
+// FileAssignment routes one source file to a role inside a multi-
+// file ingest. Kind values:
+//
+//   - "main"            — singleton main file (legacy single-file shape).
+//   - "part-1", "part-2", … — parts of one multipart version. All parts
+//     share the recording id; each gets its own version row with
+//     part_index set.
+//   - "extra-featurette", "extra-scene", "extra-behindthescenes",
+//     "extra-interview", "extra-trailer", "extra-deletedscenes",
+//     "extra-other", "extra-audio", "extra-photo" — non-main media
+//     moved into a Jellyfin-shaped subfolder under the canonical
+//     recording folder.
+//   - "skip"            — leave the file in the source folder untouched.
+//     The empty-source-folder cleanup won't fire when skipped files
+//     remain.
+type FileAssignment struct {
+	SourcePath string
+	Kind       string
+	// Label is the optional user-supplied display label for an
+	// extra. Empty for main / part / skip assignments.
+	Label string
 }
 
 // Action constants for ItemResult.Action.
@@ -148,6 +182,30 @@ type ItemResult struct {
 	// column without threading Options through every helper. Empty for
 	// loose-file ingests.
 	SourceFolder string
+	// PartIndex is the 1-based ordinal stamped onto the
+	// recording_versions row when this file is one part of a multipart
+	// version. Zero (the default) means single-file. Only the multi-
+	// file ingest path sets this; the legacy single-file path leaves
+	// it at zero so the rename engine's filename-derived Part value
+	// stays the source of truth for the {Part} token.
+	PartIndex int
+	// AppliedExtras is the list of recording_extras rows the multi-
+	// file ingest path successfully wrote alongside this main /
+	// part-1 file. Used by the GraphQL mutation surface to surface
+	// per-extra outcomes; empty for the legacy single-file flow.
+	AppliedExtras []AppliedExtra
+}
+
+// AppliedExtra is one extras row written during a multi-file ingest.
+// Surfaced on the main / part-1 ItemResult so the caller (GraphQL
+// importQueueEntry mutation, CLI, etc.) can render per-extra
+// outcomes without re-querying the DB.
+type AppliedExtra struct {
+	SourcePath string
+	DestPath   string
+	Kind       string
+	Label      string
+	Err        error
 }
 
 // Result aggregates per-item outcomes.
@@ -158,7 +216,18 @@ type Result struct {
 // Ingest walks src and runs each video through the pipeline. src may be
 // a file or a directory. Errors on individual items are recorded on the
 // item but don't abort the rest of the walk.
+//
+// When opts.FileAssignments is non-empty, ingest enters multi-file
+// mode: each assignment routes one file to a role (main / part-N /
+// extra-{kind} / skip) so the same entry point can land a multipart
+// recording (act-1 + act-2) plus typed extras (featurettes / audio /
+// photos / ...) in one call. The legacy single-file flow stays
+// untouched when assignments is empty.
 func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result, error) {
+	if len(opts.FileAssignments) > 0 {
+		return e.ingestWithAssignments(ctx, src, opts)
+	}
+
 	src = filepath.Clean(src)
 	info, err := os.Stat(src)
 	if err != nil {
@@ -196,7 +265,21 @@ func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result,
 
 // ingestOne runs the full pipeline for a single video path.
 func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemResult {
-	item := ItemResult{Source: src, SourceFolder: opts.SourceFolder}
+	return e.ingestOneWithSeed(ctx, src, opts, ItemResult{
+		Source:       src,
+		SourceFolder: opts.SourceFolder,
+	})
+}
+
+// ingestOneWithSeed is ingestOne with a caller-supplied initial
+// ItemResult so the multi-file path can pre-populate PartIndex (and
+// any other per-file overrides) before the pipeline runs. The legacy
+// single-file flow uses ingestOne directly with a zero seed.
+func (e *Engine) ingestOneWithSeed(
+	ctx context.Context, src string, opts Options, seed ItemResult,
+) ItemResult {
+	item := seed
+	item.Source = src
 
 	if !e.resolveID(src, opts, &item) {
 		e.recordIngestEvent(ctx, opts, &item)
@@ -272,7 +355,14 @@ func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bo
 		return false
 	}
 	item.MediaInfo = info
-	parsed := match.Parse(filepath.Base(src))
+	// Caller-supplied PartIndex (multi-file ingest) wins over the
+	// filename-derived value: the queue modal's per-file picker is
+	// the authoritative source when present. Falls back to the
+	// legacy match.Parse path for the single-file flow.
+	part := item.PartIndex
+	if part == 0 {
+		part = match.Parse(filepath.Base(src)).PartIndex
+	}
 	plan, err := rename.BuildPlan(rename.PlanInputs{
 		Recording:      *item.Recording,
 		Source:         src,
@@ -280,7 +370,7 @@ func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bo
 		FolderTemplate: e.FolderTemplate,
 		FileTemplate:   e.FileTemplate,
 		MediaInfo:      info,
-		Part:           parsed.PartIndex,
+		Part:           part,
 	})
 	if err != nil {
 		item.Err = err
@@ -426,6 +516,7 @@ func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
 		FormatLabel:   DefaultFormatLabel(container, quality, videoCodec, size),
 		MediaInfoJSON: encodeMediaInfo(item.MediaInfo, e.Logger),
 		SourceFolder:  item.SourceFolder,
+		PartIndex:     item.PartIndex,
 	}
 	if upsertErr := storage.UpsertVersion(ctx, e.DB, version); upsertErr != nil {
 		e.Logger.Warn().Err(upsertErr).Msg("failed to record version")

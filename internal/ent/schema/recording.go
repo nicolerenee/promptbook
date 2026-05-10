@@ -115,6 +115,19 @@ func (Recording) Edges() []ent.Edge {
 				entsql.OnDelete(entsql.Cascade),
 				entgql.RelayConnection(),
 			),
+		// extras is the back-edge to the recording_extras rows. The
+		// edge is annotation-skipped so it doesn't surface as a Relay
+		// connection on the generated GraphQL — the SPA reads extras
+		// through the hand-rolled Recording.extras resolver instead.
+		// Points at ExtraEntry (rather than a same-named
+		// RecordingExtra schema) to avoid colliding with the
+		// hand-rolled GraphQL `RecordingExtra` model gqlgen would
+		// otherwise autobind by name.
+		edge.To("extras", ExtraEntry.Type).
+			Annotations(
+				entsql.OnDelete(entsql.Cascade),
+				entgql.Skip(entgql.SkipAll),
+			),
 	}
 }
 
