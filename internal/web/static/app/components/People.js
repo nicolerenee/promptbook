@@ -22,9 +22,62 @@
 // upgrade to a real headshot.
 
 import m from 'https://esm.sh/mithril@2.2.2';
-import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import Pagination from './Pagination.js';
+
+// PEOPLE_LIST_QUERY hits the peopleList custom resolver — the
+// in-scope (collection ∪ wants) by-performer aggregate. stateCounts
+// is a flat object the SPA renders as a badge cluster.
+const PEOPLE_LIST_QUERY = `
+  query PeopleList($sort: String, $dir: String, $limit: Int, $offset: Int) {
+    peopleList(sort: $sort, dir: $dir, limit: $limit, offset: $offset) {
+      total
+      items {
+        performerID
+        name
+        slug
+        recordingCount
+        stateCounts {
+          synced
+          formatMismatch
+          missing
+          wanted
+          orphan
+        }
+      }
+    }
+  }
+`;
+
+// stripIDPrefix turns "performer-1234" into "1234". The /people/:id
+// routes still take int64 ids so the SPA strips at the boundary.
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// mapPersonItem rewrites a GraphQL PersonListItem into the snake_case
+// shape the existing renderer was written against. state_counts gets
+// flattened from camelCase keys back to the storage.Status tokens.
+function mapPersonItem(node) {
+  if (!node) return null;
+  const sc = node.stateCounts || {};
+  return {
+    performer_id:    Number(stripIDPrefix(node.performerID)),
+    name:            node.name || '',
+    slug:            node.slug || '',
+    recording_count: node.recordingCount || 0,
+    state_counts: {
+      synced:          sc.synced || 0,
+      format_mismatch: sc.formatMismatch || 0,
+      missing:         sc.missing || 0,
+      wanted:          sc.wanted || 0,
+      orphan:          sc.orphan || 0,
+    },
+  };
+}
 
 // STATUS_META mirrors Library.js so the badge cluster colour-codes the
 // per-state breakdown the same way the library page does.
@@ -110,14 +163,17 @@ function loadPeople() {
   const p = state.people;
   p.loading = true;
   p.error = null;
-  const params = new URLSearchParams();
-  params.set('limit', String(p.limit));
-  params.set('offset', String(p.offset));
-  params.set('sort', p.sortKey);
-  params.set('dir', p.sortDir);
-  return api.get('/people?' + params.toString()).then((body) => {
-    p.items = (body && body.items) || [];
-    p.total = (body && body.total) || 0;
+  const variables = {
+    limit:  p.limit,
+    offset: p.offset,
+    sort:   p.sortKey,
+    dir:    p.sortDir,
+  };
+  return graphql.query(PEOPLE_LIST_QUERY, variables).then((data) => {
+    const env = (data && data.peopleList) || {};
+    const items = Array.isArray(env.items) ? env.items : [];
+    p.items = items.map(mapPersonItem).filter(Boolean);
+    p.total = env.total || 0;
     p.loading = false;
   }).catch((err) => {
     p.error = err;

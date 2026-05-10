@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/castentry"
+	"github.com/nicolerenee/promptbook/internal/ent/performer"
 	"github.com/nicolerenee/promptbook/internal/ent/recording"
 	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
@@ -636,3 +638,295 @@ func intCmp(a, b int) int {
 // imagecache (the resolver root holds a pointer to it). Forces a
 // build error if the import is dropped accidentally.
 var _ *imagecache.Cache = (*imagecache.Cache)(nil)
+
+// peopleList is the GraphQL resolver body for the peopleList query.
+// Mirrors the REST handleListPeople: load the union of collection +
+// wants ids, group cast entries by performer, decorate each with the
+// per-status histogram via the reconciler. Custom resolver because
+// the in-scope filter (collection ∪ wants) and the per-row
+// state-counts aren't expressible through entgql's RecordingWhereInput
+// shape.
+func (r *Resolver) peopleList(
+	ctx context.Context,
+	sortArg, dirArg *string,
+	limitArg, offsetArg *int,
+) (*PersonListPage, error) {
+	limit, offset := defaultLimitOffset(limitArg, offsetArg)
+	sortKey := optString(sortArg)
+	dir := normalizeSortDir(optString(dirArg))
+
+	scopeIDs, err := ownedOrWantedRecordingIDs(ctx, r.client)
+	if err != nil {
+		return nil, err
+	}
+	if len(scopeIDs) == 0 {
+		return &PersonListPage{
+			Items: []*PersonListItem{}, Total: 0,
+			Limit: limit, Offset: offset,
+		}, nil
+	}
+
+	credits, err := loadPerformerCredits(ctx, r.client, scopeIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(credits) == 0 {
+		return &PersonListPage{
+			Items: []*PersonListItem{}, Total: 0,
+			Limit: limit, Offset: offset,
+		}, nil
+	}
+
+	performerIDs := make([]int64, 0, len(credits))
+	for id := range credits {
+		performerIDs = append(performerIDs, id)
+	}
+	performers, err := r.client.Performer.Query().
+		Where(performer.IDIn(performerIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query performers: %w", err)
+	}
+
+	items := make([]*PersonListItem, 0, len(performers))
+	for _, p := range performers {
+		recIDs := credits[p.ID]
+		counts := ShowStateCounts{}
+		for recID := range recIDs {
+			st, stErr := storage.LoadState(ctx, r.client, recID)
+			if stErr != nil {
+				return nil, fmt.Errorf(
+					"graphql: load state for recording %d: %w", recID, stErr)
+			}
+			incrStateCount(&counts, st.Status)
+		}
+		items = append(items, &PersonListItem{
+			PerformerID:    p.ID,
+			Name:           p.Name,
+			Slug:           p.Slug,
+			RecordingCount: len(recIDs),
+			StateCounts:    &counts,
+		})
+	}
+	sortPersonList(items, sortKey, dir)
+
+	total := len(items)
+	if offset >= total {
+		return &PersonListPage{
+			Items: []*PersonListItem{}, Total: total,
+			Limit: limit, Offset: offset,
+		}, nil
+	}
+	end := min(offset+limit, total)
+	return &PersonListPage{
+		Items: items[offset:end], Total: total,
+		Limit: limit, Offset: offset,
+	}, nil
+}
+
+// person is the GraphQL resolver body for the person(id:) query.
+// Returns nil when the performer id doesn't resolve so the field
+// renders as null. Otherwise loads the performer + every recording
+// they're credited on, with the reconciler-derived state on each
+// credit row. localHeadshotURL falls through to "" when the image
+// cache is disabled.
+func (r *Resolver) person(ctx context.Context, id int64) (*PersonDetail, error) {
+	p, err := storage.LoadPerformer(ctx, r.client, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrPerformerNotFound) {
+			return nil, nil //nolint:nilnil // null when not found.
+		}
+		return nil, fmt.Errorf("graphql: load performer %d: %w", id, err)
+	}
+	recIDs, err := storage.ListRecordingsForPerformer(ctx, r.client, id)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list recordings for performer %d: %w", id, err)
+	}
+	recs, err := r.loadPersonRecordings(ctx, recIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := &PersonDetail{
+		PerformerID: p.PerformerID,
+		Name:        p.Name,
+		Slug:        p.Slug,
+		URL:         p.URL,
+		Recordings:  recs,
+	}
+	if r.imageCache != nil && !r.imageCache.Disabled() {
+		out.LocalHeadshotURL = r.imageCache.HeadshotURL(p.PerformerID)
+	}
+	return out, nil
+}
+
+// loadPersonRecordings resolves a slice of recording ids into the
+// PersonRecording shape the SPA's people-detail table renders.
+// Sorted by show name, tour, date so the table reads alphabetically.
+func (r *Resolver) loadPersonRecordings(
+	ctx context.Context, ids []int64,
+) ([]*PersonRecording, error) {
+	if len(ids) == 0 {
+		return []*PersonRecording{}, nil
+	}
+	recs, err := r.client.Recording.Query().
+		Where(recording.IDIn(ids...)).Order(recording.ByID()).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query person recordings: %w", err)
+	}
+	showNames, err := loadShowNames(ctx, r.client, recs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*PersonRecording, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, &PersonRecording{
+			ID:             rec.ID,
+			Show:           showNames[rec.ShowID],
+			Tour:           rec.Tour,
+			DateFull:       rec.DateFull,
+			DateMonthKnown: rec.DateMonthKnown,
+			DateDayKnown:   rec.DateDayKnown,
+			ShowID:         rec.ShowID,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if c := strCmp(out[i].Show, out[j].Show); c != 0 {
+			return c < 0
+		}
+		if c := strCmp(out[i].Tour, out[j].Tour); c != 0 {
+			return c < 0
+		}
+		return out[i].DateFull < out[j].DateFull
+	})
+	for i := range out {
+		st, stErr := storage.LoadState(ctx, r.client, out[i].ID)
+		if stErr != nil {
+			return nil, fmt.Errorf(
+				"graphql: load state for recording %d: %w", out[i].ID, stErr)
+		}
+		out[i].State = string(st.Status)
+	}
+	return out, nil
+}
+
+// ownedOrWantedRecordingIDs returns the union of recording ids that
+// appear in either the collection or wants table. Mirrors the
+// server.ownedOrWantedIDs helper but lives here to avoid a graph
+// → server import cycle.
+func ownedOrWantedRecordingIDs(
+	ctx context.Context, client *ent.Client,
+) ([]int64, error) {
+	colIDs, err := client.CollectionEntry.Query().IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query collection ids: %w", err)
+	}
+	wantsIDs, err := client.WantsEntry.Query().IDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query wants ids: %w", err)
+	}
+	set := make(map[int64]struct{}, len(colIDs)+len(wantsIDs))
+	for _, id := range colIDs {
+		set[id] = struct{}{}
+	}
+	for _, id := range wantsIDs {
+		set[id] = struct{}{}
+	}
+	out := make([]int64, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// loadPerformerCredits walks every cast entry whose recording is in
+// scope and returns a map performer_id → set of recording_ids.
+func loadPerformerCredits(
+	ctx context.Context, client *ent.Client, recIDs []int64,
+) (map[int64]map[int64]struct{}, error) {
+	casts, err := client.CastEntry.Query().
+		Where(castentry.RecordingIDIn(recIDs...)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query cast entries: %w", err)
+	}
+	out := make(map[int64]map[int64]struct{})
+	for _, ce := range casts {
+		bucket := out[ce.PerformerID]
+		if bucket == nil {
+			bucket = make(map[int64]struct{})
+			out[ce.PerformerID] = bucket
+		}
+		bucket[ce.RecordingID] = struct{}{}
+	}
+	return out, nil
+}
+
+// loadShowNames returns a map show_id → name covering every distinct
+// show referenced by recs. One query rather than N+1.
+func loadShowNames(
+	ctx context.Context, client *ent.Client, recs []*ent.Recording,
+) (map[int64]string, error) {
+	if len(recs) == 0 {
+		return map[int64]string{}, nil
+	}
+	set := make(map[int64]struct{}, len(recs))
+	for _, r := range recs {
+		set[r.ShowID] = struct{}{}
+	}
+	ids := make([]int64, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	rows, err := client.Show.Query().Where(show.IDIn(ids...)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query shows for performer: %w", err)
+	}
+	out := make(map[int64]string, len(rows))
+	for _, s := range rows {
+		out[s.ID] = s.Name
+	}
+	return out, nil
+}
+
+// incrStateCount increments the per-status counter on dst by status.
+// Pulled out so the peopleList / showsList accumulator loops don't
+// repeat the switch statement.
+func incrStateCount(dst *ShowStateCounts, status storage.Status) {
+	switch status {
+	case storage.StatusSynced:
+		dst.Synced++
+	case storage.StatusFormatMismatch:
+		dst.FormatMismatch++
+	case storage.StatusMissing:
+		dst.Missing++
+	case storage.StatusWanted:
+		dst.Wanted++
+	case storage.StatusOrphan:
+		dst.Orphan++
+	}
+}
+
+// sortPersonList orders items in place by (sortKey, dir). Supported
+// keys: "name" (default) and "count" (RecordingCount). Mirrors the
+// REST sortPeople comparator.
+func sortPersonList(items []*PersonListItem, sortKey, dir string) {
+	desc := dir == sortDirDesc
+	cmp := func(a, b *PersonListItem) int {
+		switch sortKey {
+		case "count":
+			return intCmp(a.RecordingCount, b.RecordingCount)
+		default:
+			return strCmp(a.Name, b.Name)
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		c := cmp(items[i], items[j])
+		if desc {
+			c = -c
+		}
+		if c != 0 {
+			return c < 0
+		}
+		return items[i].PerformerID < items[j].PerformerID
+	})
+}

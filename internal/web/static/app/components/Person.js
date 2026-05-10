@@ -14,9 +14,67 @@
 // for total failures (cache disabled, network error, etc.).
 
 import m from 'https://esm.sh/mithril@2.2.2';
-import api from '../api.js';
+import graphql from '../graphql.js';
 import state from '../state.js';
 import { smartDate } from '../utils/format.js';
+
+// PERSON_DETAIL_QUERY pulls the performer + their full credit list
+// via the custom person(id:) resolver. Image-cache URL + per-row
+// state come from the resolver-side enrichment so the SPA stays a
+// thin wire-format swap of the legacy REST shape.
+const PERSON_DETAIL_QUERY = `
+  query PersonDetail($id: ID!) {
+    person(id: $id) {
+      performerID
+      name
+      slug
+      url
+      localHeadshotURL
+      recordings {
+        id
+        show
+        showID
+        tour
+        dateFull
+        dateMonthKnown
+        dateDayKnown
+        state
+      }
+    }
+  }
+`;
+
+// stripIDPrefix turns "performer-1234" / "recording-N" / "show-N"
+// into the bare numeric id the existing renderer + router consume.
+function stripIDPrefix(id) {
+  if (!id) return '';
+  const idx = String(id).indexOf('-');
+  return idx < 0 ? String(id) : String(id).substring(idx + 1);
+}
+
+// mapPersonDetail rewrites a GraphQL PersonDetail into the snake_case
+// shape the renderer expects (including every recording row).
+function mapPersonDetail(node) {
+  if (!node) return null;
+  const recs = (node.recordings || []).map((r) => ({
+    id:               Number(stripIDPrefix(r.id)),
+    show:             r.show || '',
+    show_id:          Number(stripIDPrefix(r.showID)),
+    tour:             r.tour || '',
+    date_full:        r.dateFull || '',
+    date_month_known: !!r.dateMonthKnown,
+    date_day_known:   !!r.dateDayKnown,
+    state:            r.state || '',
+  }));
+  return {
+    performer_id:       Number(stripIDPrefix(node.performerID)),
+    name:               node.name || '',
+    slug:               node.slug || '',
+    url:                node.url || '',
+    local_headshot_url: node.localHeadshotURL || '',
+    recordings:         recs,
+  };
+}
 
 // STATUS_META mirrors Library.js so per-recording badges read the same
 // across pages.
@@ -238,8 +296,14 @@ function loadDetail(id) {
   state.person.loading = true;
   state.person.error = null;
   state.person.imgError = false;
-  api.get('/people/' + encodeURIComponent(id)).then((body) => {
-    state.person.detail = body || null;
+  graphql.query(PERSON_DETAIL_QUERY, { id: 'performer-' + id }).then((data) => {
+    const node = data && data.person;
+    if (!node) {
+      const err = new Error('Performer not found.');
+      err.status = 404;
+      throw err;
+    }
+    state.person.detail = mapPersonDetail(node);
     state.person.loading = false;
   }).catch((err) => {
     state.person.error = err;

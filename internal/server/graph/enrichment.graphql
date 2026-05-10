@@ -182,4 +182,65 @@ extend type Query {
     limit: Int
     offset: Int
   ): ShowsListPage!
+
+  # peopleList is the offset-paginated by-performer aggregate. Scope
+  # is collection ∪ wants (only performers credited on a recording
+  # the user has or wants surface here). sort is 'name' or 'count';
+  # dir is 'asc' or 'desc'. Mirrors /api/v1/people.
+  peopleList(
+    sort: String
+    dir: String
+    limit: Int
+    offset: Int
+  ): PersonListPage!
+
+  # person returns the full performer detail with their recording
+  # credits + per-recording reconciler state. Mirrors
+  # /api/v1/people/{id}. Returns null when the id doesn't resolve.
+  person(id: ID!): PersonDetail
+}
+
+# PersonListItem mirrors the REST PersonListItem shape — performer
+# header fields plus the per-status histogram so the SPA's badge
+# cluster keeps its existing look.
+type PersonListItem {
+  performerID: ID!
+  name: String!
+  slug: String!
+  recordingCount: Int!
+  stateCounts: ShowStateCounts!
+}
+
+type PersonListPage {
+  items: [PersonListItem!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+# PersonRecording is one credit row on the people-detail page.
+# Mirrors the REST PersonRecording struct exactly so the SPA renderer
+# stays untouched.
+type PersonRecording {
+  id: ID!
+  show: String!
+  tour: String!
+  dateFull: String!
+  dateMonthKnown: Boolean!
+  dateDayKnown: Boolean!
+  showID: ID!
+  state: String!
+}
+
+# PersonDetail is the JSON payload for /api/v1/people/{id}. URL is
+# the canonical encora.it link the detail page renders as a sidebar
+# affordance. localHeadshotURL is the image-cache URL — the SPA also
+# falls back to a placeholder if not present.
+type PersonDetail {
+  performerID: ID!
+  name: String!
+  slug: String!
+  url: String!
+  recordings: [PersonRecording!]!
+  localHeadshotURL: String!
 }

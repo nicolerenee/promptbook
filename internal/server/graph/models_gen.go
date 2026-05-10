@@ -7,6 +7,41 @@ type BannerLayout struct {
 	ImageRegion string `json:"imageRegion"`
 }
 
+type PersonDetail struct {
+	PerformerID      int64              `json:"performerID"`
+	Name             string             `json:"name"`
+	Slug             string             `json:"slug"`
+	URL              string             `json:"url"`
+	Recordings       []*PersonRecording `json:"recordings"`
+	LocalHeadshotURL string             `json:"localHeadshotURL"`
+}
+
+type PersonListItem struct {
+	PerformerID    int64            `json:"performerID"`
+	Name           string           `json:"name"`
+	Slug           string           `json:"slug"`
+	RecordingCount int              `json:"recordingCount"`
+	StateCounts    *ShowStateCounts `json:"stateCounts"`
+}
+
+type PersonListPage struct {
+	Items  []*PersonListItem `json:"items"`
+	Total  int               `json:"total"`
+	Limit  int               `json:"limit"`
+	Offset int               `json:"offset"`
+}
+
+type PersonRecording struct {
+	ID             int64  `json:"id"`
+	Show           string `json:"show"`
+	Tour           string `json:"tour"`
+	DateFull       string `json:"dateFull"`
+	DateMonthKnown bool   `json:"dateMonthKnown"`
+	DateDayKnown   bool   `json:"dateDayKnown"`
+	ShowID         int64  `json:"showID"`
+	State          string `json:"state"`
+}
+
 type RecordingsListItem struct {
 	ID             int64  `json:"id"`
 	ShowID         int64  `json:"showID"`

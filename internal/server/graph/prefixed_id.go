@@ -95,6 +95,9 @@ const (
 	objectNameWantsEntryWhereInput  = "WantsEntryWhereInput"
 	objectNameRecordingsListItem    = "RecordingsListItem"
 	objectNameShowsListItem         = "ShowsListItem"
+	objectNamePersonListItem        = "PersonListItem"
+	objectNamePersonRecording       = "PersonRecording"
+	objectNamePersonDetail          = "PersonDetail"
 )
 
 // objectIDPrefix maps a GraphQL Object name (the type the field
@@ -130,6 +133,11 @@ var objectIDPrefix = map[string]string{
 	// strictly necessary.
 	objectNameRecordingsListItem: prefixRecording,
 	objectNameShowsListItem:      prefixShow,
+	// People surface — PersonListItem.performerID + PersonDetail.performerID
+	// are captured by foreignKeyFieldPrefix below; PersonRecording.id
+	// is a recording reference, surfaced via the type-default mapping
+	// here.
+	objectNamePersonRecording: prefixRecording,
 }
 
 // foreignKeyFieldPrefix maps an ID-typed field name (the foreign-key
@@ -297,6 +305,10 @@ var queryFieldPrefix = map[string]string{
 	prefixPerformer:       prefixPerformer,
 	prefixCollectionEntry: prefixCollectionEntry,
 	prefixWantsEntry:      prefixWantsEntry,
+	// person(id:) returns the PersonDetail enrichment shape — its
+	// argument carries the same "performer-N" prefix as the canonical
+	// performer(id:) shortcut.
+	"person": prefixPerformer,
 }
 
 // expectedPrefixForFieldContext is the unmarshal-side analog of

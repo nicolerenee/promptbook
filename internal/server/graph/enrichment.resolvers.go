@@ -37,6 +37,21 @@ func (r *queryResolver) ShowsList(ctx context.Context, sort *string, dir *string
 	return r.Resolver.showsList(ctx, sort, dir, limit, offset)
 }
 
+// PeopleList is the resolver for the peopleList field. Pass-through
+// to the resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *queryResolver) PeopleList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*PersonListPage, error) {
+	return r.Resolver.peopleList(ctx, sort, dir, limit, offset)
+}
+
+// Person is the resolver for the person field. Same pass-through
+// pattern as PeopleList. Returns nil when the performer id doesn't
+// resolve so the GraphQL field renders as null.
+func (r *queryResolver) Person(ctx context.Context, id int64) (*PersonDetail, error) {
+	return r.Resolver.person(ctx, id)
+}
+
 // Status is the resolver for the status field. The reconciler runs
 // per-recording — same code path that powers the REST list page —
 // so the GraphQL surface agrees with the legacy taxonomy.
