@@ -1,0 +1,436 @@
+// Recordings.js — the catalog's recording-list page (/).
+//
+// Page header w/ sub-text + action stubs, status filter chips,
+// sortable + paginated table OR poster grid. Status taxonomy is the
+// LOWERCASE storage.Status set ('synced', 'format_mismatch',
+// 'missing', 'wanted', 'orphan'). Wants are reachable via
+// status='wanted'; the dedicated /wants page is gone.
+//
+// View dimension: 'list' | 'grid'. Persisted in localStorage so the
+// pref survives navigation; URL ?view= overrides for deep links.
+// Sort + status + page are URL-driven (deep links work); they are
+// NOT persisted across navigations.
+//
+// Status column lives on the FAR RIGHT of the table. Recording is the
+// primary identifier so it gets the leftmost slot.
+
+import m from 'https://esm.sh/mithril@2.2.2';
+import api from '../api.js';
+import state from '../state.js';
+import { smartDate } from '../utils/format.js';
+import Pagination from './Pagination.js';
+
+// LS_VIEW is the localStorage key the recordings page uses to persist
+// the user's preferred layout across visits. The URL still wins when
+// it carries an explicit ?view= (so deep links work); localStorage is
+// the fallback when the URL is bare.
+const LS_VIEW = 'pb.recordings.view';
+
+function readStoredView() {
+  try {
+    const v = window.localStorage.getItem(LS_VIEW);
+    return v === 'grid' || v === 'list' ? v : '';
+  } catch (_) {
+    return '';
+  }
+}
+function writeStoredView(v) {
+  try { window.localStorage.setItem(LS_VIEW, v); } catch (_) { /* no-op */ }
+}
+
+// STATUS_META keys on the lowercase API tokens so meta lookups
+// against /api/v1/recordings JSON resolve directly.
+const STATUS_META = {
+  synced:          { label: 'Synced',          badge: 'badge-success' },
+  format_mismatch: { label: 'Format mismatch', badge: 'badge-warning' },
+  missing:         { label: 'Missing',         badge: 'badge-error' },
+  wanted:          { label: 'Wanted',          badge: 'badge-info' },
+  orphan:          { label: 'Orphan',          badge: 'badge-neutral' },
+};
+
+// STATUS_FILTERS lists the chips in display order. Empty key = All.
+const STATUS_FILTERS = [
+  { key: '',                label: 'All' },
+  { key: 'synced',          label: 'Synced' },
+  { key: 'format_mismatch', label: 'Format mismatch' },
+  { key: 'missing',         label: 'Missing' },
+  { key: 'wanted',          label: 'Wanted' },
+  { key: 'orphan',          label: 'Orphan' },
+];
+
+// SORT_COLUMNS lists the sortable columns in their RENDER order.
+// Status is rightmost (least interesting axis to scan; row-identity
+// belongs on the left).
+const SORT_COLUMNS = [
+  { key: 'recording',    label: 'Recording' },
+  { key: 'date',         label: 'Date' },
+  { key: 'master',       label: 'Master' },
+  { key: 'local_format', label: 'Local format' },
+  { key: 'status',       label: 'Status' },
+];
+
+const DEFAULT_SORT = { key: 'recording', dir: 'asc' };
+
+function defaultDirForKey(key) {
+  if (key === 'date') return 'desc';
+  return 'asc';
+}
+
+function readURLParams() {
+  const params = m.route.param() || {};
+  const r = state.recordings;
+
+  const rawView = (params.view || '').toLowerCase();
+  if (rawView === 'grid' || rawView === 'list') {
+    r.view = rawView;
+  } else {
+    r.view = readStoredView() || 'list';
+  }
+
+  const rawStatus = (params.status || '').toLowerCase();
+  const canon = STATUS_FILTERS.find((f) => f.key.toLowerCase() === rawStatus);
+  r.status = canon ? canon.key : '';
+
+  const sortKey = params.sort || '';
+  const dir = (params.dir || '').toLowerCase();
+  const col = SORT_COLUMNS.find((c) => c.key === sortKey);
+  if (!col) {
+    r.sortKey = DEFAULT_SORT.key;
+    r.sortDir = DEFAULT_SORT.dir;
+  } else {
+    r.sortKey = col.key;
+    r.sortDir = (dir === 'asc' || dir === 'desc') ? dir : 'asc';
+  }
+
+  const page = parseInt(params.page, 10);
+  r.offset = (page > 1) ? (page - 1) * r.limit : 0;
+}
+
+function pushURLParams() {
+  const r = state.recordings;
+  const out = {};
+  if (r.status) out.status = r.status;
+  if (r.view !== 'list') out.view = r.view;
+  out.sort = r.sortKey;
+  out.dir = r.sortDir;
+  const page = Math.floor(r.offset / r.limit) + 1;
+  if (page > 1) out.page = String(page);
+  m.route.set('/', out, { replace: true });
+}
+
+function loadRecordings() {
+  const r = state.recordings;
+  r.loading = true;
+  r.error = null;
+  const params = new URLSearchParams();
+  params.set('limit', String(r.limit));
+  params.set('offset', String(r.offset));
+  params.set('sort', r.sortKey);
+  params.set('dir', r.sortDir);
+  if (r.status) params.set('status', r.status);
+  return api.get('/recordings?' + params.toString()).then((body) => {
+    r.items = (body && body.items) || [];
+    r.total = (body && body.total) || 0;
+    r.loading = false;
+  }).catch((err) => {
+    r.error = err;
+    r.loading = false;
+  });
+}
+
+function setStatus(key) {
+  const r = state.recordings;
+  r.status = key;
+  r.offset = 0;
+  pushURLParams();
+  loadRecordings();
+}
+
+function setView(key) {
+  if (key !== 'list' && key !== 'grid') return;
+  state.recordings.view = key;
+  writeStoredView(key);
+  pushURLParams();
+}
+
+function setSort(key) {
+  const r = state.recordings;
+  if (r.sortKey === key) {
+    r.sortDir = r.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    r.sortKey = key;
+    r.sortDir = defaultDirForKey(key);
+  }
+  r.offset = 0;
+  pushURLParams();
+  loadRecordings();
+}
+
+function setOffset(newOffset) {
+  state.recordings.offset = newOffset;
+  pushURLParams();
+  loadRecordings();
+}
+
+function MetricTile(label, num, sub) {
+  return m('div', { class: 'stat' }, [
+    m('div', { class: 'stat-title' }, label),
+    m('div', { class: 'stat-value text-2xl' }, String(num)),
+    m('div', { class: 'stat-desc' }, sub),
+  ]);
+}
+
+function Tab(filter, active) {
+  const isActive = filter.key === active;
+  return m('a', {
+    role: 'tab',
+    class: 'tab' + (isActive ? ' tab-active' : ''),
+    'aria-current': isActive ? 'page' : undefined,
+    onclick: (ev) => { ev.preventDefault(); setStatus(filter.key); },
+    href: '#',
+  }, m('span', filter.label));
+}
+
+function HeaderCell(col, sortKey, sortDir) {
+  const isActive = col.key === sortKey;
+  let caret = '';
+  if (isActive) caret = sortDir === 'desc' ? ' ▼' : ' ▲';
+  const ariaSort = isActive
+    ? (sortDir === 'desc' ? 'descending' : 'ascending')
+    : 'none';
+  return m('th', {
+    class: 'cursor-pointer select-none',
+    'aria-sort': ariaSort,
+    tabindex: 0,
+    role: 'button',
+    onclick: () => setSort(col.key),
+    onkeydown: (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        setSort(col.key);
+      }
+    },
+  }, col.label + caret);
+}
+
+// Row renders one recording. Column order matches SORT_COLUMNS so
+// Recording → Date → Master → Local format → Status. Status is the
+// rightmost cell as a small badge.
+function Row(it) {
+  const meta = STATUS_META[it.status] || STATUS_META.orphan;
+  const subtitle = (it.tour ? it.tour + ' · ' : '') + 'enc-' + it.id;
+  return m('tr', {
+    class: 'hover:bg-base-200 cursor-pointer',
+    onclick: () => m.route.set('/recordings/' + it.id),
+  }, [
+    m('td', [
+      m('div', { class: 'font-medium' }, it.show || '—'),
+      m('div', { class: 'text-xs opacity-60' }, subtitle),
+    ]),
+    m('td', { class: 'font-mono text-sm' },
+      smartDate(it.date_full, it.date_month_known, it.date_day_known)),
+    m('td', it.master || '—'),
+    m('td', { class: 'font-mono text-sm' }, it.local_format || '—'),
+    m('td', m('span', { class: 'badge ' + meta.badge }, meta.label)),
+  ]);
+}
+
+function PosterCard(it) {
+  const meta = STATUS_META[it.status] || STATUS_META.orphan;
+  const poster = it.local_poster_url || '';
+  const onclick = () => m.route.set('/recordings/' + it.id);
+  const placeholder = m('div', {
+    class: 'aspect-[2/3] w-full bg-base-300 flex items-center justify-center text-xs opacity-60 px-2 text-center',
+  }, m('span', { class: 'badge ' + meta.badge }, meta.label));
+  const image = m('img', {
+    src: poster,
+    alt: it.show || '',
+    loading: 'lazy',
+    class: 'aspect-[2/3] w-full object-cover',
+  });
+  return m('div', {
+    class: 'card bg-base-200 shadow-sm hover:shadow-md hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',
+    onclick,
+    role: 'button',
+    tabindex: 0,
+    onkeydown: (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onclick(); }
+    },
+  }, [
+    m('div', { class: 'indicator w-full' }, [
+      m('span', {
+        class: 'indicator-item badge badge-sm ' + meta.badge,
+      }, meta.label),
+      m('div', { class: 'overflow-hidden rounded-t-box w-full' },
+        poster ? image : placeholder,
+      ),
+    ]),
+    m('div', { class: 'card-body p-2 gap-0.5' }, [
+      m('div', { class: 'text-sm font-medium truncate', title: it.show || '' },
+        it.show || '—'),
+      m('div', { class: 'text-xs opacity-60 font-mono truncate' },
+        (it.tour ? it.tour + ' · ' : '') +
+        smartDate(it.date_full, it.date_month_known, it.date_day_known)),
+    ]),
+  ]);
+}
+
+function IconList() {
+  return m('svg', {
+    width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+    'stroke-linejoin': 'round', 'aria-hidden': 'true',
+  }, [
+    m('line', { x1: 8, y1: 6, x2: 21, y2: 6 }),
+    m('line', { x1: 8, y1: 12, x2: 21, y2: 12 }),
+    m('line', { x1: 8, y1: 18, x2: 21, y2: 18 }),
+    m('line', { x1: 3, y1: 6, x2: 3.01, y2: 6 }),
+    m('line', { x1: 3, y1: 12, x2: 3.01, y2: 12 }),
+    m('line', { x1: 3, y1: 18, x2: 3.01, y2: 18 }),
+  ]);
+}
+function IconGrid() {
+  return m('svg', {
+    width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+    'stroke-linejoin': 'round', 'aria-hidden': 'true',
+  }, [
+    m('rect', { x: 3, y: 3, width: 7, height: 7 }),
+    m('rect', { x: 14, y: 3, width: 7, height: 7 }),
+    m('rect', { x: 3, y: 14, width: 7, height: 7 }),
+    m('rect', { x: 14, y: 14, width: 7, height: 7 }),
+  ]);
+}
+
+function ViewToggle(view) {
+  return m('div', { class: 'join', role: 'group', 'aria-label': 'View mode' }, [
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm join-item' + (view === 'list' ? ' btn-active' : ''),
+      'aria-pressed': view === 'list',
+      title: 'List view',
+      onclick: () => setView('list'),
+    }, IconList()),
+    m('button', {
+      type: 'button',
+      class: 'btn btn-sm join-item' + (view === 'grid' ? ' btn-active' : ''),
+      'aria-pressed': view === 'grid',
+      title: 'Grid view',
+      onclick: () => setView('grid'),
+    }, IconGrid()),
+  ]);
+}
+
+function renderList(items, sortKey, sortDir) {
+  return m('div', { class: 'overflow-x-auto rounded-box bg-base-200' },
+    m('table', { class: 'table table-zebra' }, [
+      m('thead', m('tr',
+        SORT_COLUMNS.map((col) => HeaderCell(col, sortKey, sortDir)),
+      )),
+      m('tbody', items.length === 0
+        ? m('tr', m('td', {
+            colspan: SORT_COLUMNS.length, class: 'text-center opacity-60 py-8',
+          }, 'No recordings match this filter.'))
+        : items.map(Row)),
+    ]));
+}
+
+function renderGrid(items) {
+  if (items.length === 0) {
+    return m('div', { class: 'text-center opacity-60 py-12' },
+      'No recordings match this filter.');
+  }
+  return m('div', {
+    class: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4',
+  }, items.map(PosterCard));
+}
+
+const Recordings = {
+  oninit() {
+    readURLParams();
+    loadRecordings();
+  },
+
+  // onupdate fires on every redraw; readURLParams + a state-buttonshot
+  // diff lets us refetch only when the inputs that affect the result
+  // set actually changed (view toggles within the same dataset don't
+  // need a network round-trip). The URL is the source of truth for
+  // status/sort/dir/page; local state mirrors it.
+  onupdate() {
+    const r = state.recordings;
+    const before = {
+      status: r.status,
+      sortKey: r.sortKey,
+      sortDir: r.sortDir,
+      offset: r.offset,
+    };
+    readURLParams();
+    if (before.status !== r.status ||
+        before.sortKey !== r.sortKey ||
+        before.sortDir !== r.sortDir ||
+        before.offset !== r.offset) {
+      loadRecordings();
+    }
+  },
+
+  view() {
+    const r = state.recordings;
+
+    if (r.loading && r.items.length === 0) {
+      return m('div', { class: 'p-8 opacity-60' }, 'Loading recordings…');
+    }
+    if (r.error) {
+      return m('div', { role: 'alert', class: 'alert alert-error' },
+        m('span', 'Failed to load recordings: ' + (r.error.message || r.error)));
+    }
+
+    const total = r.total;
+    const offset = r.offset;
+    const start = total === 0 ? 0 : offset + 1;
+    const end = Math.min(offset + r.limit, total);
+    const headerSub = total === 0
+      ? 'No recordings loaded'
+      : 'Showing ' + start + '–' + end + ' of ' + total + ' recordings' +
+        (r.status ? ' · status: ' + r.status : '');
+
+    const body = r.view === 'grid'
+      ? renderGrid(r.items)
+      : renderList(r.items, r.sortKey, r.sortDir);
+
+    return m('div', { class: 'space-y-6' }, [
+      m('header', { class: 'flex items-start justify-between gap-4 flex-wrap' }, [
+        m('div', [
+          m('h1', { class: 'text-3xl font-semibold' }, 'Recordings'),
+          m('p', { class: 'text-sm opacity-70 mt-1' }, headerSub),
+        ]),
+        m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+          ViewToggle(r.view),
+          m('button', { type: 'button', class: 'btn btn-ghost btn-sm', disabled: true }, 'Filters'),
+          m('button', { type: 'button', class: 'btn btn-sm', disabled: true }, 'Sync now'),
+          m('button', { type: 'button', class: 'btn btn-primary btn-sm', disabled: true }, 'Manual import'),
+        ]),
+      ]),
+
+      m('div', { class: 'stats stats-vertical lg:stats-horizontal shadow w-full' }, [
+        MetricTile('Recordings', total, r.status ? 'matching ' + r.status : 'in catalog'),
+        MetricTile('Page size', r.limit, '50/page default'),
+        MetricTile('Page', Math.floor(offset / r.limit) + 1,
+          'of ' + Math.max(1, Math.ceil(total / r.limit))),
+      ]),
+
+      m('div', { role: 'tablist', class: 'tabs tabs-box' },
+        STATUS_FILTERS.map((f) => Tab(f, r.status))),
+
+      body,
+
+      m(Pagination, {
+        offset,
+        limit: r.limit,
+        total,
+        setOffset,
+      }),
+    ]);
+  },
+};
+
+export default Recordings;

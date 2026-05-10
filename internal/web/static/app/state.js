@@ -7,16 +7,11 @@
 // shape + initial values.
 
 export const state = {
-  // library is the pilot page state. Mirrors the controls + cache the
-  // legacy library.js maintained as module-locals.
-  //
-  // view + mode form a 2x2: 'list'|'grid' × 'recordings'|'shows'.
-  // shows[] is lazily populated the first time the user flips to mode
-  // 'shows' and cached across mode flips so re-toggling doesn't
-  // re-fetch /api/v1/shows. showsLoading / showsError mirror the
-  // recordings loading / error fields so the view layer can branch on
-  // the active mode without colliding state.
-  library: {
+  // recordings is the /recordings (a.k.a. /) list page view-model.
+  // Status filter chips drive `status`; sort + view + pagination work
+  // the same as before. Wants are reachable via status='wanted'; the
+  // separate Wants page is gone.
+  recordings: {
     items: [],
     status: '',           // '' = All; otherwise lowercase storage.Status.
     sortKey: 'recording',
@@ -24,30 +19,21 @@ export const state = {
     loading: true,
     error: null,
     view: 'list',         // 'list' | 'grid'.
-    mode: 'recordings',   // 'recordings' | 'shows'.
-    shows: [],
-    showsLoading: false,
-    showsError: null,
-    // Pagination — recordings + shows each track their own offset +
-    // total because flipping mode swaps the dataset entirely. limit
-    // is hardcoded to 50 in the API layer; the SPA mirrors it here so
-    // the indicator math agrees with the server's slice.
     offset: 0,
     total: 0,
-    showsOffset: 0,
-    showsTotal: 0,
     limit: 50,
   },
-  // wants holds the /api/v1/wants response + the current sort
-  // selection. Status is fixed (every row is `wanted`) so unlike
-  // Library there's no filter dimension to track. offset / total /
-  // limit drive the shared Pagination component.
-  wants: {
+  // showsList is the /shows list page view-model. Same shape as
+  // recordings minus status filter (by-show aggregates are
+  // multi-status by definition). `showsList` (not `shows`) so it
+  // doesn't collide with `state.show` (the show DETAIL page).
+  showsList: {
     items: [],
-    sortKey: 'wants_added',
-    sortDir: 'desc',
+    sortKey: 'name',
+    sortDir: 'asc',
     loading: true,
     error: null,
+    view: 'list',         // 'list' | 'grid'.
     offset: 0,
     total: 0,
     limit: 50,

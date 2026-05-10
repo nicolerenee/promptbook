@@ -3,7 +3,7 @@
 // route highlighting compares m.route.get() against each link's href.
 //
 // Nav groups (matching the legacy _sidebar.html groupings):
-//   Library: Library / Wants / People
+//   Library: Recordings / Shows / People
 //   Activity: Queue / History / Sync
 //   Reconcile: Mismatches
 //   System: Settings
@@ -45,9 +45,12 @@ const NAV_GROUPS = [
   {
     label: 'Library',
     items: [
-      { href: '/', name: 'Library', match: (p) => p === '/' },
-      { href: '/wants', name: 'Wants', match: (p) => p === '/wants' },
-      { href: '/people', name: 'People', match: (p) => p === '/people' || p.startsWith('/people/') },
+      { href: '/',       name: 'Recordings',
+        match: (p) => p === '/' || p.startsWith('/recordings') },
+      { href: '/shows',  name: 'Shows',
+        match: (p) => p === '/shows' || p.startsWith('/shows/') },
+      { href: '/people', name: 'People',
+        match: (p) => p === '/people' || p.startsWith('/people/') },
     ],
   },
   {

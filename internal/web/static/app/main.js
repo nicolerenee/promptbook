@@ -16,8 +16,8 @@
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import Layout from './components/Layout.js';
-import Library from './components/Library.js';
-import Wants from './components/Wants.js';
+import Recordings from './components/Recordings.js';
+import ShowsList from './components/ShowsList.js';
 import Sync from './components/Sync.js';
 import Recording from './components/Recording.js';
 import Show from './components/Show.js';
@@ -65,10 +65,10 @@ if (!root) {
   console.error('promptbook: missing #app element; SPA cannot mount.');
 } else {
   m.route(root, '/', {
-    '/':                wrap(Library),
+    '/':                wrap(Recordings),
     '/recordings/:id':  wrap(Recording),
+    '/shows':           wrap(ShowsList),
     '/shows/:id':       wrap(Show),
-    '/wants':           wrap(Wants),
     '/sync':            wrap(Sync),
     '/queue':           wrap(Queue),
     '/people':          wrap(People),
