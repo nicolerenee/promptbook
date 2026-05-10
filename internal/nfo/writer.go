@@ -117,7 +117,7 @@ func FromRecording(r encora.Recording) MovieNFO {
 		OriginalTitle: r.Show,
 		Year:          yearOf(r.Date),
 		Premiered:     premieredOf(r.Date),
-		Plot:          stripHTML(r.Metadata.ShowDescription),
+		Plot:          composePlot(r),
 		Set: &MovieSet{
 			Name:     r.Show,
 			Overview: stripHTML(r.Metadata.ShowDescription),
@@ -148,6 +148,27 @@ func FromRecording(r encora.Recording) MovieNFO {
 	}
 
 	return nfo
+}
+
+// composePlot builds the <plot> body from the recording's free-text
+// notes + the show description. The recording's trading / general
+// notes (washout, cast call-outs, intermission tidbits — the part
+// specific to THIS capture) lead; the show synopsis (same across
+// every recording of the show) follows after a blank line. Either
+// half collapses cleanly when empty so a recording with no notes
+// just gets the show description and a recording without a synced
+// show description gets just the notes.
+func composePlot(r encora.Recording) string {
+	notes := stripHTML(r.Notes)
+	desc := stripHTML(r.Metadata.ShowDescription)
+	switch {
+	case notes != "" && desc != "":
+		return notes + "\n\n" + desc
+	case notes != "":
+		return notes
+	default:
+		return desc
+	}
 }
 
 // formatRole renders the cast row's role string, prefixing the status

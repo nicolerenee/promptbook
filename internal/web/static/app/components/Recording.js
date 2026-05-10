@@ -1282,10 +1282,13 @@ function renderHeader(loaded) {
     nft,
   ];
 
-  // Plot — prefer the parsed metadata.show_description (HTML stripped)
-  // since that's the upstream Encora blurb; legacy NFOs may carry a
-  // plot field too but we only surface upstream copy here.
-  const plot = stripHTML(meta.show_description || '');
+  // Plot — show the recording's trading/general notes (the per-
+  // recording free-text the trader wrote about THIS specific capture
+  // — washout, intermission notes, cast tidbits, etc.). The show
+  // description is the same for every recording of the show, so it's
+  // not useful here — but the NFO writer joins both for jellyfin's
+  // <plot>. Empty notes leaves the plot collapsed.
+  const plot = stripHTML(r.notes || '');
 
   // Subtitle row — Tour · Date text, followed by the master/Pro-Shot
   // chip and an inline Links dropdown. flex-wrap so narrow viewports
