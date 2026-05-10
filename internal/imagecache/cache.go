@@ -39,6 +39,8 @@ import (
 	"strconv"
 	"time"
 
+	_ "golang.org/x/image/webp" // register WebP — StageMedia serves WebP under .jpg URLs.
+
 	"github.com/rs/zerolog"
 )
 
