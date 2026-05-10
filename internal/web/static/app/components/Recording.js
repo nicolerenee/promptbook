@@ -967,148 +967,230 @@ function runRefreshFull(id) {
     });
 }
 
-// renderToolbar is the Radarr-style horizontal action bar that sits
-// above the hero. Buttons reflow on narrow viewports via flex-wrap.
-// Each button carries an aria-label matching its visible text so
-// screen readers don't only get the icon. The Delete button is
-// state-driven through dangerActionFor: when the resolved action is
-// destructive (Remove from collection / wants) we render the Delete
-// button; when it's constructive (Add to wants for orphan recordings)
-// we render the bookmark button instead. The two are mutually
-// exclusive — the recording is in exactly one of those buckets at
-// any given time.
-function renderToolbar(loaded) {
+// ellipsisIcon is the three-dots glyph used by the More-actions
+// dropdown trigger in the header. Heroicons Outline.
+function ellipsisIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z',
+    }),
+  ]);
+}
+
+// chevronDownIcon is the small caret used by the inline Links
+// dropdown in the header subtitle row. Smaller (size-3) so it sits
+// flush with the surrounding badge-sm pill.
+function chevronDownIcon() {
+  return m('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    fill: 'none',
+    viewBox: '0 0 24 24',
+    'stroke-width': 1.5,
+    stroke: 'currentColor',
+    'aria-hidden': 'true',
+    class: 'size-3',
+  }, [
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'm19.5 8.25-7.5 7.5-7.5-7.5',
+    }),
+  ]);
+}
+
+// linkIcon is the small chain-link glyph used by the inline Links
+// dropdown trigger.
+function linkIcon() {
+  return m('svg', {
+    xmlns: 'http://www.w3.org/2000/svg',
+    fill: 'none',
+    viewBox: '0 0 24 24',
+    'stroke-width': 1.5,
+    stroke: 'currentColor',
+    'aria-hidden': 'true',
+    class: 'size-3.5',
+  }, [
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244',
+    }),
+  ]);
+}
+
+// renderLinksDropdown is the inline "Links" affordance in the header
+// subtitle row. Surfaces every external pointer the recording carries
+// behind a single DaisyUI dropdown so the subtitle row stays compact
+// even when more sources land later (Stagemedia, IMDB, …). Each menu
+// item opens in a new tab. Today the only entry is Encora.
+function renderLinksDropdown(id) {
+  const links = [
+    {
+      label: 'Encora',
+      href: 'https://encora.it/recordings/' + encodeURIComponent(String(id)),
+    },
+  ];
+  return m('div', { class: 'dropdown dropdown-end' }, [
+    m('div', {
+      tabindex: 0,
+      role: 'button',
+      class: 'badge badge-ghost gap-1 cursor-pointer',
+      'aria-label': 'Links',
+    }, [linkIcon(), m('span', 'Links'), chevronDownIcon()]),
+    m('ul', {
+      tabindex: 0,
+      class: 'dropdown-content menu menu-sm z-10 mt-1 w-44 rounded-box ' +
+             'bg-base-100 shadow border border-base-200 p-2',
+    }, links.map((l) => m('li',
+      m('a', {
+        href: l.href,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      }, [externalLinkIcon(), m('span', l.label)])))),
+  ]);
+}
+
+// renderActionsCluster is the icon-button trio that anchors the
+// top-right of the header info column. Mirrors the show page's
+// "Edit images" affordance — Refresh + Edit are bare icon buttons,
+// the rest (rename / NFO / history / danger) collapse into a
+// three-dots More-menu so the action surface stops dominating the
+// header.
+function renderActionsCluster(loaded) {
   const id = loaded.Recording.id;
   const action = dangerActionFor(loaded);
-  const showDelete = !!(action && action.destructive);
-  const showAddToWants = !!(action && !action.destructive);
   const refreshBusy = !!state.recording.imageBusy;
   const regenBusy = !!state.recording.regeneratingNFO;
   const dangerBusy = !!state.recording.dangerBusy;
 
-  const buttons = [
-    m('button', {
-      type: 'button',
-      class: 'btn btn-sm gap-2',
-      'aria-label': 'Refresh',
-      disabled: refreshBusy,
-      onclick: () => runRefreshFull(id),
-    }, [
-      refreshBusy
-        ? m('span', { class: 'loading loading-spinner loading-xs' })
-        : refreshIcon(),
-      m('span', 'Refresh'),
-    ]),
-    m('button', {
-      type: 'button',
-      class: 'btn btn-sm gap-2',
-      'aria-label': 'Preview rename',
-      onclick: () => {
+  const refreshBtn = m('button', {
+    type: 'button',
+    class: 'btn btn-sm btn-ghost btn-square tooltip tooltip-bottom',
+    'aria-label': 'Refresh',
+    'data-tip': 'Refresh',
+    disabled: refreshBusy,
+    onclick: () => runRefreshFull(id),
+  }, refreshBusy
+    ? m('span', { class: 'loading loading-spinner loading-xs' })
+    : refreshIcon());
+
+  const editBtn = m('button', {
+    type: 'button',
+    class: 'btn btn-sm btn-ghost btn-square tooltip tooltip-bottom',
+    'aria-label': 'Edit images',
+    'data-tip': 'Edit images',
+    onclick: () => {
+      state.recording.pickerOpen = true;
+      state.recording.pickerTab = 'poster';
+      maybeLoadPickerOptions(id, 'poster');
+    },
+  }, photoIcon());
+
+  // Build the More-menu items. Rename + NFO + History are always
+  // present; the danger-zone entry is state-driven through
+  // dangerActionFor — destructive actions render with error styling,
+  // the constructive "Add to wants" branch with primary styling, and
+  // a null action drops the row entirely.
+  const menuItems = [
+    m('li', m('a', {
+      onclick: (ev) => {
+        ev.preventDefault();
         state.recording.renameOpen = true;
         state.recording.renamePreview = null;
         state.recording.renameResult = null;
         state.recording.renameApplyError = null;
         loadRenamePreview(id);
       },
-    }, [pencilSquareIcon(), m('span', 'Preview rename')]),
-    m('button', {
-      type: 'button',
-      class: 'btn btn-sm gap-2',
-      'aria-label': 'Regenerate NFO',
-      disabled: regenBusy,
-      onclick: () => runRegenerateNFO(id),
+    }, [pencilSquareIcon(), m('span', 'Preview rename')])),
+    m('li', m('a', {
+      onclick: (ev) => {
+        ev.preventDefault();
+        // Apply rename routes through the same modal as Preview —
+        // the modal is where the user confirms + runs the apply, so
+        // a separate "direct apply" entry would skip the
+        // confirmation users expect. Same flow as Preview rename.
+        state.recording.renameOpen = true;
+        state.recording.renamePreview = null;
+        state.recording.renameResult = null;
+        state.recording.renameApplyError = null;
+        loadRenamePreview(id);
+      },
+    }, [pencilSquareIcon(), m('span', 'Apply rename')])),
+    m('li', { class: regenBusy ? 'disabled' : '' }, m('a', {
+      onclick: (ev) => {
+        ev.preventDefault();
+        if (regenBusy) return;
+        runRegenerateNFO(id);
+      },
     }, [
       regenBusy
         ? m('span', { class: 'loading loading-spinner loading-xs' })
         : documentArrowPathIcon(),
       m('span', regenBusy ? 'Regenerating…' : 'Regenerate NFO'),
-    ]),
-    m('button', {
-      type: 'button',
-      class: 'btn btn-sm gap-2',
-      'aria-label': 'Edit images',
-      onclick: () => {
-        state.recording.pickerOpen = true;
-        state.recording.pickerTab = 'poster';
-        maybeLoadPickerOptions(id, 'poster');
-      },
-    }, [photoIcon(), m('span', 'Edit')]),
-    m('button', {
-      type: 'button',
-      class: 'btn btn-sm gap-2',
-      'aria-label': 'History',
-      onclick: () => {
+    ])),
+    m('li', m('a', {
+      onclick: (ev) => {
+        ev.preventDefault();
         m.route.set('/history', { recording_id: String(id) });
       },
-    }, [clockIcon(), m('span', 'History')]),
+    }, [clockIcon(), m('span', 'History')])),
   ];
-  if (showDelete) {
-    buttons.push(m('button', {
-      type: 'button',
-      class: 'btn btn-sm btn-error btn-outline gap-2',
-      'aria-label': action.label,
-      disabled: dangerBusy,
-      onclick: () => runDangerAction(action, id),
-    }, [
-      dangerBusy
-        ? m('span', { class: 'loading loading-spinner loading-xs' })
-        : trashIcon(),
-      m('span', dangerBusy ? 'Working…' : action.label),
-    ]));
+  if (action) {
+    const isDestructive = !!action.destructive;
+    menuItems.push(m('li',
+      { class: 'border-t border-base-200 mt-1 pt-1' + (dangerBusy ? ' disabled' : '') },
+      m('a', {
+        class: isDestructive ? 'text-error' : 'text-primary',
+        onclick: (ev) => {
+          ev.preventDefault();
+          if (dangerBusy) return;
+          runDangerAction(action, id);
+        },
+      }, [
+        dangerBusy
+          ? m('span', { class: 'loading loading-spinner loading-xs' })
+          : (isDestructive ? trashIcon() : bookmarkIcon()),
+        m('span', dangerBusy ? 'Working…' : action.label),
+      ])));
   }
-  if (showAddToWants) {
-    // Constructive sibling to the destructive Delete button. Reuses
-    // runDangerAction (the typed-confirmation prompt is overkill for
-    // adding a row, but the upstream POST + busy-state plumbing is
-    // identical to the destructive variants and keeping one code
-    // path makes the danger surface easier to reason about). The
-    // visible label drops the "danger" wording — DaisyUI primary
-    // styling cues the user this is the constructive path.
-    buttons.push(m('button', {
-      type: 'button',
-      class: 'btn btn-sm btn-primary btn-outline gap-2',
-      'aria-label': action.label,
-      disabled: dangerBusy,
-      onclick: () => runDangerAction(action, id),
-    }, [
-      dangerBusy
-        ? m('span', { class: 'loading loading-spinner loading-xs' })
-        : bookmarkIcon(),
-      m('span', dangerBusy ? 'Working…' : action.label),
-    ]));
-  }
-  return m('div', { class: 'flex flex-wrap gap-2 items-center' }, [
-    ...buttons,
-    state.recording.dangerError
-      ? m('span', { class: 'text-error text-sm' },
-          state.recording.dangerError)
-      : null,
+
+  const moreBtn = m('div', { class: 'dropdown dropdown-end' }, [
+    m('div', {
+      tabindex: 0,
+      role: 'button',
+      class: 'btn btn-sm btn-ghost btn-square',
+      'aria-label': 'More actions',
+    }, ellipsisIcon()),
+    m('ul', {
+      tabindex: 0,
+      class: 'dropdown-content menu menu-sm z-10 mt-1 w-56 rounded-box ' +
+             'bg-base-100 shadow border border-base-200 p-2',
+    }, menuItems),
   ]);
+
+  return m('div', { class: 'flex items-center gap-1 shrink-0' },
+    [refreshBtn, editBtn, moreBtn]);
 }
 
-// linkButton is the small ghost-styled external link used in the hero
-// Links row. Extracted so future links (Stagemedia, IMDB, TMDB, …)
-// drop in via a single helper rather than a copy-pasted button.
-function linkButton(label, href) {
-  if (!href) return null;
-  return m('a', {
-    href,
-    target: '_blank',
-    rel: 'noopener noreferrer',
-    class: 'btn btn-xs btn-ghost gap-1',
-  }, [externalLinkIcon(), m('span', label)]);
-}
-
-// renderHero is the Radarr-style hero block: fanart as the background,
-// poster overlaid on the left, title / metadata / Links / plot stacked
-// on the right. Falls through to the placeholder route on missing
-// fanart — the server's /images/* handler emits a generated SVG when
-// the cache has nothing, so the hero never renders empty.
-function renderHero(loaded) {
+// renderHeader is the per-recording header card: poster on the left,
+// metadata column on the right, action cluster anchored top-right.
+// Mirrors the show detail page's renderHeader so the two surfaces
+// read as variants of the same component — clean white-card-on-base
+// feel, no fanart-as-background hero treatment, no overlay.
+//
+// Layout (top-down inside the info column):
+//   - Eyebrow:   "RECORDING · enc-N" (small, uppercase, muted)
+//   - Title:     <h1> with the Show name (linked to /shows/:id)
+//   - Subtitle:  "{Tour} · {DateWithVariant}" + master/Pro-Shot badge
+//                + Links dropdown
+//   - Media:     "{LocalReleaseFormat} · {runtime}" mono line
+//   - Plot:      stripped show_description (whitespace-pre-line)
+//   - Badges:    Status / Gifting / Trading / Owners / Wanters
+function renderHeader(loaded) {
   const r = loaded.Recording;
   const id = r.id;
-  const fanartURL = withImageVersion(loaded.local_fanart_url ||
-    '/images/recordings/' + id + '/fanart.jpg');
   const posterURL = withImageVersion(loaded.local_poster_url ||
     '/images/recordings/' + id + '/poster.jpg');
 
@@ -1127,9 +1209,10 @@ function renderHero(loaded) {
       }, showName)
     : m('span', showName);
 
-  // Subtitle — "Tour · DateWithVariant". Either piece may be empty;
-  // joinSep collapses to whichever side has content. The variant comes
-  // from raw_json.date.date_variant — see smartDateWithVariant().
+  // Subtitle text — "Tour · DateWithVariant". Either piece may be
+  // empty; joinSep collapses to whichever side has content. The
+  // variant comes from raw_json.date.date_variant — see
+  // smartDateWithVariant().
   const date = smartDateWithVariant(
     r.date && r.date.full_date,
     r.date && r.date.month_known,
@@ -1137,7 +1220,7 @@ function renderHero(loaded) {
     r.date && r.date.date_variant,
   );
   const dateStr = date && date !== '—' ? date : '';
-  const subtitle = joinSep(r.tour || '', dateStr, ' · ');
+  const subtitleText = joinSep(r.tour || '', dateStr, ' · ');
 
   // Master / Pro-Shot badge. Pro-shot recordings get a single warning
   // badge regardless of master string (the master is irrelevant for
@@ -1148,9 +1231,9 @@ function renderHero(loaded) {
   const recordingType = meta.recording_type || '';
   let masterBadge = null;
   if (recordingType === 'pro-shot') {
-    masterBadge = m('span', { class: 'badge badge-warning' }, 'Pro-Shot');
+    masterBadge = m('span', { class: 'badge badge-warning badge-sm' }, 'Pro-Shot');
   } else if (r.master) {
-    masterBadge = m('span', { class: 'badge badge-ghost' }, r.master);
+    masterBadge = m('span', { class: 'badge badge-ghost badge-sm' }, r.master);
   }
 
   // Media info line — "{LocalReleaseFormat} · {runtime}" in a muted
@@ -1175,13 +1258,15 @@ function renderHero(loaded) {
       { class: 'text-sm opacity-70' }, parts);
   }
 
-  // Badge row — Status / Gifting / Trading / Owners / Wanters / enc-id.
-  // Each helper returns null when its underlying field is unset, so
-  // the row stays compact for legacy / sparsely-populated rows.
+  // Badge row (bottom of info column) — Status / Gifting / Trading /
+  // Owners / Wanters. The enc-{id} chip moved to the eyebrow; the NFT
+  // pill (when present) sits at the end so the destructive cue
+  // anchors the row.
   const status = statusForRecording(loaded);
   const statusMeta = STATUS_META[status] || STATUS_META.orphan;
   const owners = (meta.owners_count != null) ? Number(meta.owners_count) : 0;
   const wanters = (meta.wanters_count != null) ? Number(meta.wanters_count) : 0;
+  const nft = nftBadge(loaded);
   const badgeRow = [
     m('span', { class: 'badge ' + statusMeta.badge }, statusMeta.label),
     giftingBadge(meta.gifting_status || ''),
@@ -1194,81 +1279,67 @@ function renderHero(loaded) {
       ? m('span', { class: 'badge badge-ghost badge-sm' },
           String(wanters) + ' wants')
       : null,
-    m('span', { class: 'text-xs font-mono opacity-60' },
-      'enc-' + String(id)),
+    nft,
   ];
-
-  // Links row — Encora today, designed to take more pills via
-  // linkButton(). The encora.it canonical pattern is verified against
-  // recording id 90100222 (Marigold) per phase-1 spec.
-  const encoraURL = 'https://encora.it/recordings/' +
-    encodeURIComponent(String(id));
-  const linksRow = m('div', { class: 'flex flex-wrap gap-2 items-center' }, [
-    m('span', {
-      class: 'opacity-70 text-xs uppercase tracking-wide',
-    }, 'Links'),
-    linkButton('Encora', encoraURL),
-  ]);
 
   // Plot — prefer the parsed metadata.show_description (HTML stripped)
   // since that's the upstream Encora blurb; legacy NFOs may carry a
   // plot field too but we only surface upstream copy here.
   const plot = stripHTML(meta.show_description || '');
 
-  // Build the master/NFT row inline so the renderer below stays a
-  // flat list. Either or both badges may be present; null when both
-  // are absent so the JSX collapses.
-  const nft = nftBadge(loaded);
-  let masterRow = null;
-  if (masterBadge && nft) {
-    masterRow = m('div', { class: 'flex flex-wrap items-center gap-2' },
-      [masterBadge, nft]);
-  } else if (masterBadge) {
-    masterRow = m('div', { class: 'flex flex-wrap items-center gap-2' },
-      [masterBadge]);
-  } else if (nft) {
-    masterRow = m('div', { class: 'flex flex-wrap items-center gap-2' },
-      [nft]);
-  }
+  // Subtitle row — Tour · Date text, followed by the master/Pro-Shot
+  // chip and an inline Links dropdown. flex-wrap so narrow viewports
+  // can stack the trailing chips beneath the text rather than
+  // overflowing.
+  const subtitleRow = m('div', {
+    class: 'flex flex-wrap items-center gap-2 text-sm opacity-70',
+  }, [
+    subtitleText
+      ? m('span', { class: 'font-mono' }, subtitleText)
+      : null,
+    masterBadge,
+    renderLinksDropdown(id),
+  ]);
 
   return m('div', {
-    class: 'hero rounded-box overflow-hidden bg-base-300',
-    style: 'background-image: url(' + fanartURL + ');' +
-           'background-size: cover; background-position: center;',
+    class: 'card lg:card-side bg-base-100 shadow-sm overflow-hidden',
   }, [
-    m('div', { class: 'hero-overlay bg-black/70' }),
-    m('div', {
-      class: 'hero-content text-neutral-content w-full p-6 sm:p-8',
-    }, m('div', {
-      class: 'flex flex-col sm:flex-row sm:items-center gap-6 w-full max-w-6xl',
-    }, [
-      m('img', {
-        src: posterURL,
-        alt: showName + ' poster',
-        class: 'rounded-box w-48 sm:w-56 shadow-xl',
-        loading: 'lazy',
-      }),
-      m('div', { class: 'flex-1 space-y-3 min-w-0' }, [
-        // Stacked text block: h1 (Show), subtitle (Tour · Date),
-        // master/pro-shot badge, media info line. Each section
-        // gracefully collapses when its source data is empty.
-        m('h1', { class: 'text-3xl sm:text-4xl font-bold leading-tight' },
-          titleNode),
-        subtitle
-          ? m('p', { class: 'text-base sm:text-lg opacity-80' }, subtitle)
-          : null,
-        masterRow,
-        mediaInfoLine,
-        m('div', { class: 'flex flex-wrap items-center gap-x-3 gap-y-1' },
-          badgeRow),
-        linksRow,
-        plot
-          ? m('p', {
-              class: 'text-base sm:text-lg max-w-3xl whitespace-pre-line',
-            }, plot)
-          : null,
+    posterURL
+      ? m('figure', { class: 'lg:w-64 shrink-0' }, m('img', {
+          src: posterURL,
+          alt: showName + ' poster',
+          class: 'w-full h-full object-cover',
+          loading: 'lazy',
+        }))
+      : m('figure', {
+          class: 'lg:w-64 shrink-0 aspect-[2/3] bg-base-200 ' +
+                 'flex items-center justify-center text-base-content/40 ' +
+                 'text-sm font-mono',
+        }, 'no poster'),
+    m('div', { class: 'card-body' }, [
+      m('div', { class: 'flex items-start justify-between gap-3 flex-wrap' }, [
+        m('div', { class: 'min-w-0 space-y-1' }, [
+          m('div', {
+            class: 'text-xs uppercase tracking-wider opacity-60',
+          }, 'Recording · enc-' + String(id)),
+          m('h1', { class: 'text-3xl font-semibold leading-tight' },
+            titleNode),
+          subtitleRow,
+          mediaInfoLine,
+        ]),
+        renderActionsCluster(loaded),
       ]),
-    ])),
+      plot
+        ? m('p', {
+            class: 'text-base sm:text-lg max-w-3xl whitespace-pre-line opacity-80',
+          }, plot)
+        : null,
+      m('div', { class: 'flex flex-wrap gap-2 mt-2' }, badgeRow),
+      state.recording.dangerError
+        ? m('div', { role: 'alert', class: 'alert alert-error mt-2' },
+            m('span', { class: 'text-sm' }, state.recording.dangerError))
+        : null,
+    ]),
   ]);
 }
 
@@ -2603,8 +2674,7 @@ const Recording = {
       return m('div', { class: 'p-8 opacity-60' }, 'No recording data.');
     }
     return m('div', { class: 'space-y-6' }, [
-      renderToolbar(loaded),
-      renderHero(loaded),
+      renderHeader(loaded),
       renderBody(loaded),
       renderImagePickerModal(loaded),
       m(RecordingRenameModal, {
