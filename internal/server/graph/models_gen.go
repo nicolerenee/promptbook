@@ -22,11 +22,14 @@ type ImportPreview struct {
 	DestFolder   string `json:"destFolder"`
 	DestFile     string `json:"destFile"`
 	DestAbsolute string `json:"destAbsolute"`
+	DestExists   bool   `json:"destExists"`
+	IsDuplicate  bool   `json:"isDuplicate"`
 }
 
 type ImportQueueEntryInput struct {
 	QueueID     int64  `json:"queueID"`
 	RecordingID *int64 `json:"recordingID,omitempty"`
+	Overwrite   *bool  `json:"overwrite,omitempty"`
 }
 
 type ImportQueueEntryPayload struct {

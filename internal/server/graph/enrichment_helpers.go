@@ -1267,6 +1267,15 @@ func (r *Resolver) importQueueEntry(
 		return nil, err
 	}
 
+	early, conflictErr := r.maybeShortCircuitOnConflict(
+		ctx, entry, recordingID, input.QueueID, optBool(input.Overwrite))
+	if conflictErr != nil {
+		return nil, conflictErr
+	}
+	if early != nil {
+		return early, nil
+	}
+
 	// Folder-as-unit drops carry ExtrasCount > 0 — the queue row's
 	// FilePath is the main media file inside a folder that also holds
 	// per-track audio rips, photos, etc. Capture the parent directory
@@ -1329,6 +1338,140 @@ func (r *Resolver) importQueueEntry(
 	}
 
 	return out, nil
+}
+
+// maybeShortCircuitOnConflict runs the destination-conflict check
+// before ingest. Returns (nil, nil) when the import should proceed,
+// (payload, nil) when conflict short-circuits with a duplicate /
+// overwrite-required outcome, and (nil, err) on a fatal probe /
+// plan-build failure. The duplicate path also removes the queue row
+// so the modal closes cleanly.
+func (r *Resolver) maybeShortCircuitOnConflict(
+	ctx context.Context,
+	entry *storage.QueueEntry,
+	recordingID, queueID int64,
+	overwrite bool,
+) (*ImportQueueEntryPayload, error) {
+	if !r.libraryPlan.Configured() || r.libraryPlan.Prober == nil {
+		return nil, nil //nolint:nilnil // by design — caller proceeds.
+	}
+	conflict, action, errMsg, err := r.checkDestinationConflict(
+		ctx, entry, recordingID, overwrite)
+	if err != nil {
+		return nil, err
+	}
+	if action == "" {
+		return nil, nil //nolint:nilnil // by design — caller proceeds.
+	}
+	out := &ImportQueueEntryPayload{
+		Action: action,
+		Dest:   conflict.destAbsolute,
+		Error:  errMsg,
+	}
+	if action == importActionDuplicate {
+		if removeErr := storage.RemoveQueueEntry(
+			ctx, r.client, queueID,
+		); removeErr != nil {
+			r.logger.Warn().Err(removeErr).Int64("queue_id", queueID).
+				Msg("failed to remove queue entry on duplicate import")
+		}
+	}
+	return out, nil
+}
+
+// importActionDuplicate / importActionOverwriteRequired are the
+// non-Moved action values the importQueueEntry resolver returns when
+// the destination-conflict check intercepts the request before
+// reaching the ingest engine. The SPA renders different UX for each
+// — duplicate is informational, overwrite-required prompts the user
+// for explicit confirmation.
+const (
+	importActionDuplicate         = "duplicate"
+	importActionOverwriteRequired = "overwrite_required"
+)
+
+// destConflictResult captures the destination-conflict shape the
+// import mutation needs to decide whether to bail or proceed.
+type destConflictResult struct {
+	destAbsolute string
+	destExists   bool
+	isDuplicate  bool
+}
+
+// checkDestinationConflict reproduces the Plan-build path the
+// previewQueueImport resolver runs, then stat / hash-compares the
+// planned destination. Returns:
+//
+//   - (result, "", "", nil)             — no conflict; caller proceeds.
+//   - (result, "duplicate", msg, nil)   — destination exists with
+//     identical content; caller returns the duplicate payload.
+//   - (result, "overwrite_required",
+//     msg, nil)                         — destination exists with
+//     different content + overwrite flag is false; caller returns the
+//     overwrite-required payload.
+//   - (zero, "", "", err)               — fatal error (load recording,
+//     probe, plan-build); caller surfaces to gqlgen's errors array.
+func (r *Resolver) checkDestinationConflict(
+	ctx context.Context,
+	entry *storage.QueueEntry,
+	recordingID int64,
+	overwrite bool,
+) (destConflictResult, string, string, error) {
+	loaded, err := storage.LoadRecording(ctx, r.client, recordingID)
+	if err != nil {
+		return destConflictResult{}, "", "",
+			fmt.Errorf("graphql: load recording %d: %w", recordingID, err)
+	}
+	info, perr := r.libraryPlan.Prober.Probe(ctx, entry.FilePath)
+	if perr != nil {
+		return destConflictResult{}, "", "",
+			fmt.Errorf("graphql: probe %s: %w", entry.FilePath, perr)
+	}
+	parsed := match.Parse(filepath.Base(entry.FilePath))
+	plan, err := rename.BuildPlan(rename.PlanInputs{
+		Recording:      loaded.Recording,
+		Source:         entry.FilePath,
+		LibraryRoot:    r.libraryPlan.Root,
+		FolderTemplate: r.libraryPlan.FolderTemplate,
+		FileTemplate:   r.libraryPlan.FileTemplate,
+		MediaInfo:      info,
+		Part:           parsed.PartIndex,
+	})
+	if err != nil {
+		return destConflictResult{}, "", "",
+			fmt.Errorf("graphql: build plan: %w", err)
+	}
+	dest := plan.AbsoluteFile()
+	conflict, _ := inspectDestinationConflict(ctx, entry.FilePath, dest)
+	result := destConflictResult{
+		destAbsolute: dest,
+		destExists:   conflict.destExists,
+		isDuplicate:  conflict.isDuplicate,
+	}
+	if !conflict.destExists {
+		return result, "", "", nil
+	}
+	if conflict.isDuplicate {
+		return result, importActionDuplicate,
+			"destination already holds an identical copy of this file; nothing to import",
+			nil
+	}
+	if !overwrite {
+		return result, importActionOverwriteRequired,
+			"destination already holds a different file at this path; re-submit with overwrite=true to replace",
+			nil
+	}
+	return result, "", "", nil
+}
+
+// optBool dereferences an optional bool input, defaulting to false
+// when the pointer is nil. gqlgen surfaces nullable boolean inputs
+// as *bool.
+func optBool(p *bool) bool {
+	if p == nil {
+		return false
+	}
+	return *p
 }
 
 // resolveImportRecordingID picks the recording id the ingest pipeline
@@ -1530,10 +1673,20 @@ func (r *Resolver) previewQueueImport(
 	if err != nil {
 		return nil, fmt.Errorf("graphql: build plan: %w", err)
 	}
+	conflict, conflictErr := inspectDestinationConflict(
+		ctx, entry.FilePath, plan.AbsoluteFile())
+	if conflictErr != nil {
+		// Hash failures already collapse to destExists=true,
+		// isDuplicate=false inside the helper — log via the error
+		// returned for visibility but don't fail the preview.
+		_ = conflictErr
+	}
 	return &ImportPreview{
 		DestFolder:   plan.TargetFolder,
 		DestFile:     plan.TargetFile + plan.Extension,
 		DestAbsolute: plan.AbsoluteFile(),
+		DestExists:   conflict.destExists,
+		IsDuplicate:  conflict.isDuplicate,
 	}, nil
 }
 

@@ -58,6 +58,8 @@ const PREVIEW_QUERY = `
       destFolder
       destFile
       destAbsolute
+      destExists
+      isDuplicate
     }
   }
 `;
@@ -122,6 +124,12 @@ function runPreview(local, queueID, recordingID) {
   local.preview.loading = true;
   local.preview.error = null;
   local.preview.dest = '';
+  local.preview.destExists = false;
+  local.preview.isDuplicate = false;
+  // Reset the user's overwrite confirmation whenever a fresh preview
+  // fires — picking a different recording shouldn't carry forward a
+  // stale "yes, overwrite" answer.
+  local.overwrite = false;
   m.redraw();
 
   const variables = {
@@ -135,6 +143,8 @@ function runPreview(local, queueID, recordingID) {
       const payload = (data && data.previewQueueImport) || {};
       local.preview.loading = false;
       local.preview.dest = payload.destAbsolute || '';
+      local.preview.destExists = !!payload.destExists;
+      local.preview.isDuplicate = !!payload.isDuplicate;
       m.redraw();
     })
     .catch((err) => {
@@ -329,9 +339,59 @@ function PreviewSection(local) {
     return m('div', { class: 'opacity-60 text-sm italic' },
       'No preview available.');
   }
-  return m('pre', {
-    class: 'text-xs bg-base-200 rounded p-3 overflow-x-auto',
-  }, m('code', p.dest));
+  return m('div', { class: 'space-y-2' }, [
+    m('pre', {
+      class: 'text-xs bg-base-200 rounded p-3 overflow-x-auto',
+    }, m('code', p.dest)),
+    ConflictBanner(local),
+  ]);
+}
+
+// ConflictBanner renders the destination-conflict warning when the
+// preview reported destExists. Three states:
+//
+//   - destExists + isDuplicate → info banner: "already imported, this
+//     is a duplicate" with a soft "Importing will close this modal
+//     and remove the queue row" hint. The Import button still works
+//     (the mutation handles the no-op).
+//   - destExists + !isDuplicate + !overwrite → warning banner with an
+//     overwrite checkbox. Import button is disabled until the user
+//     ticks overwrite.
+//   - destExists + !isDuplicate + overwrite → warning banner reads
+//     "you've confirmed overwrite, will replace existing file."
+//   - !destExists → no banner.
+function ConflictBanner(local) {
+  const p = local.preview;
+  if (!p || !p.destExists) return null;
+  if (p.isDuplicate) {
+    return m('div', {
+      role: 'alert',
+      class: 'alert alert-info text-sm',
+    }, m('div', [
+      m('span', { class: 'font-semibold mr-1' }, 'Duplicate detected.'),
+      'An identical file (same size + checksum) already exists at the destination. ' +
+      'Importing will mark the queue row as handled and leave both files in place.',
+    ]));
+  }
+  return m('div', {
+    role: 'alert',
+    class: 'alert alert-warning text-sm flex flex-col items-start gap-2',
+  }, [
+    m('div', [
+      m('span', { class: 'font-semibold mr-1' }, 'Destination is occupied.'),
+      'A different file already exists at this path. ',
+      'Importing will replace it.',
+    ]),
+    m('label', { class: 'flex items-center gap-2 cursor-pointer' }, [
+      m('input', {
+        type: 'checkbox',
+        class: 'checkbox checkbox-sm',
+        checked: !!local.overwrite,
+        onchange: (ev) => { local.overwrite = !!ev.target.checked; },
+      }),
+      m('span', 'I understand — overwrite the existing file'),
+    ]),
+  ]);
 }
 
 // runImport fires the importQueueEntry mutation with the user's
@@ -348,12 +408,22 @@ function runImport(local, queueID, onSuccess) {
     input: {
       queueID:     'queue-' + queueID,
       recordingID: 'recording-' + local.match.id,
+      overwrite:   !!local.overwrite,
     },
   };
   graphql.query(IMPORT_MUTATION, variables)
     .then((data) => {
       const resp = (data && data.importQueueEntry) || {};
       local.importing = false;
+      // Duplicate path: server already removed the queue row + left
+      // both files alone. Treat as a "soft success" — close the modal
+      // and let the parent drop the row from local state via
+      // onSuccess. The action string lets the caller surface a
+      // distinct toast if it wants.
+      if (resp.action === 'duplicate') {
+        onSuccess(resp);
+        return;
+      }
       if (resp.ok) {
         onSuccess(resp);
         return;
@@ -402,7 +472,17 @@ const QueueImportModal = {
         m('div', { class: 'modal-box max-w-4xl' }, ' '));
     }
 
-    const canImport = !!(local.match && local.match.id) && !local.importing;
+    // canImport gates the primary button. Overwrite-required (the
+    // destination has different content) blocks until the user
+    // explicitly checks the overwrite confirmation. Duplicate +
+    // no-conflict states leave the button enabled — the mutation
+    // handles the duplicate path itself.
+    const overwriteBlocked = local.preview &&
+      local.preview.destExists &&
+      !local.preview.isDuplicate &&
+      !local.overwrite;
+    const canImport = !!(local.match && local.match.id) &&
+      !local.importing && !overwriteBlocked;
     const filePath  = item.file_path || '';
     const size      = humanSize(item.file_size_bytes);
     // Split the path so the filename gets prominent rendering and the
@@ -526,10 +606,16 @@ export function makeLocalState(item) {
       lastFiredAt:  0,
     },
     preview: {
-      loading: false,
-      dest:    '',
-      error:   null,
+      loading:     false,
+      dest:        '',
+      error:       null,
+      destExists:  false,
+      isDuplicate: false,
     },
+    // overwrite is the user's explicit confirmation when the preview
+    // reports destExists + !isDuplicate. The Import button stays
+    // disabled until they check the box in the conflict banner.
+    overwrite: false,
   };
   // Pre-fill case: kick off the destination preview immediately so
   // the user sees the planned path on first paint instead of an empty
