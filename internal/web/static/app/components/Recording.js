@@ -234,6 +234,12 @@ const RECORDING_DETAIL_QUERY = `
           language
         }
       }
+      extras {
+        path
+        name
+        sizeBytes
+        isDir
+      }
     }
   }
 `;
@@ -338,6 +344,9 @@ function shapeRecordingDetail(node) {
     // wasn't captured (legacy import). The card renders only when
     // present.
     media_info:            node.mediaInfo || null,
+    // extras lists the non-main files in the version's source folder
+    // — folder-as-unit drops only. Loose-file imports surface [].
+    extras:                Array.isArray(node.extras) ? node.extras : [],
   };
 }
 
@@ -807,6 +816,70 @@ function externalLinkIcon() {
   ]);
 }
 
+// bookmarkIcon is the "save for later" glyph for the Add-to-wants
+// button. Visually pairs with the destructive trash icon — when the
+// recording flips between collection / wants / orphan the toolbar
+// swaps which of the two it shows.
+function bookmarkIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z',
+    }),
+  ]);
+}
+
+// chevronRightIcon is the inline expand/collapse glyph used by the
+// per-version Media Info disclosure rows in the Files section. The
+// rotation is handled by a CSS transform tied to expanded state on
+// the row, so the same SVG handles both states.
+function chevronRightIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'm8.25 4.5 7.5 7.5-7.5 7.5',
+    }),
+  ]);
+}
+
+// folderIcon labels Extras section directory rows. Plain outline so
+// it reads as a tree-control affordance rather than a stylistic flair.
+function folderIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z',
+    }),
+  ]);
+}
+
+// fileIcon labels Extras section regular-file rows.
+function fileIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z',
+    }),
+  ]);
+}
+
+// infoIcon is the per-version Media Info expander affordance in the
+// Versions table. Stays small (size-4 via svgIcon) so it sits inline
+// with the row data without dominating it.
+function infoIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'm11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
+    }),
+  ]);
+}
+
 // stripHTML strips tags from a description blob. Encora's
 // metadata.show_description ships with WYSIWYG-flavoured <p>/<br>/&quot;
 // markup; we only need plain text for the hero's plot block. Mirrors
@@ -872,14 +945,18 @@ function runRefreshImages(id) {
 // renderToolbar is the Radarr-style horizontal action bar that sits
 // above the hero. Buttons reflow on narrow viewports via flex-wrap.
 // Each button carries an aria-label matching its visible text so
-// screen readers don't only get the icon. The Delete button
-// state-drives off dangerActionFor; we hide it entirely when the
-// resolved action is non-destructive (Add to wants is constructive
-// and lives outside the danger surface).
+// screen readers don't only get the icon. The Delete button is
+// state-driven through dangerActionFor: when the resolved action is
+// destructive (Remove from collection / wants) we render the Delete
+// button; when it's constructive (Add to wants for orphan recordings)
+// we render the bookmark button instead. The two are mutually
+// exclusive — the recording is in exactly one of those buckets at
+// any given time.
 function renderToolbar(loaded) {
   const id = loaded.Recording.id;
   const action = dangerActionFor(loaded);
   const showDelete = !!(action && action.destructive);
+  const showAddToWants = !!(action && !action.destructive);
   const refreshBusy = !!state.recording.imageBusy;
   const regenBusy = !!state.recording.regeneratingNFO;
   const dangerBusy = !!state.recording.dangerBusy;
@@ -951,6 +1028,27 @@ function renderToolbar(loaded) {
       dangerBusy
         ? m('span', { class: 'loading loading-spinner loading-xs' })
         : trashIcon(),
+      m('span', dangerBusy ? 'Working…' : action.label),
+    ]));
+  }
+  if (showAddToWants) {
+    // Constructive sibling to the destructive Delete button. Reuses
+    // runDangerAction (the typed-confirmation prompt is overkill for
+    // adding a row, but the upstream POST + busy-state plumbing is
+    // identical to the destructive variants and keeping one code
+    // path makes the danger surface easier to reason about). The
+    // visible label drops the "danger" wording — DaisyUI primary
+    // styling cues the user this is the constructive path.
+    buttons.push(m('button', {
+      type: 'button',
+      class: 'btn btn-sm btn-primary btn-outline gap-2',
+      'aria-label': action.label,
+      disabled: dangerBusy,
+      onclick: () => runDangerAction(action, id),
+    }, [
+      dangerBusy
+        ? m('span', { class: 'loading loading-spinner loading-xs' })
+        : bookmarkIcon(),
       m('span', dangerBusy ? 'Working…' : action.label),
     ]));
   }
@@ -1141,32 +1239,49 @@ function castRow(entry) {
   ]);
 }
 
-// renderVersionsCard tabulates the local files behind the recording.
-// Empty state matches the legacy copy distinction between "in
-// collection but no files" and "no files registered".
-function renderVersionsCard(loaded) {
+// renderVersionsTable tabulates the recording's local files. Each row
+// carries a small info-icon affordance that toggles an inline Media
+// Info sub-row underneath; the per-row expanded state lives on
+// state.recording.expandedVersions keyed by row index (versions don't
+// always carry a stable id from the wire shape, so we key on the
+// row's position in the list — Mithril redraws the table in the same
+// order so the keys stay stable across renders).
+function renderVersionsTable(loaded) {
   const versions = loaded.Versions || [];
   const mi = loaded && loaded.media_info;
-  return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body' }, [
-      m('h2', { class: 'card-title text-base' },
-        'Local versions · ' + versions.length),
-      versions.length === 0
-        ? m('div', { class: 'opacity-60 text-sm' },
-            loaded.InCollection
-              ? 'No local files. The recording is in your collection but no version is registered.'
-              : 'No local files registered for this recording.')
-        : m('div', { class: 'overflow-x-auto' },
-            m('table', { class: 'table table-sm' }, [
-              m('thead', m('tr', [
-                m('th', 'Path'),
-                m('th', 'Format'),
-                m('th', 'Codec'),
-                m('th', 'Quality'),
-                m('th', { class: 'text-right' }, 'Size'),
-              ])),
-              m('tbody', versions.map((v, idx) => versionRow(v, idx, mi))),
-            ])),
+  if (versions.length === 0) {
+    return m('div', { class: 'opacity-60 text-sm' },
+      loaded.InCollection
+        ? 'No local files. The recording is in your collection but no version is registered.'
+        : 'No local files registered for this recording.');
+  }
+  const expandedMap = state.recording.expandedVersions || {};
+  const rows = [];
+  versions.forEach((v, idx) => {
+    rows.push(versionRow(v, idx, mi, !!expandedMap[idx]));
+    if (expandedMap[idx]) {
+      rows.push(m('tr', { key: 'mi-' + idx }, [
+        m('td', {
+          colspan: 6,
+          class: 'bg-base-200/40',
+        }, m('div', { class: 'px-2' }, renderMediaInfoBody(mi))),
+      ]));
+    }
+  });
+  return m('div', { class: 'overflow-x-auto' },
+    m('table', { class: 'table table-sm' }, [
+      m('thead', m('tr', [
+        m('th', 'Path'),
+        m('th', 'Format'),
+        m('th', 'Codec'),
+        m('th', 'Quality'),
+        m('th', { class: 'text-right' }, 'Size'),
+        // Sixth column houses the per-row info-icon disclosure
+        // affordance. Header stays empty so the row labels read
+        // cleanly; aria-label on the button covers screen readers.
+        m('th', { class: 'w-8', 'aria-label': 'Actions' }),
+      ])),
+      m('tbody', rows),
     ]));
 }
 
@@ -1174,9 +1289,9 @@ function renderVersionsCard(loaded) {
 // per-version typed columns (Container/VideoCodec/Quality/AudioCodec)
 // are empty — pre-mediainfo imports never populated those columns,
 // so without the fallback the card showed three em-dashes for files
-// whose real codec/quality is plain visible in the Media Info card
-// directly below.
-function versionRow(v, idx, mi) {
+// whose real codec/quality is plain visible in the Media Info detail
+// behind the disclosure icon.
+function versionRow(v, idx, mi, expanded) {
   const isPrimary = idx === 0;
   const name = basename(v.FilePath || '');
   const dir = dirname(v.FilePath || '');
@@ -1194,7 +1309,7 @@ function versionRow(v, idx, mi) {
   let quality = v.Quality;
   if (!quality && mi) quality = qualityFromHeight(mi.height);
   if (!quality) quality = '—';
-  return m('tr', [
+  return m('tr', { key: 'v-' + idx }, [
     m('td', { class: 'font-mono text-xs', title: v.FilePath || '' }, [
       isPrimary ? m('span', { class: 'text-warning mr-1' }, '★') : null,
       m('span', name || '—'),
@@ -1205,7 +1320,180 @@ function versionRow(v, idx, mi) {
     m('td', { class: 'font-mono text-xs' }, quality),
     m('td', { class: 'font-mono text-xs text-right' },
       humanSize(v.FileSizeBytes)),
+    m('td', { class: 'text-right w-8' },
+      m('button', {
+        type: 'button',
+        class: 'btn btn-ghost btn-xs',
+        'aria-label': expanded ? 'Hide media info' : 'Show media info',
+        'aria-expanded': expanded ? 'true' : 'false',
+        title: expanded ? 'Hide media info' : 'Show media info',
+        onclick: () => {
+          if (!state.recording.expandedVersions) {
+            state.recording.expandedVersions = {};
+          }
+          state.recording.expandedVersions[idx] = !expanded;
+        },
+      }, infoIcon())),
   ]);
+}
+
+// renderExtrasSection lists every non-main file in the recording's
+// source folder, grouping the output as a one-level tree: top-level
+// files render as plain rows; top-level directories render as
+// collapsible <details> nodes whose summary carries a child-count
+// badge. Phase 2 caps the visual depth at one level — a directory's
+// children render flat under it rather than recursively building
+// nested <details> for grand-children. Hidden entirely when
+// loaded.extras is empty (loose-file imports, missing source folder).
+function renderExtrasSection(loaded) {
+  const extras = loaded.extras || [];
+  if (extras.length === 0) return null;
+  // Bucket the flat list into top-level files + a directory-keyed map
+  // of children. The wire shape is already sorted by path, so a
+  // single pass is enough — directories appear before their children
+  // and children appear in path-sorted order under their parent.
+  const topFiles = [];
+  const dirChildren = new Map();
+  const dirNames = [];
+  for (const e of extras) {
+    if (!e || typeof e.path !== 'string') continue;
+    const slashIdx = e.path.indexOf('/');
+    if (slashIdx < 0) {
+      if (e.isDir) {
+        dirNames.push(e.path);
+        if (!dirChildren.has(e.path)) dirChildren.set(e.path, []);
+      } else {
+        topFiles.push(e);
+      }
+      continue;
+    }
+    const root = e.path.substring(0, slashIdx);
+    if (!dirChildren.has(root)) {
+      dirChildren.set(root, []);
+      dirNames.push(root);
+    }
+    dirChildren.get(root).push(e);
+  }
+  return m('section', { class: 'space-y-2' }, [
+    m('h3', { class: 'text-sm font-semibold opacity-80' },
+      'Extras · ' + extras.length),
+    m('div', { class: 'divide-y divide-base-200 rounded border border-base-200' }, [
+      ...topFiles.map((e) => extraFileRow(e, e.name || basename(e.path))),
+      ...dirNames.map((name) => extraDirSection(name, dirChildren.get(name) || [])),
+    ]),
+  ]);
+}
+
+// extraFileRow is one terminal row in the Extras section — a single
+// file with its basename + size. The icon is purely decorative so the
+// row reads cleanly even without it.
+function extraFileRow(entry, displayName) {
+  return m('div', {
+    class: 'flex items-center justify-between gap-3 px-3 py-1.5 text-sm',
+  }, [
+    m('div', { class: 'flex items-center gap-2 min-w-0' }, [
+      m('span', { class: 'opacity-60 shrink-0' }, fileIcon()),
+      m('span', { class: 'font-mono truncate', title: entry.path },
+        displayName),
+    ]),
+    m('span', { class: 'opacity-60 text-xs font-mono shrink-0' },
+      humanSize(entry.sizeBytes || 0)),
+  ]);
+}
+
+// extraDirSection wraps a directory + its (already-flat) children in a
+// native <details>/<summary> pair. Mithril leaves the open state on
+// the DOM element so a redraw doesn't collapse a directory the user
+// expanded.
+function extraDirSection(name, children) {
+  // Children rows are stripped of the leading "{name}/" prefix so the
+  // displayed label is just the file's basename — the summary line
+  // already carries the directory context.
+  const prefix = name + '/';
+  return m('details', { class: 'group' }, [
+    m('summary', {
+      class: 'flex items-center justify-between gap-3 px-3 py-1.5 ' +
+             'text-sm cursor-pointer hover:bg-base-200/40 list-none',
+    }, [
+      m('div', { class: 'flex items-center gap-2 min-w-0' }, [
+        m('span', { class: 'opacity-60 shrink-0' }, folderIcon()),
+        m('span', { class: 'font-mono truncate' }, name),
+      ]),
+      m('span', { class: 'badge badge-ghost badge-sm shrink-0' },
+        '+' + children.length),
+    ]),
+    m('div', { class: 'pl-6 border-l border-base-200 ml-4 my-1' },
+      children.map((c) => {
+        const display = c.path.startsWith(prefix)
+          ? c.path.substring(prefix.length)
+          : c.name || c.path;
+        return extraFileRow(c, display);
+      })),
+  ]);
+}
+
+// renderDetailsSection surfaces the metadata fields phase 1's hero
+// dropped from the page (Cataloged, Gifting, Owners, Wanters, Folder).
+// Rendered as a 2-column responsive grid above the Files section so
+// the user can confirm the per-recording state at a glance. Empty /
+// zero values fall through to "—" so the grid stays a stable shape.
+function renderDetailsSection(loaded) {
+  const r = loaded.Recording || {};
+  const meta = r.metadata || {};
+  const versions = loaded.Versions || [];
+  // Folder = the canonical destination folder for the recording's
+  // first version. Falls back to the source_folder hint via the
+  // Versions shape — but the SPA only carries dirname(FilePath) on
+  // versions, so the displayed folder is always destination-side.
+  const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
+  const cataloged = loaded.CollectedAt || '';
+  // Encora fields: metadata.gifting_status / owners_count / wanters_count
+  // (raw_json round-trip — see internal/encora/types.go). Render zero
+  // counts as "0" rather than "—" so an actively-zero state reads
+  // distinctly from "no data".
+  const gifting = meta.gifting_status || '';
+  const owners = (meta.owners_count != null) ? String(meta.owners_count) : '';
+  const wanters = (meta.wanters_count != null) ? String(meta.wanters_count) : '';
+  const rows = [
+    ['Cataloged', cataloged],
+    ['Gifting', gifting],
+    ['Owners', owners],
+    ['Wanters', wanters],
+  ];
+  return m('section', { class: 'space-y-2' }, [
+    m('h2', { class: 'text-base font-semibold opacity-80' }, 'Details'),
+    m('dl', {
+      class: 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm',
+    },
+      rows.flatMap(([label, value]) => [
+        m('dt', { class: 'opacity-60' }, label + ':'),
+        m('dd', { class: 'font-mono break-all' }, value || '—'),
+      ])),
+    folder
+      ? m('div', { class: 'text-sm flex flex-wrap gap-2 items-baseline pt-1' }, [
+          m('span', { class: 'opacity-60' }, 'Folder:'),
+          m('span', { class: 'font-mono break-all' }, folder),
+        ])
+      : null,
+  ]);
+}
+
+// renderFilesSection collapses phase 1's three trailing cards (Local
+// versions, Media Info, NFO output) into one Files surface containing
+// the Versions table (with per-row Media Info expansion), the optional
+// Extras tree, and the NFO disclosure row at the bottom.
+function renderFilesSection(loaded) {
+  const versions = loaded.Versions || [];
+  const extras = loaded.extras || [];
+  return m('div', { class: 'card bg-base-100 shadow-sm' },
+    m('div', { class: 'card-body space-y-4' }, [
+      m('h2', { class: 'card-title text-base' },
+        'Files · ' + versions.length),
+      renderVersionsTable(loaded),
+      extras.length > 0 ? renderExtrasSection(loaded) : null,
+      m('div', { class: 'border-t border-base-200 pt-2' },
+        renderNFORow(loaded)),
+    ]));
 }
 
 // formatMediaRunTime turns a duration in seconds into Sonarr's
@@ -1327,14 +1615,16 @@ function subtitleLanguagesDisplay(streams) {
   );
 }
 
-// renderMediaInfoCard renders the Sonarr-style media info table on the
-// recording detail page. Hidden entirely when mediaInfo is null
-// (legacy imports, recordings without a versions row, or unparseable
-// blobs); each row is hidden inside the table when its specific field
-// is missing (audio bitrate of 0 means ffprobe didn't expose it).
-function renderMediaInfoCard(loaded) {
-  const mi = loaded && loaded.media_info;
-  if (!mi) return null;
+// mediaInfoRows builds the Sonarr-style label/value pairs the recording
+// detail page renders inside the per-version Media Info disclosure
+// sub-row. Phase 2 lifted these out of a standalone card and into an
+// inline expansion under each Versions table row, so the renderer is
+// label-agnostic — the caller wraps these rows in whatever layout the
+// surrounding context wants. Returns [] when mediaInfo is null
+// (legacy imports, no version row, or unparseable blob); the caller
+// hides the disclosure affordance in that case.
+function mediaInfoRows(mi) {
+  if (!mi) return [];
   const audio = mi.audioStreams || [];
   const subs = mi.subtitleStreams || [];
   const firstAudio = audio[0] || null;
@@ -1367,43 +1657,96 @@ function renderMediaInfoCard(loaded) {
   }
   rows.push(['Scan Type', formatScanType(mi.scanType)]);
   rows.push(['Subtitles', subtitleLanguagesDisplay(subs)]);
+  return rows;
+}
 
-  return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body' }, [
-      m('h2', { class: 'card-title text-base' }, 'Media Info'),
-      m('div', { class: 'divide-y divide-base-200' },
-        rows.map(([label, value]) => m('div', {
-          class: 'flex justify-between gap-4 py-1 text-sm',
-        }, [
-          m('span', { class: 'opacity-60' }, label),
-          m('span', { class: 'font-mono text-right break-all' },
-            value || '—'),
-        ]))),
+// renderMediaInfoBody returns the bare label/value rows for an inline
+// Media Info expansion. Used by the per-version disclosure sub-row in
+// the Files section. Empty mi yields a single placeholder line so the
+// expanded sub-row never renders blank.
+function renderMediaInfoBody(mi) {
+  const rows = mediaInfoRows(mi);
+  if (rows.length === 0) {
+    return m('div', { class: 'opacity-60 text-sm py-2' },
+      'No media info captured for this version.');
+  }
+  return m('dl', {
+    class: 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 py-2',
+  },
+    rows.flatMap(([label, value]) => [
+      m('dt', { class: 'opacity-60 text-sm' }, label),
+      m('dd', { class: 'font-mono text-sm break-all' }, value || '—'),
     ]));
 }
 
-// renderNFOCard surfaces the on-disk movie.nfo when the server read
-// one. We deliberately skip the synthetic "PREVIEW" fallback the
-// legacy page rendered — the new layout simply omits the card when
-// there's no real file. This matches the user's preference for the
-// SPA to only show first-class data.
-function renderNFOCard(loaded) {
+// renderNFORow is the bottom-of-Files-section disclosure for the
+// recording's movie.nfo. Collapsed by default with mtime; click to
+// expand into a syntax-highlighted XML pane. The "no NFO yet" branch
+// renders a non-expandable placeholder so the SPA always surfaces the
+// file's status.
+//
+// Highlighting prefers window.hljs (loaded via the SPA shell). When
+// hljs isn't on the page we fall back to a plain <pre> — the
+// rendering is still readable, just not coloured.
+function renderNFORow(loaded) {
   const content = loaded.nfo_content || '';
-  if (!content) return null;
-  let note = 'from disk';
+  if (!content) {
+    return m('div', { class: 'flex items-center gap-2 py-2 text-sm' }, [
+      m('span', { class: 'font-mono opacity-80' }, 'movie.nfo'),
+      m('span', { class: 'opacity-60' }, '· not yet written'),
+    ]);
+  }
   const rel = relativeTime(loaded.nfo_modified_at);
-  if (rel && rel !== '—') note += ' · modified ' + rel;
-  return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body' }, [
-      m('div', { class: 'flex items-center justify-between' }, [
-        m('h2', { class: 'card-title text-base' }, 'NFO output'),
-        m('span', { class: 'text-xs font-mono opacity-60' }, note),
+  const note = (rel && rel !== '—') ? 'modified ' + rel : 'on disk';
+  const expanded = !!state.recording.nfoExpanded;
+  return m('div', { class: 'space-y-2' }, [
+    m('div', { class: 'flex items-center justify-between gap-3 py-2' }, [
+      m('div', { class: 'flex items-center gap-2 text-sm min-w-0' }, [
+        m('span', { class: 'font-mono opacity-80' }, 'movie.nfo'),
+        m('span', { class: 'opacity-60 truncate' }, '· ' + note),
       ]),
-      m('pre', {
-        class: 'bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
-      }, content),
-    ]));
+      m('button', {
+        type: 'button',
+        class: 'btn btn-xs btn-ghost',
+        'aria-expanded': expanded ? 'true' : 'false',
+        onclick: () => {
+          state.recording.nfoExpanded = !expanded;
+        },
+      }, expanded ? 'Hide' : 'Show'),
+    ]),
+    expanded ? m(NFOBody, { content }) : null,
+  ]);
 }
+
+// NFOBody renders the highlighted XML pane. Pulled out as a Mithril
+// component so the oncreate / onupdate hooks can call hljs.highlight
+// against the freshly-mounted DOM node — m.trust(...) is the only
+// way to inject the highlighted markup, and we want the highlight
+// invocation gated on hljs being available rather than guessing at
+// import time.
+const NFOBody = {
+  view(vnode) {
+    const content = (vnode.attrs && vnode.attrs.content) || '';
+    if (typeof window !== 'undefined' && window.hljs &&
+        typeof window.hljs.highlight === 'function') {
+      let html;
+      try {
+        html = window.hljs.highlight(content, { language: 'xml' }).value;
+      } catch (_) {
+        html = null;
+      }
+      if (html) {
+        return m('pre', {
+          class: 'hljs bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
+        }, m('code', { class: 'language-xml' }, m.trust(html)));
+      }
+    }
+    // Fallback: plain pre. Readable, just not coloured.
+    return m('pre', {
+      class: 'bg-base-200 text-xs p-3 rounded overflow-x-auto whitespace-pre',
+    }, content);
+  },
+};
 
 // loadOptions fetches /api/v1/<entity>/<id>/<kind>-options and parks
 // the result on state.recording.pickerOptions[kind]. Errors land on
@@ -1844,22 +2187,18 @@ function maybeLoadPickerOptions(id, tab) {
   loadOptions(id, tab);
 }
 
-// renderBody composes the post-hero stack. The hero already carries
-// the poster, status, metadata, and plot; the body section lists the
-// recording's local files (versions), the Sonarr-style Media Info
-// table, the on-disk NFO, the cast tideflyer, and the NFT callout when
-// the recording is gated. Phase 2 will fold Media Info into a
-// per-version drilldown, but we keep the existing cards intact for
-// this pass so file restructure is a separate diff.
+// renderBody composes the post-hero stack. Phase 2 collapses the
+// trio of Local versions / Media Info / NFO output cards into one
+// Files section with per-row inline disclosures, adds a Details
+// section above it for the metadata fields the hero dropped
+// (Cataloged / Gifting / Owners / Wanters / Folder), and keeps the
+// Cast section + NFT callout untouched.
 function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
-  const nfoCard = renderNFOCard(loaded);
-  const mediaInfoCard = renderMediaInfoCard(loaded);
   return m('div', { class: 'space-y-6' }, [
     callout,
-    renderVersionsCard(loaded),
-    mediaInfoCard,
-    nfoCard,
+    renderDetailsSection(loaded),
+    renderFilesSection(loaded),
     renderCastCard(loaded),
   ]);
 }
@@ -1891,6 +2230,11 @@ const Recording = {
     state.recording.regenerateNFOMessage = null;
     state.recording.regenerateNFOError = null;
     state.recording.pickerStaged = {};
+    // Phase 2 disclosures: per-version Media Info expansion + the
+    // NFO row's Show/Hide toggle. Reset on every recording switch so
+    // a previously-open expansion doesn't bleed onto a new row.
+    state.recording.expandedVersions = {};
+    state.recording.nfoExpanded = false;
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.recording.loading = false;
@@ -1927,6 +2271,8 @@ const Recording = {
       state.recording.regeneratingNFO = false;
       state.recording.regenerateNFOMessage = null;
       state.recording.regenerateNFOError = null;
+      state.recording.expandedVersions = {};
+      state.recording.nfoExpanded = false;
       loadRecording(id);
     }
   },

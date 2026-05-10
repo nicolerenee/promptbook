@@ -567,7 +567,7 @@ func (_m *RecordingVersion) Node(ctx context.Context) (node *Node, err error) {
 	node = &Node{
 		ID:     _m.ID,
 		Type:   "RecordingVersion",
-		Fields: make([]*Field, 12),
+		Fields: make([]*Field, 13),
 		Edges:  make([]*Edge, 1),
 	}
 	var buf []byte
@@ -651,10 +651,18 @@ func (_m *RecordingVersion) Node(ctx context.Context) (node *Node, err error) {
 		Name:  "media_info_json",
 		Value: string(buf),
 	}
-	if buf, err = json.Marshal(_m.AddedAt); err != nil {
+	if buf, err = json.Marshal(_m.SourceFolder); err != nil {
 		return nil, err
 	}
 	node.Fields[10] = &Field{
+		Type:  "string",
+		Name:  "source_folder",
+		Value: string(buf),
+	}
+	if buf, err = json.Marshal(_m.AddedAt); err != nil {
+		return nil, err
+	}
+	node.Fields[11] = &Field{
 		Type:  "time.Time",
 		Name:  "added_at",
 		Value: string(buf),
@@ -662,7 +670,7 @@ func (_m *RecordingVersion) Node(ctx context.Context) (node *Node, err error) {
 	if buf, err = json.Marshal(_m.LastSeenAt); err != nil {
 		return nil, err
 	}
-	node.Fields[11] = &Field{
+	node.Fields[12] = &Field{
 		Type:  "time.Time",
 		Name:  "last_seen_at",
 		Value: string(buf),

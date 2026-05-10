@@ -9622,6 +9622,7 @@ type RecordingVersionMutation struct {
 	format_label       *string
 	notes              *string
 	media_info_json    *string
+	source_folder      *string
 	added_at           *time.Time
 	last_seen_at       *time.Time
 	clearedFields      map[string]struct{}
@@ -10116,6 +10117,42 @@ func (m *RecordingVersionMutation) ResetMediaInfoJSON() {
 	m.media_info_json = nil
 }
 
+// SetSourceFolder sets the "source_folder" field.
+func (m *RecordingVersionMutation) SetSourceFolder(s string) {
+	m.source_folder = &s
+}
+
+// SourceFolder returns the value of the "source_folder" field in the mutation.
+func (m *RecordingVersionMutation) SourceFolder() (r string, exists bool) {
+	v := m.source_folder
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceFolder returns the old "source_folder" field's value of the RecordingVersion entity.
+// If the RecordingVersion object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RecordingVersionMutation) OldSourceFolder(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceFolder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceFolder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceFolder: %w", err)
+	}
+	return oldValue.SourceFolder, nil
+}
+
+// ResetSourceFolder resets all changes to the "source_folder" field.
+func (m *RecordingVersionMutation) ResetSourceFolder() {
+	m.source_folder = nil
+}
+
 // SetAddedAt sets the "added_at" field.
 func (m *RecordingVersionMutation) SetAddedAt(t time.Time) {
 	m.added_at = &t
@@ -10249,7 +10286,7 @@ func (m *RecordingVersionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RecordingVersionMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.recording != nil {
 		fields = append(fields, recordingversion.FieldRecordingID)
 	}
@@ -10279,6 +10316,9 @@ func (m *RecordingVersionMutation) Fields() []string {
 	}
 	if m.media_info_json != nil {
 		fields = append(fields, recordingversion.FieldMediaInfoJSON)
+	}
+	if m.source_folder != nil {
+		fields = append(fields, recordingversion.FieldSourceFolder)
 	}
 	if m.added_at != nil {
 		fields = append(fields, recordingversion.FieldAddedAt)
@@ -10314,6 +10354,8 @@ func (m *RecordingVersionMutation) Field(name string) (ent.Value, bool) {
 		return m.Notes()
 	case recordingversion.FieldMediaInfoJSON:
 		return m.MediaInfoJSON()
+	case recordingversion.FieldSourceFolder:
+		return m.SourceFolder()
 	case recordingversion.FieldAddedAt:
 		return m.AddedAt()
 	case recordingversion.FieldLastSeenAt:
@@ -10347,6 +10389,8 @@ func (m *RecordingVersionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldNotes(ctx)
 	case recordingversion.FieldMediaInfoJSON:
 		return m.OldMediaInfoJSON(ctx)
+	case recordingversion.FieldSourceFolder:
+		return m.OldSourceFolder(ctx)
 	case recordingversion.FieldAddedAt:
 		return m.OldAddedAt(ctx)
 	case recordingversion.FieldLastSeenAt:
@@ -10429,6 +10473,13 @@ func (m *RecordingVersionMutation) SetField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMediaInfoJSON(v)
+		return nil
+	case recordingversion.FieldSourceFolder:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceFolder(v)
 		return nil
 	case recordingversion.FieldAddedAt:
 		v, ok := value.(time.Time)
@@ -10537,6 +10588,9 @@ func (m *RecordingVersionMutation) ResetField(name string) error {
 		return nil
 	case recordingversion.FieldMediaInfoJSON:
 		m.ResetMediaInfoJSON()
+		return nil
+	case recordingversion.FieldSourceFolder:
+		m.ResetSourceFolder()
 		return nil
 	case recordingversion.FieldAddedAt:
 		m.ResetAddedAt()

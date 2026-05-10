@@ -34,6 +34,8 @@ const (
 	FieldNotes = "notes"
 	// FieldMediaInfoJSON holds the string denoting the media_info_json field in the database.
 	FieldMediaInfoJSON = "media_info_json"
+	// FieldSourceFolder holds the string denoting the source_folder field in the database.
+	FieldSourceFolder = "source_folder"
 	// FieldAddedAt holds the string denoting the added_at field in the database.
 	FieldAddedAt = "added_at"
 	// FieldLastSeenAt holds the string denoting the last_seen_at field in the database.
@@ -66,6 +68,7 @@ var Columns = []string{
 	FieldFormatLabel,
 	FieldNotes,
 	FieldMediaInfoJSON,
+	FieldSourceFolder,
 	FieldAddedAt,
 	FieldLastSeenAt,
 }
@@ -97,6 +100,8 @@ var (
 	DefaultNotes string
 	// DefaultMediaInfoJSON holds the default value on creation for the "media_info_json" field.
 	DefaultMediaInfoJSON string
+	// DefaultSourceFolder holds the default value on creation for the "source_folder" field.
+	DefaultSourceFolder string
 	// DefaultAddedAt holds the default value on creation for the "added_at" field.
 	DefaultAddedAt func() time.Time
 	// DefaultLastSeenAt holds the default value on creation for the "last_seen_at" field.
@@ -159,6 +164,11 @@ func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 // ByMediaInfoJSON orders the results by the media_info_json field.
 func ByMediaInfoJSON(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMediaInfoJSON, opts...).ToFunc()
+}
+
+// BySourceFolder orders the results by the source_folder field.
+func BySourceFolder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceFolder, opts...).ToFunc()
 }
 
 // ByAddedAt orders the results by the added_at field.

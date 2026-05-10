@@ -130,6 +130,15 @@ export const state = {
     regeneratingNFO: false,
     regenerateNFOMessage: null,
     regenerateNFOError: null,
+    // expandedVersions tracks which Files-section Versions table rows
+    // are showing their inline Media Info expansion. Keyed by the
+    // row's index in the versions array. Reset on every recording
+    // navigation so a previously-open row doesn't bleed onto a
+    // different recording.
+    expandedVersions: {},
+    // nfoExpanded toggles the bottom-of-Files-section NFO disclosure.
+    // Collapsed by default — the user opts in to read the XML.
+    nfoExpanded: false,
   },
   // show is the /shows/:id detail page view-model. detail holds the
   // ShowDetailResponse payload (lower-case JSON keys per the

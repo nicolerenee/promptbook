@@ -70,6 +70,59 @@ func TestUpsertAndListVersions(t *testing.T) {
 	assert.NotZero(t, got[0].LastSeenAt, "last_seen_at populated by upsert")
 }
 
+// TestUpsertVersionPersistsSourceFolder pins the source_folder column
+// added in the recording-detail phase 2 schema migration. Folder-as-
+// unit drops record the original directory so the recording detail
+// page can later enumerate sibling 'extras' files; loose-file imports
+// leave the field empty.
+func TestUpsertVersionPersistsSourceFolder(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	tests := []struct {
+		name         string
+		filePath     string
+		sourceFolder string
+	}{
+		{
+			name:         "folder-as-unit drop captures parent",
+			filePath:     "/store/marigold/main.mkv",
+			sourceFolder: "/incoming/Marigold 2024-09-15",
+		},
+		{
+			name:         "loose-file import leaves it empty",
+			filePath:     "/store/marigold/loose.mkv",
+			sourceFolder: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+				RecordingID:  recordingID,
+				FilePath:     tt.filePath,
+				FormatLabel:  "MKV",
+				SourceFolder: tt.sourceFolder,
+			}))
+
+			versions, err := storage.ListVersions(ctx, db, recordingID)
+			require.NoError(t, err)
+			var got storage.RecordingVersion
+			for _, v := range versions {
+				if v.FilePath == tt.filePath {
+					got = v
+					break
+				}
+			}
+			require.NotZero(t, got.ID, "version row not found for %s", tt.filePath)
+			assert.Equal(t, tt.sourceFolder, got.SourceFolder)
+		})
+	}
+}
+
 func TestUpsertVersionIsIdempotent(t *testing.T) {
 	t.Parallel()
 

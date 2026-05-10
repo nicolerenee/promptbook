@@ -53,6 +53,14 @@ func (RecordingVersion) Fields() []ent.Field {
 		// existed); the GraphQL resolver decodes "" / "{}" / null as
 		// "no media info".
 		field.Text("media_info_json").Default(""),
+		// source_folder is the directory the source file lived in at
+		// ingest time, captured for folder-as-unit drops so the
+		// recording detail page can enumerate sibling files (audio/,
+		// photos/, etc.) as 'extras' even though the canonical move
+		// only takes the main file. Empty for loose-file imports — the
+		// recording's destination folder is the only location with
+		// content.
+		field.Text("source_folder").Default(""),
 		field.Time("added_at").
 			Default(time.Now).
 			SchemaType(sqliteSchema(typeDatetime)).

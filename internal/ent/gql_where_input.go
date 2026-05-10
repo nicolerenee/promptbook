@@ -3007,6 +3007,21 @@ type RecordingVersionWhereInput struct {
 	MediaInfoJSONEqualFold    *string  `json:"mediaInfoJSONEqualFold,omitempty"`
 	MediaInfoJSONContainsFold *string  `json:"mediaInfoJSONContainsFold,omitempty"`
 
+	// "source_folder" field predicates.
+	SourceFolder             *string  `json:"sourceFolder,omitempty"`
+	SourceFolderNEQ          *string  `json:"sourceFolderNEQ,omitempty"`
+	SourceFolderIn           []string `json:"sourceFolderIn,omitempty"`
+	SourceFolderNotIn        []string `json:"sourceFolderNotIn,omitempty"`
+	SourceFolderGT           *string  `json:"sourceFolderGT,omitempty"`
+	SourceFolderGTE          *string  `json:"sourceFolderGTE,omitempty"`
+	SourceFolderLT           *string  `json:"sourceFolderLT,omitempty"`
+	SourceFolderLTE          *string  `json:"sourceFolderLTE,omitempty"`
+	SourceFolderContains     *string  `json:"sourceFolderContains,omitempty"`
+	SourceFolderHasPrefix    *string  `json:"sourceFolderHasPrefix,omitempty"`
+	SourceFolderHasSuffix    *string  `json:"sourceFolderHasSuffix,omitempty"`
+	SourceFolderEqualFold    *string  `json:"sourceFolderEqualFold,omitempty"`
+	SourceFolderContainsFold *string  `json:"sourceFolderContainsFold,omitempty"`
+
 	// "added_at" field predicates.
 	AddedAt      *time.Time  `json:"addedAt,omitempty"`
 	AddedAtNEQ   *time.Time  `json:"addedAtNEQ,omitempty"`
@@ -3474,6 +3489,45 @@ func (i *RecordingVersionWhereInput) P() (predicate.RecordingVersion, error) {
 	}
 	if i.MediaInfoJSONContainsFold != nil {
 		predicates = append(predicates, recordingversion.MediaInfoJSONContainsFold(*i.MediaInfoJSONContainsFold))
+	}
+	if i.SourceFolder != nil {
+		predicates = append(predicates, recordingversion.SourceFolderEQ(*i.SourceFolder))
+	}
+	if i.SourceFolderNEQ != nil {
+		predicates = append(predicates, recordingversion.SourceFolderNEQ(*i.SourceFolderNEQ))
+	}
+	if len(i.SourceFolderIn) > 0 {
+		predicates = append(predicates, recordingversion.SourceFolderIn(i.SourceFolderIn...))
+	}
+	if len(i.SourceFolderNotIn) > 0 {
+		predicates = append(predicates, recordingversion.SourceFolderNotIn(i.SourceFolderNotIn...))
+	}
+	if i.SourceFolderGT != nil {
+		predicates = append(predicates, recordingversion.SourceFolderGT(*i.SourceFolderGT))
+	}
+	if i.SourceFolderGTE != nil {
+		predicates = append(predicates, recordingversion.SourceFolderGTE(*i.SourceFolderGTE))
+	}
+	if i.SourceFolderLT != nil {
+		predicates = append(predicates, recordingversion.SourceFolderLT(*i.SourceFolderLT))
+	}
+	if i.SourceFolderLTE != nil {
+		predicates = append(predicates, recordingversion.SourceFolderLTE(*i.SourceFolderLTE))
+	}
+	if i.SourceFolderContains != nil {
+		predicates = append(predicates, recordingversion.SourceFolderContains(*i.SourceFolderContains))
+	}
+	if i.SourceFolderHasPrefix != nil {
+		predicates = append(predicates, recordingversion.SourceFolderHasPrefix(*i.SourceFolderHasPrefix))
+	}
+	if i.SourceFolderHasSuffix != nil {
+		predicates = append(predicates, recordingversion.SourceFolderHasSuffix(*i.SourceFolderHasSuffix))
+	}
+	if i.SourceFolderEqualFold != nil {
+		predicates = append(predicates, recordingversion.SourceFolderEqualFold(*i.SourceFolderEqualFold))
+	}
+	if i.SourceFolderContainsFold != nil {
+		predicates = append(predicates, recordingversion.SourceFolderContainsFold(*i.SourceFolderContainsFold))
 	}
 	if i.AddedAt != nil {
 		predicates = append(predicates, recordingversion.AddedAtEQ(*i.AddedAt))

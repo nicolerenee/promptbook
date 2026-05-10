@@ -325,6 +325,14 @@ func (r *recordingResolver) LocalReleaseFormat(ctx context.Context, obj *ent.Rec
 	return r.Resolver.recordingLocalReleaseFormat(ctx, obj.ID)
 }
 
+// Extras is the resolver for the extras field. Pass-through to the
+// resolver-package helper so the body lives in enrichment_helpers.go
+// (gqlgen otherwise sweeps long bodies into "may delete" comment
+// blocks on regeneration).
+func (r *recordingResolver) Extras(ctx context.Context, obj *ent.Recording) ([]*RecordingExtra, error) {
+	return r.Resolver.recordingExtras(ctx, obj.ID)
+}
+
 // LocalBannerURL is the resolver for the localBannerURL field. Same
 // fall-through-to-placeholder semantics as RecordingPosterURL — the
 // SPA always gets a valid path.

@@ -1,4 +1,5 @@
-h1:qi367umH+bJULz+TZnOVWktP5F43VzlGmMZqX0Okp64=
+h1:JpOdZOyV+DbYobqGRTtuoHi4Qy30UT5rOVJ/VPJYI0Y=
 20260509232107_initial_schema.sql h1:NzKvH31ljQlt/hYAd5jaFCREJYCfOFC8IkmBwUO1Su8=
 20260510070102_add_extras_count.sql h1:2EV1CrtYiO57FSu0BBEm+1TagfHCunagca7ckBuDejg=
 20260510075101_add_recording_version_media_info_json.sql h1:6rNS9WzSP1r0YmzIXHh/aGgfAsDmSTcaepej+beUXKs=
+20260510092525_add_recording_version_source_folder.sql h1:/5J7zycvf7ReKGcpRxyM5Sh7nn38cgTEL+WmMoJg9TY=

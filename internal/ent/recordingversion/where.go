@@ -105,6 +105,11 @@ func MediaInfoJSON(v string) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldEQ(FieldMediaInfoJSON, v))
 }
 
+// SourceFolder applies equality check predicate on the "source_folder" field. It's identical to SourceFolderEQ.
+func SourceFolder(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEQ(FieldSourceFolder, v))
+}
+
 // AddedAt applies equality check predicate on the "added_at" field. It's identical to AddedAtEQ.
 func AddedAt(v time.Time) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldEQ(FieldAddedAt, v))
@@ -693,6 +698,71 @@ func MediaInfoJSONEqualFold(v string) predicate.RecordingVersion {
 // MediaInfoJSONContainsFold applies the ContainsFold predicate on the "media_info_json" field.
 func MediaInfoJSONContainsFold(v string) predicate.RecordingVersion {
 	return predicate.RecordingVersion(sql.FieldContainsFold(FieldMediaInfoJSON, v))
+}
+
+// SourceFolderEQ applies the EQ predicate on the "source_folder" field.
+func SourceFolderEQ(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEQ(FieldSourceFolder, v))
+}
+
+// SourceFolderNEQ applies the NEQ predicate on the "source_folder" field.
+func SourceFolderNEQ(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldNEQ(FieldSourceFolder, v))
+}
+
+// SourceFolderIn applies the In predicate on the "source_folder" field.
+func SourceFolderIn(vs ...string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldIn(FieldSourceFolder, vs...))
+}
+
+// SourceFolderNotIn applies the NotIn predicate on the "source_folder" field.
+func SourceFolderNotIn(vs ...string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldNotIn(FieldSourceFolder, vs...))
+}
+
+// SourceFolderGT applies the GT predicate on the "source_folder" field.
+func SourceFolderGT(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldGT(FieldSourceFolder, v))
+}
+
+// SourceFolderGTE applies the GTE predicate on the "source_folder" field.
+func SourceFolderGTE(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldGTE(FieldSourceFolder, v))
+}
+
+// SourceFolderLT applies the LT predicate on the "source_folder" field.
+func SourceFolderLT(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldLT(FieldSourceFolder, v))
+}
+
+// SourceFolderLTE applies the LTE predicate on the "source_folder" field.
+func SourceFolderLTE(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldLTE(FieldSourceFolder, v))
+}
+
+// SourceFolderContains applies the Contains predicate on the "source_folder" field.
+func SourceFolderContains(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldContains(FieldSourceFolder, v))
+}
+
+// SourceFolderHasPrefix applies the HasPrefix predicate on the "source_folder" field.
+func SourceFolderHasPrefix(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldHasPrefix(FieldSourceFolder, v))
+}
+
+// SourceFolderHasSuffix applies the HasSuffix predicate on the "source_folder" field.
+func SourceFolderHasSuffix(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldHasSuffix(FieldSourceFolder, v))
+}
+
+// SourceFolderEqualFold applies the EqualFold predicate on the "source_folder" field.
+func SourceFolderEqualFold(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldEqualFold(FieldSourceFolder, v))
+}
+
+// SourceFolderContainsFold applies the ContainsFold predicate on the "source_folder" field.
+func SourceFolderContainsFold(v string) predicate.RecordingVersion {
+	return predicate.RecordingVersion(sql.FieldContainsFold(FieldSourceFolder, v))
 }
 
 // AddedAtEQ applies the EQ predicate on the "added_at" field.

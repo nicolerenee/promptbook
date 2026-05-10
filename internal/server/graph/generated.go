@@ -247,6 +247,7 @@ type ComplexityRoot struct {
 		DateTime            func(childComplexity int) int
 		DateVariant         func(childComplexity int) int
 		EncoraFormat        func(childComplexity int) int
+		Extras              func(childComplexity int) int
 		GiftingStatus       func(childComplexity int) int
 		HasScreenshots      func(childComplexity int) int
 		HasSubtitles        func(childComplexity int) int
@@ -301,6 +302,13 @@ type ComplexityRoot struct {
 		Node   func(childComplexity int) int
 	}
 
+	RecordingExtra struct {
+		IsDir     func(childComplexity int) int
+		Name      func(childComplexity int) int
+		Path      func(childComplexity int) int
+		SizeBytes func(childComplexity int) int
+	}
+
 	RecordingVersion struct {
 		AddedAt       func(childComplexity int) int
 		AudioCodec    func(childComplexity int) int
@@ -315,6 +323,7 @@ type ComplexityRoot struct {
 		Quality       func(childComplexity int) int
 		Recording     func(childComplexity int) int
 		RecordingID   func(childComplexity int) int
+		SourceFolder  func(childComplexity int) int
 		VideoCodec    func(childComplexity int) int
 	}
 
@@ -531,6 +540,7 @@ type RecordingResolver interface {
 	CollectedAt(ctx context.Context, obj *ent.Recording) (*string, error)
 	MediaInfo(ctx context.Context, obj *ent.Recording) (*MediaInfo, error)
 	LocalReleaseFormat(ctx context.Context, obj *ent.Recording) (string, error)
+	Extras(ctx context.Context, obj *ent.Recording) ([]*RecordingExtra, error)
 }
 type ShowResolver interface {
 	LocalBannerURL(ctx context.Context, obj *ent.Show) (string, error)
@@ -1526,6 +1536,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.EncoraFormat(childComplexity), true
+	case "Recording.extras":
+		if e.ComplexityRoot.Recording.Extras == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.Extras(childComplexity), true
 	case "Recording.giftingStatus":
 		if e.ComplexityRoot.Recording.GiftingStatus == nil {
 			break
@@ -1810,6 +1826,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.RecordingEdge.Node(childComplexity), true
 
+	case "RecordingExtra.isDir":
+		if e.ComplexityRoot.RecordingExtra.IsDir == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExtra.IsDir(childComplexity), true
+	case "RecordingExtra.name":
+		if e.ComplexityRoot.RecordingExtra.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExtra.Name(childComplexity), true
+	case "RecordingExtra.path":
+		if e.ComplexityRoot.RecordingExtra.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExtra.Path(childComplexity), true
+	case "RecordingExtra.sizeBytes":
+		if e.ComplexityRoot.RecordingExtra.SizeBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingExtra.SizeBytes(childComplexity), true
+
 	case "RecordingVersion.addedAt":
 		if e.ComplexityRoot.RecordingVersion.AddedAt == nil {
 			break
@@ -1888,6 +1929,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RecordingVersion.RecordingID(childComplexity), true
+	case "RecordingVersion.sourceFolder":
+		if e.ComplexityRoot.RecordingVersion.SourceFolder == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingVersion.SourceFolder(childComplexity), true
 	case "RecordingVersion.videoCodec":
 		if e.ComplexityRoot.RecordingVersion.VideoCodec == nil {
 			break
@@ -3078,6 +3125,8 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_mediaInfo(ctx, field)
 	case "localReleaseFormat":
 		return ec.fieldContext_Recording_localReleaseFormat(ctx, field)
+	case "extras":
+		return ec.fieldContext_Recording_extras(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Recording", field.Name)
 }
@@ -3104,6 +3153,20 @@ func (ec *executionContext) childFields_RecordingEdge(ctx context.Context, field
 	return nil, fmt.Errorf("no field named %q was found under type RecordingEdge", field.Name)
 }
 
+func (ec *executionContext) childFields_RecordingExtra(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "path":
+		return ec.fieldContext_RecordingExtra_path(ctx, field)
+	case "name":
+		return ec.fieldContext_RecordingExtra_name(ctx, field)
+	case "sizeBytes":
+		return ec.fieldContext_RecordingExtra_sizeBytes(ctx, field)
+	case "isDir":
+		return ec.fieldContext_RecordingExtra_isDir(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RecordingExtra", field.Name)
+}
+
 func (ec *executionContext) childFields_RecordingVersion(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "id":
@@ -3128,6 +3191,8 @@ func (ec *executionContext) childFields_RecordingVersion(ctx context.Context, fi
 		return ec.fieldContext_RecordingVersion_notes(ctx, field)
 	case "mediaInfoJSON":
 		return ec.fieldContext_RecordingVersion_mediaInfoJSON(ctx, field)
+	case "sourceFolder":
+		return ec.fieldContext_RecordingVersion_sourceFolder(ctx, field)
 	case "addedAt":
 		return ec.fieldContext_RecordingVersion_addedAt(ctx, field)
 	case "lastSeenAt":
@@ -9355,6 +9420,38 @@ func (ec *executionContext) fieldContext_Recording_localReleaseFormat(_ context.
 	return graphql.NewScalarFieldContext("Recording", field, true, true, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _Recording_extras(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_extras(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Recording().Extras(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*RecordingExtra) graphql.Marshaler {
+			return ec.marshalNRecordingExtra2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExtraᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_extras(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Recording",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordingExtra(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _RecordingConnection_edges(ctx context.Context, field graphql.CollectedField, obj *ent.RecordingConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -9495,6 +9592,98 @@ func (ec *executionContext) _RecordingEdge_cursor(ctx context.Context, field gra
 }
 func (ec *executionContext) fieldContext_RecordingEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("RecordingEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExtra_path(ctx context.Context, field graphql.CollectedField, obj *RecordingExtra) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExtra_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExtra_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExtra", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExtra_name(ctx context.Context, field graphql.CollectedField, obj *RecordingExtra) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExtra_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExtra_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExtra", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExtra_sizeBytes(ctx context.Context, field graphql.CollectedField, obj *RecordingExtra) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExtra_sizeBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SizeBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExtra_sizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExtra", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingExtra_isDir(ctx context.Context, field graphql.CollectedField, obj *RecordingExtra) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingExtra_isDir(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IsDir, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingExtra_isDir(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingExtra", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _RecordingVersion_id(ctx context.Context, field graphql.CollectedField, obj *ent.RecordingVersion) (ret graphql.Marshaler) {
@@ -9747,6 +9936,29 @@ func (ec *executionContext) _RecordingVersion_mediaInfoJSON(ctx context.Context,
 	)
 }
 func (ec *executionContext) fieldContext_RecordingVersion_mediaInfoJSON(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingVersion", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingVersion_sourceFolder(ctx context.Context, field graphql.CollectedField, obj *ent.RecordingVersion) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingVersion_sourceFolder(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SourceFolder, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingVersion_sourceFolder(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("RecordingVersion", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -15543,7 +15755,7 @@ func (ec *executionContext) unmarshalInputRecordingVersionWhereInput(ctx context
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"not", "and", "or", "id", "idNEQ", "idIn", "idNotIn", "idGT", "idGTE", "idLT", "idLTE", "recordingID", "recordingIDNEQ", "recordingIDIn", "recordingIDNotIn", "filePath", "filePathNEQ", "filePathIn", "filePathNotIn", "filePathGT", "filePathGTE", "filePathLT", "filePathLTE", "filePathContains", "filePathHasPrefix", "filePathHasSuffix", "filePathEqualFold", "filePathContainsFold", "fileSizeBytes", "fileSizeBytesNEQ", "fileSizeBytesIn", "fileSizeBytesNotIn", "fileSizeBytesGT", "fileSizeBytesGTE", "fileSizeBytesLT", "fileSizeBytesLTE", "container", "containerNEQ", "containerIn", "containerNotIn", "containerGT", "containerGTE", "containerLT", "containerLTE", "containerContains", "containerHasPrefix", "containerHasSuffix", "containerEqualFold", "containerContainsFold", "quality", "qualityNEQ", "qualityIn", "qualityNotIn", "qualityGT", "qualityGTE", "qualityLT", "qualityLTE", "qualityContains", "qualityHasPrefix", "qualityHasSuffix", "qualityEqualFold", "qualityContainsFold", "videoCodec", "videoCodecNEQ", "videoCodecIn", "videoCodecNotIn", "videoCodecGT", "videoCodecGTE", "videoCodecLT", "videoCodecLTE", "videoCodecContains", "videoCodecHasPrefix", "videoCodecHasSuffix", "videoCodecEqualFold", "videoCodecContainsFold", "audioCodec", "audioCodecNEQ", "audioCodecIn", "audioCodecNotIn", "audioCodecGT", "audioCodecGTE", "audioCodecLT", "audioCodecLTE", "audioCodecContains", "audioCodecHasPrefix", "audioCodecHasSuffix", "audioCodecEqualFold", "audioCodecContainsFold", "formatLabel", "formatLabelNEQ", "formatLabelIn", "formatLabelNotIn", "formatLabelGT", "formatLabelGTE", "formatLabelLT", "formatLabelLTE", "formatLabelContains", "formatLabelHasPrefix", "formatLabelHasSuffix", "formatLabelEqualFold", "formatLabelContainsFold", "notes", "notesNEQ", "notesIn", "notesNotIn", "notesGT", "notesGTE", "notesLT", "notesLTE", "notesContains", "notesHasPrefix", "notesHasSuffix", "notesEqualFold", "notesContainsFold", "mediaInfoJSON", "mediaInfoJSONNEQ", "mediaInfoJSONIn", "mediaInfoJSONNotIn", "mediaInfoJSONGT", "mediaInfoJSONGTE", "mediaInfoJSONLT", "mediaInfoJSONLTE", "mediaInfoJSONContains", "mediaInfoJSONHasPrefix", "mediaInfoJSONHasSuffix", "mediaInfoJSONEqualFold", "mediaInfoJSONContainsFold", "addedAt", "addedAtNEQ", "addedAtIn", "addedAtNotIn", "addedAtGT", "addedAtGTE", "addedAtLT", "addedAtLTE", "lastSeenAt", "lastSeenAtNEQ", "lastSeenAtIn", "lastSeenAtNotIn", "lastSeenAtGT", "lastSeenAtGTE", "lastSeenAtLT", "lastSeenAtLTE", "hasRecording", "hasRecordingWith"}
+	fieldsInOrder := [...]string{"not", "and", "or", "id", "idNEQ", "idIn", "idNotIn", "idGT", "idGTE", "idLT", "idLTE", "recordingID", "recordingIDNEQ", "recordingIDIn", "recordingIDNotIn", "filePath", "filePathNEQ", "filePathIn", "filePathNotIn", "filePathGT", "filePathGTE", "filePathLT", "filePathLTE", "filePathContains", "filePathHasPrefix", "filePathHasSuffix", "filePathEqualFold", "filePathContainsFold", "fileSizeBytes", "fileSizeBytesNEQ", "fileSizeBytesIn", "fileSizeBytesNotIn", "fileSizeBytesGT", "fileSizeBytesGTE", "fileSizeBytesLT", "fileSizeBytesLTE", "container", "containerNEQ", "containerIn", "containerNotIn", "containerGT", "containerGTE", "containerLT", "containerLTE", "containerContains", "containerHasPrefix", "containerHasSuffix", "containerEqualFold", "containerContainsFold", "quality", "qualityNEQ", "qualityIn", "qualityNotIn", "qualityGT", "qualityGTE", "qualityLT", "qualityLTE", "qualityContains", "qualityHasPrefix", "qualityHasSuffix", "qualityEqualFold", "qualityContainsFold", "videoCodec", "videoCodecNEQ", "videoCodecIn", "videoCodecNotIn", "videoCodecGT", "videoCodecGTE", "videoCodecLT", "videoCodecLTE", "videoCodecContains", "videoCodecHasPrefix", "videoCodecHasSuffix", "videoCodecEqualFold", "videoCodecContainsFold", "audioCodec", "audioCodecNEQ", "audioCodecIn", "audioCodecNotIn", "audioCodecGT", "audioCodecGTE", "audioCodecLT", "audioCodecLTE", "audioCodecContains", "audioCodecHasPrefix", "audioCodecHasSuffix", "audioCodecEqualFold", "audioCodecContainsFold", "formatLabel", "formatLabelNEQ", "formatLabelIn", "formatLabelNotIn", "formatLabelGT", "formatLabelGTE", "formatLabelLT", "formatLabelLTE", "formatLabelContains", "formatLabelHasPrefix", "formatLabelHasSuffix", "formatLabelEqualFold", "formatLabelContainsFold", "notes", "notesNEQ", "notesIn", "notesNotIn", "notesGT", "notesGTE", "notesLT", "notesLTE", "notesContains", "notesHasPrefix", "notesHasSuffix", "notesEqualFold", "notesContainsFold", "mediaInfoJSON", "mediaInfoJSONNEQ", "mediaInfoJSONIn", "mediaInfoJSONNotIn", "mediaInfoJSONGT", "mediaInfoJSONGTE", "mediaInfoJSONLT", "mediaInfoJSONLTE", "mediaInfoJSONContains", "mediaInfoJSONHasPrefix", "mediaInfoJSONHasSuffix", "mediaInfoJSONEqualFold", "mediaInfoJSONContainsFold", "sourceFolder", "sourceFolderNEQ", "sourceFolderIn", "sourceFolderNotIn", "sourceFolderGT", "sourceFolderGTE", "sourceFolderLT", "sourceFolderLTE", "sourceFolderContains", "sourceFolderHasPrefix", "sourceFolderHasSuffix", "sourceFolderEqualFold", "sourceFolderContainsFold", "addedAt", "addedAtNEQ", "addedAtIn", "addedAtNotIn", "addedAtGT", "addedAtGTE", "addedAtLT", "addedAtLTE", "lastSeenAt", "lastSeenAtNEQ", "lastSeenAtIn", "lastSeenAtNotIn", "lastSeenAtGT", "lastSeenAtGTE", "lastSeenAtLT", "lastSeenAtLTE", "hasRecording", "hasRecordingWith"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -16439,6 +16651,97 @@ func (ec *executionContext) unmarshalInputRecordingVersionWhereInput(ctx context
 				return it, err
 			}
 			it.MediaInfoJSONContainsFold = data
+		case "sourceFolder":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolder"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolder = data
+		case "sourceFolderNEQ":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderNEQ"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderNEQ = data
+		case "sourceFolderIn":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderIn"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderIn = data
+		case "sourceFolderNotIn":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderNotIn"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderNotIn = data
+		case "sourceFolderGT":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderGT"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderGT = data
+		case "sourceFolderGTE":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderGTE"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderGTE = data
+		case "sourceFolderLT":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderLT"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderLT = data
+		case "sourceFolderLTE":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderLTE"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderLTE = data
+		case "sourceFolderContains":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderContains"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderContains = data
+		case "sourceFolderHasPrefix":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderHasPrefix"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderHasPrefix = data
+		case "sourceFolderHasSuffix":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderHasSuffix"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderHasSuffix = data
+		case "sourceFolderEqualFold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderEqualFold"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderEqualFold = data
+		case "sourceFolderContainsFold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sourceFolderContainsFold"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SourceFolderContainsFold = data
 		case "addedAt":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("addedAt"))
 			data, err := ec.unmarshalOTime2ᚖtimeᚐTime(ctx, v)
@@ -22643,6 +22946,42 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "extras":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Recording_extras(ctx, field, obj)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			if field.Deferrable != nil {
+				dfs, ok := deferred[field.Deferrable.Label]
+				di := 0
+				if ok {
+					dfs.AddField(field)
+					di = len(dfs.Values) - 1
+				} else {
+					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
+					deferred[field.Deferrable.Label] = dfs
+				}
+				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
+					return innerFunc(ctx, dfs)
+				})
+
+				// don't run the out.Concurrently() call below
+				out.Values[i] = graphql.Null
+				continue
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -22753,6 +23092,60 @@ func (ec *executionContext) _RecordingEdge(ctx context.Context, sel ast.Selectio
 	return out
 }
 
+var recordingExtraImplementors = []string{"RecordingExtra"}
+
+func (ec *executionContext) _RecordingExtra(ctx context.Context, sel ast.SelectionSet, obj *RecordingExtra) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, recordingExtraImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RecordingExtra")
+		case "path":
+			out.Values[i] = ec._RecordingExtra_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._RecordingExtra_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sizeBytes":
+			out.Values[i] = ec._RecordingExtra_sizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isDir":
+			out.Values[i] = ec._RecordingExtra_isDir(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var recordingVersionImplementors = []string{"RecordingVersion", "Node"}
 
 func (ec *executionContext) _RecordingVersion(ctx context.Context, sel ast.SelectionSet, obj *ent.RecordingVersion) graphql.Marshaler {
@@ -22816,6 +23209,11 @@ func (ec *executionContext) _RecordingVersion(ctx context.Context, sel ast.Selec
 			}
 		case "mediaInfoJSON":
 			out.Values[i] = ec._RecordingVersion_mediaInfoJSON(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "sourceFolder":
+			out.Values[i] = ec._RecordingVersion_sourceFolder(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
@@ -25013,6 +25411,32 @@ func (ec *executionContext) marshalNRecordingConnection2ᚖgithubᚗcomᚋnicole
 		return graphql.Null
 	}
 	return ec._RecordingConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRecordingExtra2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExtraᚄ(ctx context.Context, sel ast.SelectionSet, v []*RecordingExtra) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRecordingExtra2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExtra(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRecordingExtra2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingExtra(ctx context.Context, sel ast.SelectionSet, v *RecordingExtra) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RecordingExtra(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNRecordingOrderField2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecordingOrderField(ctx context.Context, v any) (*ent.RecordingOrderField, error) {

@@ -102,6 +102,13 @@ type QueueEntry struct {
 	ExtrasCount          int                 `json:"extrasCount"`
 }
 
+type RecordingExtra struct {
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	SizeBytes int    `json:"sizeBytes"`
+	IsDir     bool   `json:"isDir"`
+}
+
 type RecordingsListItem struct {
 	ID                 int64  `json:"id"`
 	ShowID             int64  `json:"showID"`

@@ -96,6 +96,15 @@ type Options struct {
 	// Auto-fetch of unknown ids into the local DB happens regardless of
 	// this flag — this only governs the optional Encora WRITE.
 	AddToCollection bool
+	// SourceFolder, when non-empty, marks this single-file ingest as a
+	// folder-as-unit drop. The path is stamped onto the
+	// recording_versions row's source_folder column so the recording
+	// detail page can later enumerate sibling files (audio/, photos/,
+	// etc.) as 'extras' even though Plan.Apply only moves the main
+	// file. Empty (default) means the ingest is a loose-file import
+	// and the recording's destination folder is the only location with
+	// content.
+	SourceFolder string
 }
 
 // Action constants for ItemResult.Action.
@@ -126,6 +135,11 @@ type ItemResult struct {
 	// the new version row without re-running ffprobe. Zero value when
 	// the probe didn't run (early-skip pipelines).
 	MediaInfo probe.MediaInfo
+	// SourceFolder mirrors Options.SourceFolder onto the per-item state
+	// so recordVersion can stamp the recording_versions.source_folder
+	// column without threading Options through every helper. Empty for
+	// loose-file ingests.
+	SourceFolder string
 }
 
 // Result aggregates per-item outcomes.
@@ -174,7 +188,7 @@ func (e *Engine) Ingest(ctx context.Context, src string, opts Options) (*Result,
 
 // ingestOne runs the full pipeline for a single video path.
 func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemResult {
-	item := ItemResult{Source: src}
+	item := ItemResult{Source: src, SourceFolder: opts.SourceFolder}
 
 	if !e.resolveID(src, opts, &item) {
 		e.recordIngestEvent(ctx, opts, &item)
@@ -354,6 +368,7 @@ func (e *Engine) recordVersion(ctx context.Context, item *ItemResult) {
 		AudioCodec:    audioCodec,
 		FormatLabel:   DefaultFormatLabel(container, quality, videoCodec, size),
 		MediaInfoJSON: encodeMediaInfo(item.MediaInfo, e.Logger),
+		SourceFolder:  item.SourceFolder,
 	}
 	if upsertErr := storage.UpsertVersion(ctx, e.DB, version); upsertErr != nil {
 		e.Logger.Warn().Err(upsertErr).Msg("failed to record version")

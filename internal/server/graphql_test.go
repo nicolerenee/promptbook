@@ -1039,6 +1039,109 @@ func TestGraphQLApplyRecordingRename(t *testing.T) {
 		"recording_versions row must update to the new file_path")
 }
 
+// TestGraphQLRecordingExtrasEmpty covers the loose-file path: a
+// recording whose only version row has an empty source_folder must
+// resolve Recording.extras to [] rather than an error or null. This is
+// the dominant case — every legacy import + every loose-file queue
+// drop ends up here.
+func TestGraphQLRecordingExtrasEmpty(t *testing.T) {
+	t.Parallel()
+	srv, db, _ := recordingRenameTestServer(t)
+	seedRenameRecording(t.Context(), t, db)
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID:  90004242,
+		FilePath:     "/store/greenwich-beacon/main.mkv",
+		SourceFolder: "",
+	}))
+
+	query := `query Q($id: ID!) {
+		recording(id: $id) { extras { path name sizeBytes isDir } }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), query, map[string]any{
+		"id": "recording-90004242",
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			Recording struct {
+				Extras []map[string]any `json:"extras"`
+			} `json:"recording"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+	assert.Empty(t, resp.Data.Recording.Extras,
+		"loose-file recording must resolve extras to []")
+}
+
+// TestGraphQLRecordingExtrasFolderUnit walks a real on-disk folder to
+// validate the directory enumeration: the version row carries a
+// non-empty source_folder, the resolver lists every sibling file and
+// folder, skips the main file + dot-files, and returns a flat list
+// suitable for the SPA's tree renderer.
+func TestGraphQLRecordingExtrasFolderUnit(t *testing.T) {
+	t.Parallel()
+	srv, db, _ := recordingRenameTestServer(t)
+	seedRenameRecording(t.Context(), t, db)
+
+	src := t.TempDir()
+	mainPath := filepath.Join(src, "main.mkv")
+	require.NoError(t, os.WriteFile(mainPath, []byte("video-bytes"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "photo1.jpg"),
+		[]byte("photo"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(src, ".DS_Store"),
+		[]byte("hidden"), 0o600))
+	audioDir := filepath.Join(src, "audio")
+	require.NoError(t, os.Mkdir(audioDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(audioDir, "01 - song.mp3"),
+		[]byte("audio"), 0o600))
+
+	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
+		RecordingID:  90004242,
+		FilePath:     mainPath,
+		SourceFolder: src,
+	}))
+
+	query := `query Q($id: ID!) {
+		recording(id: $id) { extras { path name sizeBytes isDir } }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), query, map[string]any{
+		"id": "recording-90004242",
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.NotContains(t, string(body), `"errors":`, string(body))
+
+	var resp struct {
+		Data struct {
+			Recording struct {
+				Extras []struct {
+					Path      string `json:"path"`
+					Name      string `json:"name"`
+					SizeBytes int    `json:"sizeBytes"`
+					IsDir     bool   `json:"isDir"`
+				} `json:"extras"`
+			} `json:"recording"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &resp))
+
+	paths := make(map[string]bool)
+	for _, e := range resp.Data.Recording.Extras {
+		paths[e.Path] = e.IsDir
+	}
+	// Sibling photo + audio dir + the audio file under it surface;
+	// main.mkv + .DS_Store do not.
+	assert.Contains(t, paths, "photo1.jpg")
+	assert.Contains(t, paths, "audio")
+	assert.True(t, paths["audio"], "audio entry must report isDir=true")
+	assert.Contains(t, paths, "audio/01 - song.mp3")
+	assert.NotContains(t, paths, "main.mkv",
+		"the main version file must not surface as an extra")
+	assert.NotContains(t, paths, ".DS_Store",
+		"hidden dot-files must not surface as extras")
+}
+
 // TestGraphQLRegenerateRecordingNFO covers the thin wrapper around
 // nforefresh.Service.RewriteForRecording: a recording with no version
 // rows still resolves to ok=true (the service's no-version-row case is

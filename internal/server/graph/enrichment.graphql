@@ -127,6 +127,30 @@ extend type Recording {
   # field on Recording (which holds encora's raw free-text — kept on
   # disk but no longer surfaced through GraphQL).
   localReleaseFormat: String!
+  # extras lists every non-main file in the recording's source_folder
+  # (folder-as-unit drops). Returns [] when the version was a
+  # loose-file import or when the source folder is gone. Read-only
+  # display surface; the SPA renders folders as collapsible tree
+  # nodes.
+  extras: [RecordingExtra!]!
+}
+
+# RecordingExtra is one row in the Recording.extras list — a sibling
+# file (or folder) that lived next to the main recording file at
+# ingest time. The SPA renders top-level files as plain rows and
+# top-level folders as collapsible <details> nodes, walking the flat
+# list once to build the tree.
+type RecordingExtra {
+  # Path relative to the source folder root, with forward slashes.
+  # e.g. "audio/01 - Wedding Song.mp3" or "photo1.jpg".
+  path: String!
+  # Display name (last path segment) for the SPA's tree renderer.
+  name: String!
+  # File size in bytes; 0 for directories.
+  sizeBytes: Int!
+  # True for directories. Children are flat under the parent path —
+  # the SPA renders the tree with a single walk.
+  isDir: Boolean!
 }
 
 # Show field extensions. localBannerURL + recordingCount + stateCounts

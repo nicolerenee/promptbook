@@ -38,6 +38,8 @@ type RecordingVersion struct {
 	Notes string `json:"notes,omitempty"`
 	// MediaInfoJSON holds the value of the "media_info_json" field.
 	MediaInfoJSON string `json:"media_info_json,omitempty"`
+	// SourceFolder holds the value of the "source_folder" field.
+	SourceFolder string `json:"source_folder,omitempty"`
 	// AddedAt holds the value of the "added_at" field.
 	AddedAt time.Time `json:"added_at,omitempty"`
 	// LastSeenAt holds the value of the "last_seen_at" field.
@@ -77,7 +79,7 @@ func (*RecordingVersion) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case recordingversion.FieldID, recordingversion.FieldRecordingID, recordingversion.FieldFileSizeBytes:
 			values[i] = new(sql.NullInt64)
-		case recordingversion.FieldFilePath, recordingversion.FieldContainer, recordingversion.FieldQuality, recordingversion.FieldVideoCodec, recordingversion.FieldAudioCodec, recordingversion.FieldFormatLabel, recordingversion.FieldNotes, recordingversion.FieldMediaInfoJSON:
+		case recordingversion.FieldFilePath, recordingversion.FieldContainer, recordingversion.FieldQuality, recordingversion.FieldVideoCodec, recordingversion.FieldAudioCodec, recordingversion.FieldFormatLabel, recordingversion.FieldNotes, recordingversion.FieldMediaInfoJSON, recordingversion.FieldSourceFolder:
 			values[i] = new(sql.NullString)
 		case recordingversion.FieldAddedAt, recordingversion.FieldLastSeenAt:
 			values[i] = new(sql.NullTime)
@@ -162,6 +164,12 @@ func (_m *RecordingVersion) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.MediaInfoJSON = value.String
 			}
+		case recordingversion.FieldSourceFolder:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source_folder", values[i])
+			} else if value.Valid {
+				_m.SourceFolder = value.String
+			}
 		case recordingversion.FieldAddedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field added_at", values[i])
@@ -244,6 +252,9 @@ func (_m *RecordingVersion) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("media_info_json=")
 	builder.WriteString(_m.MediaInfoJSON)
+	builder.WriteString(", ")
+	builder.WriteString("source_folder=")
+	builder.WriteString(_m.SourceFolder)
 	builder.WriteString(", ")
 	builder.WriteString("added_at=")
 	builder.WriteString(_m.AddedAt.Format(time.ANSIC))

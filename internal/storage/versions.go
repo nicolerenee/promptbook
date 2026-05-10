@@ -27,6 +27,12 @@ const FormatSeparator = " | "
 // the recording detail page; legacy versions imported before the
 // field existed leave it as the empty string and the GraphQL resolver
 // returns a null mediaInfo in that case.
+//
+// SourceFolder is the directory the source file lived in at ingest
+// time, captured for folder-as-unit drops so the recording detail
+// page can enumerate sibling files (audio/, photos/, etc.) as
+// 'extras'. Empty for loose-file imports — the recording's
+// destination folder is the only location with content in that case.
 type RecordingVersion struct {
 	ID            int64
 	RecordingID   int64
@@ -39,6 +45,7 @@ type RecordingVersion struct {
 	FormatLabel   string
 	Notes         string
 	MediaInfoJSON string
+	SourceFolder  string
 	AddedAt       time.Time
 	LastSeenAt    time.Time
 }
@@ -116,6 +123,7 @@ func upsertVersion(
 		SetFormatLabel(v.FormatLabel).
 		SetNotes(v.Notes).
 		SetMediaInfoJSON(v.MediaInfoJSON).
+		SetSourceFolder(v.SourceFolder).
 		SetLastSeenAt(v.lastSeenOrNow()).
 		OnConflictColumns(
 			recordingversion.FieldRecordingID,
@@ -130,6 +138,7 @@ func upsertVersion(
 			u.UpdateFormatLabel()
 			u.UpdateNotes()
 			u.UpdateMediaInfoJSON()
+			u.UpdateSourceFolder()
 			u.UpdateLastSeenAt()
 		}).
 		Exec(ctx)
@@ -213,6 +222,7 @@ func recordingVersionFromEnt(r *ent.RecordingVersion) RecordingVersion {
 		FormatLabel:   r.FormatLabel,
 		Notes:         r.Notes,
 		MediaInfoJSON: r.MediaInfoJSON,
+		SourceFolder:  r.SourceFolder,
 		AddedAt:       r.AddedAt,
 		LastSeenAt:    r.LastSeenAt,
 	}

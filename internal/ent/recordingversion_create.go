@@ -147,6 +147,20 @@ func (_c *RecordingVersionCreate) SetNillableMediaInfoJSON(v *string) *Recording
 	return _c
 }
 
+// SetSourceFolder sets the "source_folder" field.
+func (_c *RecordingVersionCreate) SetSourceFolder(v string) *RecordingVersionCreate {
+	_c.mutation.SetSourceFolder(v)
+	return _c
+}
+
+// SetNillableSourceFolder sets the "source_folder" field if the given value is not nil.
+func (_c *RecordingVersionCreate) SetNillableSourceFolder(v *string) *RecordingVersionCreate {
+	if v != nil {
+		_c.SetSourceFolder(*v)
+	}
+	return _c
+}
+
 // SetAddedAt sets the "added_at" field.
 func (_c *RecordingVersionCreate) SetAddedAt(v time.Time) *RecordingVersionCreate {
 	_c.mutation.SetAddedAt(v)
@@ -253,6 +267,10 @@ func (_c *RecordingVersionCreate) defaults() {
 		v := recordingversion.DefaultMediaInfoJSON
 		_c.mutation.SetMediaInfoJSON(v)
 	}
+	if _, ok := _c.mutation.SourceFolder(); !ok {
+		v := recordingversion.DefaultSourceFolder
+		_c.mutation.SetSourceFolder(v)
+	}
 	if _, ok := _c.mutation.AddedAt(); !ok {
 		v := recordingversion.DefaultAddedAt()
 		_c.mutation.SetAddedAt(v)
@@ -294,6 +312,9 @@ func (_c *RecordingVersionCreate) check() error {
 	}
 	if _, ok := _c.mutation.MediaInfoJSON(); !ok {
 		return &ValidationError{Name: "media_info_json", err: errors.New(`ent: missing required field "RecordingVersion.media_info_json"`)}
+	}
+	if _, ok := _c.mutation.SourceFolder(); !ok {
+		return &ValidationError{Name: "source_folder", err: errors.New(`ent: missing required field "RecordingVersion.source_folder"`)}
 	}
 	if _, ok := _c.mutation.AddedAt(); !ok {
 		return &ValidationError{Name: "added_at", err: errors.New(`ent: missing required field "RecordingVersion.added_at"`)}
@@ -372,6 +393,10 @@ func (_c *RecordingVersionCreate) createSpec() (*RecordingVersion, *sqlgraph.Cre
 	if value, ok := _c.mutation.MediaInfoJSON(); ok {
 		_spec.SetField(recordingversion.FieldMediaInfoJSON, field.TypeString, value)
 		_node.MediaInfoJSON = value
+	}
+	if value, ok := _c.mutation.SourceFolder(); ok {
+		_spec.SetField(recordingversion.FieldSourceFolder, field.TypeString, value)
+		_node.SourceFolder = value
 	}
 	if value, ok := _c.mutation.AddedAt(); ok {
 		_spec.SetField(recordingversion.FieldAddedAt, field.TypeTime, value)
@@ -573,6 +598,18 @@ func (u *RecordingVersionUpsert) SetMediaInfoJSON(v string) *RecordingVersionUps
 // UpdateMediaInfoJSON sets the "media_info_json" field to the value that was provided on create.
 func (u *RecordingVersionUpsert) UpdateMediaInfoJSON() *RecordingVersionUpsert {
 	u.SetExcluded(recordingversion.FieldMediaInfoJSON)
+	return u
+}
+
+// SetSourceFolder sets the "source_folder" field.
+func (u *RecordingVersionUpsert) SetSourceFolder(v string) *RecordingVersionUpsert {
+	u.Set(recordingversion.FieldSourceFolder, v)
+	return u
+}
+
+// UpdateSourceFolder sets the "source_folder" field to the value that was provided on create.
+func (u *RecordingVersionUpsert) UpdateSourceFolder() *RecordingVersionUpsert {
+	u.SetExcluded(recordingversion.FieldSourceFolder)
 	return u
 }
 
@@ -792,6 +829,20 @@ func (u *RecordingVersionUpsertOne) SetMediaInfoJSON(v string) *RecordingVersion
 func (u *RecordingVersionUpsertOne) UpdateMediaInfoJSON() *RecordingVersionUpsertOne {
 	return u.Update(func(s *RecordingVersionUpsert) {
 		s.UpdateMediaInfoJSON()
+	})
+}
+
+// SetSourceFolder sets the "source_folder" field.
+func (u *RecordingVersionUpsertOne) SetSourceFolder(v string) *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.SetSourceFolder(v)
+	})
+}
+
+// UpdateSourceFolder sets the "source_folder" field to the value that was provided on create.
+func (u *RecordingVersionUpsertOne) UpdateSourceFolder() *RecordingVersionUpsertOne {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.UpdateSourceFolder()
 	})
 }
 
@@ -1181,6 +1232,20 @@ func (u *RecordingVersionUpsertBulk) SetMediaInfoJSON(v string) *RecordingVersio
 func (u *RecordingVersionUpsertBulk) UpdateMediaInfoJSON() *RecordingVersionUpsertBulk {
 	return u.Update(func(s *RecordingVersionUpsert) {
 		s.UpdateMediaInfoJSON()
+	})
+}
+
+// SetSourceFolder sets the "source_folder" field.
+func (u *RecordingVersionUpsertBulk) SetSourceFolder(v string) *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.SetSourceFolder(v)
+	})
+}
+
+// UpdateSourceFolder sets the "source_folder" field to the value that was provided on create.
+func (u *RecordingVersionUpsertBulk) UpdateSourceFolder() *RecordingVersionUpsertBulk {
+	return u.Update(func(s *RecordingVersionUpsert) {
+		s.UpdateSourceFolder()
 	})
 }
 
