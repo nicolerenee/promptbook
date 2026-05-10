@@ -79,6 +79,7 @@ type QueueEntry struct {
 	SuggestedRecording   *RecordingsListItem `json:"suggestedRecording,omitempty"`
 	SuggestedConfidence  string              `json:"suggestedConfidence"`
 	Notes                string              `json:"notes"`
+	ExtrasCount          int                 `json:"extrasCount"`
 }
 
 type RecordingsListItem struct {

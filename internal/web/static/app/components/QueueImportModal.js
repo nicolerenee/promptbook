@@ -417,12 +417,24 @@ const QueueImportModal = {
           }, '✕')),
         m('h3', { class: 'font-bold text-lg mb-2 pr-8' }, 'Import file'),
 
-        // File path + size header.
+        // File path + size header. extras_count surfaces alongside the
+        // path so the user is reminded that the folder also holds
+        // companion files; only the main file moves on import.
         m('div', { class: 'space-y-1 mb-4' }, [
-          m('div', {
-            class: 'font-mono text-sm truncate',
-            title: filePath,
-          }, filePath),
+          m('div', { class: 'flex items-center gap-2 min-w-0' }, [
+            m('div', {
+              class: 'font-mono text-sm truncate',
+              title: filePath,
+            }, filePath),
+            item.extras_count > 0
+              ? m('span', {
+                  class: 'badge badge-ghost badge-sm shrink-0',
+                  title: 'Other media files in the same folder. ' +
+                         'Only the main file imports; extras stay in place.',
+                }, '+' + item.extras_count + ' extra' +
+                   (item.extras_count === 1 ? '' : 's'))
+              : null,
+          ]),
           m('div', { class: 'text-xs opacity-60 font-mono' }, size),
         ]),
 

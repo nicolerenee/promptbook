@@ -4305,6 +4305,8 @@ type ManualImportQueueMutation struct {
 	addsuggested_recording_id *int64
 	suggested_confidence      *string
 	notes                     *string
+	extras_count              *int
+	addextras_count           *int
 	clearedFields             map[string]struct{}
 	done                      bool
 	oldValue                  func(context.Context) (*ManualImportQueue, error)
@@ -4715,6 +4717,62 @@ func (m *ManualImportQueueMutation) ResetNotes() {
 	m.notes = nil
 }
 
+// SetExtrasCount sets the "extras_count" field.
+func (m *ManualImportQueueMutation) SetExtrasCount(i int) {
+	m.extras_count = &i
+	m.addextras_count = nil
+}
+
+// ExtrasCount returns the value of the "extras_count" field in the mutation.
+func (m *ManualImportQueueMutation) ExtrasCount() (r int, exists bool) {
+	v := m.extras_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExtrasCount returns the old "extras_count" field's value of the ManualImportQueue entity.
+// If the ManualImportQueue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ManualImportQueueMutation) OldExtrasCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExtrasCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExtrasCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExtrasCount: %w", err)
+	}
+	return oldValue.ExtrasCount, nil
+}
+
+// AddExtrasCount adds i to the "extras_count" field.
+func (m *ManualImportQueueMutation) AddExtrasCount(i int) {
+	if m.addextras_count != nil {
+		*m.addextras_count += i
+	} else {
+		m.addextras_count = &i
+	}
+}
+
+// AddedExtrasCount returns the value that was added to the "extras_count" field in this mutation.
+func (m *ManualImportQueueMutation) AddedExtrasCount() (r int, exists bool) {
+	v := m.addextras_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetExtrasCount resets all changes to the "extras_count" field.
+func (m *ManualImportQueueMutation) ResetExtrasCount() {
+	m.extras_count = nil
+	m.addextras_count = nil
+}
+
 // Where appends a list predicates to the ManualImportQueueMutation builder.
 func (m *ManualImportQueueMutation) Where(ps ...predicate.ManualImportQueue) {
 	m.predicates = append(m.predicates, ps...)
@@ -4749,7 +4807,7 @@ func (m *ManualImportQueueMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ManualImportQueueMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 8)
 	if m.file_path != nil {
 		fields = append(fields, manualimportqueue.FieldFilePath)
 	}
@@ -4770,6 +4828,9 @@ func (m *ManualImportQueueMutation) Fields() []string {
 	}
 	if m.notes != nil {
 		fields = append(fields, manualimportqueue.FieldNotes)
+	}
+	if m.extras_count != nil {
+		fields = append(fields, manualimportqueue.FieldExtrasCount)
 	}
 	return fields
 }
@@ -4793,6 +4854,8 @@ func (m *ManualImportQueueMutation) Field(name string) (ent.Value, bool) {
 		return m.SuggestedConfidence()
 	case manualimportqueue.FieldNotes:
 		return m.Notes()
+	case manualimportqueue.FieldExtrasCount:
+		return m.ExtrasCount()
 	}
 	return nil, false
 }
@@ -4816,6 +4879,8 @@ func (m *ManualImportQueueMutation) OldField(ctx context.Context, name string) (
 		return m.OldSuggestedConfidence(ctx)
 	case manualimportqueue.FieldNotes:
 		return m.OldNotes(ctx)
+	case manualimportqueue.FieldExtrasCount:
+		return m.OldExtrasCount(ctx)
 	}
 	return nil, fmt.Errorf("unknown ManualImportQueue field %s", name)
 }
@@ -4874,6 +4939,13 @@ func (m *ManualImportQueueMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetNotes(v)
 		return nil
+	case manualimportqueue.FieldExtrasCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExtrasCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ManualImportQueue field %s", name)
 }
@@ -4888,6 +4960,9 @@ func (m *ManualImportQueueMutation) AddedFields() []string {
 	if m.addsuggested_recording_id != nil {
 		fields = append(fields, manualimportqueue.FieldSuggestedRecordingID)
 	}
+	if m.addextras_count != nil {
+		fields = append(fields, manualimportqueue.FieldExtrasCount)
+	}
 	return fields
 }
 
@@ -4900,6 +4975,8 @@ func (m *ManualImportQueueMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedFileSizeBytes()
 	case manualimportqueue.FieldSuggestedRecordingID:
 		return m.AddedSuggestedRecordingID()
+	case manualimportqueue.FieldExtrasCount:
+		return m.AddedExtrasCount()
 	}
 	return nil, false
 }
@@ -4922,6 +4999,13 @@ func (m *ManualImportQueueMutation) AddField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddSuggestedRecordingID(v)
+		return nil
+	case manualimportqueue.FieldExtrasCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddExtrasCount(v)
 		return nil
 	}
 	return fmt.Errorf("unknown ManualImportQueue numeric field %s", name)
@@ -4979,6 +5063,9 @@ func (m *ManualImportQueueMutation) ResetField(name string) error {
 		return nil
 	case manualimportqueue.FieldNotes:
 		m.ResetNotes()
+		return nil
+	case manualimportqueue.FieldExtrasCount:
+		m.ResetExtrasCount()
 		return nil
 	}
 	return fmt.Errorf("unknown ManualImportQueue field %s", name)

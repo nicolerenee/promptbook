@@ -122,6 +122,10 @@ func init() {
 	manualimportqueueDescNotes := manualimportqueueFields[6].Descriptor()
 	// manualimportqueue.DefaultNotes holds the default value on creation for the notes field.
 	manualimportqueue.DefaultNotes = manualimportqueueDescNotes.Default.(string)
+	// manualimportqueueDescExtrasCount is the schema descriptor for extras_count field.
+	manualimportqueueDescExtrasCount := manualimportqueueFields[7].Descriptor()
+	// manualimportqueue.DefaultExtrasCount holds the default value on creation for the extras_count field.
+	manualimportqueue.DefaultExtrasCount = manualimportqueueDescExtrasCount.Default.(int)
 	performerFields := schema.Performer{}.Fields()
 	_ = performerFields
 	// performerDescSlug is the schema descriptor for slug field.

@@ -1,9 +1,22 @@
 // Package scanner implements a polling watched-folder scanner. It walks
-// each configured directory on a fixed interval, classifies every video
-// file it sees, and pushes anything that isn't already an ingested
-// recording onto the manual_import_queue with a confidence label. The
-// poll-instead-of-fsnotify shape is deliberate: the user's Performances
-// library lives on an NFS mount where inotify/kqueue are unreliable.
+// each configured directory on a fixed interval and pushes anything
+// that isn't already an ingested recording onto the manual_import_queue
+// with a confidence label. The poll-instead-of-fsnotify shape is
+// deliberate: the user's Performances library lives on an NFS mount
+// where inotify/kqueue are unreliable.
+//
+// Folder-as-unit model. The scanner walks the watched dir one level
+// deep:
+//
+//   - A loose video file at the root produces one queue entry pointing
+//     at the file (the legacy shape).
+//   - A folder produces exactly one queue entry. The "main" file (the
+//     largest media file anywhere inside the tree, biased toward video
+//     and toward the folder root on size ties) becomes the queue row's
+//     FilePath; ExtrasCount records how many other media files live in
+//     the source folder. The folder structure stays intact on disk —
+//     the import path moves only the main file, leaving the extras
+//     where they are for the user to deal with later.
 //
 // The scanner takes no auto-action — that's policy for the UI/CLI. It
 // is purely an observer: enqueue when the file is interesting, remove
@@ -160,42 +173,211 @@ func (e *Engine) reconcileMissing(ctx context.Context, res *Result) error {
 	return nil
 }
 
-// walkDir descends dir and processes each video file. Per-file errors
-// are tracked on res; a directory walk error (permissions, missing
-// root) gets recorded as a single error and the walk aborts for that
-// directory.
+// audioExtensions are recognized as ingestable companion audio files
+// when descending a folder-as-unit. Lower-case, includes dot. The
+// scanner only treats audio as a candidate "main file" — it does not
+// independently enqueue audio rows. Top-level loose audio at the
+// watched-dir root is intentionally ignored: that path is still
+// "video files only" because audio-only files at the root are almost
+// certainly per-track exports the user dropped while triaging, not
+// recordings to import.
+//
+//nolint:gochecknoglobals // immutable lookup table.
+var audioExtensions = map[string]struct{}{
+	".mp3":  {},
+	".flac": {},
+	".wav":  {},
+	".m4a":  {},
+	".aac":  {},
+	".ogg":  {},
+	".opus": {},
+}
+
+// walkDir scans dir one level deep. Each top-level FILE that's a video
+// is enqueued as today (one queue entry, FilePath = the file). Each
+// top-level FOLDER becomes one queue entry, with FilePath pointing at
+// the largest media file anywhere inside the tree (the "main"
+// recording) and ExtrasCount counting the rest. Folders with no media
+// at all are skipped. Per-file errors are tracked on res; a missing
+// or unreadable root gets recorded as a single error.
 func (e *Engine) walkDir(ctx context.Context, dir string, res *Result) {
-	walkErr := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			recordError(res, fmt.Errorf("walk %q: %w", path, walkErr))
-			// Returning nil on a per-entry error keeps the walk going for
-			// the remaining files; only a fatal walk failure (the root
-			// itself unreadable) reaches the outer return below.
-			return nil
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		recordError(res, fmt.Errorf("read watched dir %q: %w", dir, err))
+		return
+	}
+	for _, entry := range entries {
+		if cerr := ctx.Err(); cerr != nil {
+			return
 		}
-		if err := ctx.Err(); err != nil {
-			return err
+		path := filepath.Join(dir, entry.Name())
+		if entry.IsDir() {
+			e.walkFolderUnit(ctx, path, res)
+			continue
+		}
+		if _, ok := ingest.VideoExtensions[strings.ToLower(filepath.Ext(path))]; !ok {
+			res.Skipped++
+			continue
+		}
+		e.processFile(ctx, path, res, 0)
+	}
+}
+
+// walkFolderUnit treats folder as one recording-with-extras. It walks
+// the entire subtree to find every media file, picks the "main" file
+// using mainFile's heuristic, and enqueues a single row pointing at
+// it. ExtrasCount is the count of OTHER media files (audio + video)
+// found alongside the main one. Empty folders (no media at all) are
+// silently skipped.
+//
+// TODO: multi-part folder handling. When two video files inside the
+// folder are similar size and their filenames carry part markers
+// ({Part}-1, act 1 / act 2, pt-1 / pt-2), this is one recording split
+// across two files — both should ride into ingest together. For now
+// we still pick the largest as main and let the user sort it out
+// during import.
+func (e *Engine) walkFolderUnit(ctx context.Context, folder string, res *Result) {
+	media, err := collectMediaFiles(folder)
+	if err != nil {
+		recordError(res, fmt.Errorf("walk folder %q: %w", folder, err))
+		return
+	}
+	if len(media) == 0 {
+		// Folder has no media — nothing to do, including no error.
+		// This skips per-show poster-only drops and similar scaffolding
+		// the user may have left in incoming/.
+		e.Logger.Debug().Str("folder", folder).Msg("scanner: empty folder, skipping")
+		return
+	}
+	main := mainFile(media)
+	extras := len(media) - 1
+	e.processFile(ctx, main, res, extras)
+}
+
+// mediaFile is a single hit from collectMediaFiles — the absolute
+// path + size of one video/audio file inside a folder-as-unit.
+type mediaFile struct {
+	path string
+	size int64
+	// rootLevel is true when path sits at the very top of the folder
+	// being walked (depth 0). Used by mainFile as a tie-breaker so a
+	// recording at the folder root wins over a similarly-sized track in
+	// audio/.
+	rootLevel bool
+	// isVideo is true when the file's extension is in VideoExtensions.
+	// Used by mainFile to bias toward video formats when sizes are
+	// close.
+	isVideo bool
+}
+
+// collectMediaFiles walks folder recursively and returns every video
+// + audio file it finds. Non-media files (jpg, txt, srt, nfo, …) are
+// skipped — they're never main-file candidates. Per-entry errors are
+// silently absorbed so a single permission glitch can't drop the
+// whole folder; only a fatal walker error reaches the caller.
+func collectMediaFiles(folder string) ([]mediaFile, error) {
+	var out []mediaFile
+	walkErr := filepath.WalkDir(folder, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			//nolint:nilerr // intentional: keep walking past per-entry errors so a single permission blip doesn't drop the whole folder.
+			return nil
 		}
 		if d.IsDir() {
 			return nil
 		}
-		if _, ok := ingest.VideoExtensions[strings.ToLower(filepath.Ext(path))]; !ok {
-			res.Skipped++
+		ext := strings.ToLower(filepath.Ext(path))
+		_, isVideo := ingest.VideoExtensions[ext]
+		_, isAudio := audioExtensions[ext]
+		if !isVideo && !isAudio {
 			return nil
 		}
-		e.processFile(ctx, path, res)
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			//nolint:nilerr // intentional: same rationale — keep walking past entry-level info errors.
+			return nil
+		}
+		out = append(out, mediaFile{
+			path:      path,
+			size:      info.Size(),
+			rootLevel: filepath.Dir(path) == folder,
+			isVideo:   isVideo,
+		})
 		return nil
 	})
-	if walkErr != nil && !errors.Is(walkErr, context.Canceled) {
-		recordError(res, fmt.Errorf("walk root %q: %w", dir, walkErr))
+	if walkErr != nil {
+		return nil, fmt.Errorf("walk: %w", walkErr)
 	}
+	return out, nil
 }
 
-// processFile classifies one video and dispatches to the right
-// queue-mutation. It treats every "couldn't make sense of this file"
-// case as an error tracked on res rather than a hard failure — one
-// bad permission shouldn't abort the rest of the walk.
-func (e *Engine) processFile(ctx context.Context, path string, res *Result) {
+// mainFile picks the "main" recording out of a folder-as-unit's media
+// hits. Heuristic:
+//
+//   - Largest by size wins (the recording itself halflings per-track
+//     extracts in nearly every real-world drop pattern).
+//   - When the next-largest is within 10% of the leader, prefer a
+//     file at the folder root over one in a subdirectory (audio/),
+//     and then prefer video over audio. The 10% band is wide enough
+//     to forgive container-overhead differences without letting a
+//     single per-track audio rip masquerade as the main file.
+//
+// media must be non-empty — callers gate on len(media) == 0 first.
+func mainFile(media []mediaFile) string {
+	// Find the leader by size first.
+	leader := media[0]
+	for _, m := range media[1:] {
+		if m.size > leader.size {
+			leader = m
+		}
+	}
+	// Then sweep for any candidate within 10% of the leader's size and
+	// apply the root-level / video-preferred tie-breakers. The 10%
+	// band is symmetric: candidate.size * 1.10 >= leader.size.
+	const (
+		closeBandPct = 10
+		percentDenom = 100
+	)
+	threshold := leader.size - leader.size*closeBandPct/percentDenom
+	for _, m := range media {
+		if m.path == leader.path {
+			continue
+		}
+		if m.size < threshold {
+			continue
+		}
+		// Within the close band — apply tie-breakers.
+		if betterMain(m, leader) {
+			leader = m
+		}
+	}
+	return leader.path
+}
+
+// betterMain returns true when candidate beats current as the main
+// file under the close-size tie-breaker rules: prefer a root-level
+// file over a nested one, and prefer a video over an audio file when
+// the root-level state is equal.
+func betterMain(candidate, current mediaFile) bool {
+	if candidate.rootLevel && !current.rootLevel {
+		return true
+	}
+	if !candidate.rootLevel && current.rootLevel {
+		return false
+	}
+	if candidate.isVideo && !current.isVideo {
+		return true
+	}
+	return false
+}
+
+// processFile classifies one main file (loose at the watched-dir root
+// or the picked main of a folder-as-unit) and dispatches to the right
+// queue mutation. extrasCount is the number of OTHER media files
+// alongside path inside its source folder; pass 0 for loose-file
+// rows. It treats every "couldn't make sense of this file" case as an
+// error tracked on res rather than a hard failure — one bad
+// permission shouldn't abort the rest of the walk.
+func (e *Engine) processFile(ctx context.Context, path string, res *Result, extrasCount int) {
 	info, err := os.Stat(path)
 	if err != nil {
 		recordError(res, fmt.Errorf("stat %q: %w", path, err))
@@ -217,6 +399,7 @@ func (e *Engine) processFile(ctx context.Context, path string, res *Result) {
 	entry := storage.QueueEntry{
 		FilePath:      path,
 		FileSizeBytes: info.Size(),
+		ExtrasCount:   extrasCount,
 	}
 
 	id, _, resolveErr := rename.Resolve(path, 0)

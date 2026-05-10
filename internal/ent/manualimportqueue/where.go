@@ -89,6 +89,11 @@ func Notes(v string) predicate.ManualImportQueue {
 	return predicate.ManualImportQueue(sql.FieldEQ(FieldNotes, v))
 }
 
+// ExtrasCount applies equality check predicate on the "extras_count" field. It's identical to ExtrasCountEQ.
+func ExtrasCount(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldEQ(FieldExtrasCount, v))
+}
+
 // FilePathEQ applies the EQ predicate on the "file_path" field.
 func FilePathEQ(v string) predicate.ManualImportQueue {
 	return predicate.ManualImportQueue(sql.FieldEQ(FieldFilePath, v))
@@ -452,6 +457,46 @@ func NotesEqualFold(v string) predicate.ManualImportQueue {
 // NotesContainsFold applies the ContainsFold predicate on the "notes" field.
 func NotesContainsFold(v string) predicate.ManualImportQueue {
 	return predicate.ManualImportQueue(sql.FieldContainsFold(FieldNotes, v))
+}
+
+// ExtrasCountEQ applies the EQ predicate on the "extras_count" field.
+func ExtrasCountEQ(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldEQ(FieldExtrasCount, v))
+}
+
+// ExtrasCountNEQ applies the NEQ predicate on the "extras_count" field.
+func ExtrasCountNEQ(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldNEQ(FieldExtrasCount, v))
+}
+
+// ExtrasCountIn applies the In predicate on the "extras_count" field.
+func ExtrasCountIn(vs ...int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldIn(FieldExtrasCount, vs...))
+}
+
+// ExtrasCountNotIn applies the NotIn predicate on the "extras_count" field.
+func ExtrasCountNotIn(vs ...int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldNotIn(FieldExtrasCount, vs...))
+}
+
+// ExtrasCountGT applies the GT predicate on the "extras_count" field.
+func ExtrasCountGT(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldGT(FieldExtrasCount, v))
+}
+
+// ExtrasCountGTE applies the GTE predicate on the "extras_count" field.
+func ExtrasCountGTE(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldGTE(FieldExtrasCount, v))
+}
+
+// ExtrasCountLT applies the LT predicate on the "extras_count" field.
+func ExtrasCountLT(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldLT(FieldExtrasCount, v))
+}
+
+// ExtrasCountLTE applies the LTE predicate on the "extras_count" field.
+func ExtrasCountLTE(v int) predicate.ManualImportQueue {
+	return predicate.ManualImportQueue(sql.FieldLTE(FieldExtrasCount, v))
 }
 
 // And groups predicates with the AND operator between them.

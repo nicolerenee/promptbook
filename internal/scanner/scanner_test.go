@@ -64,6 +64,19 @@ func (f *fixture) writeVideo(t *testing.T, name string) string {
 	return full
 }
 
+// writeFile drops a file at the supplied absolute path with size-byte
+// content (so file size assertions can distinguish files that differ
+// only in extras-bias). Parent directories are created on demand.
+func writeFile(t *testing.T, path string, size int) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	buf := make([]byte, size)
+	for i := range buf {
+		buf[i] = byte('a' + (i % 26))
+	}
+	require.NoError(t, os.WriteFile(path, buf, 0o644))
+}
+
 // seedRecording inserts a recordings row plus its parent show. Mirrors
 // the helpers in the storage package's own tests but kept local so the
 // scanner package doesn't depend on storage_test internals.
@@ -238,4 +251,147 @@ func TestScanIgnoresNonVideo(t *testing.T) {
 	got, err := storage.ListQueue(f.ctx, f.db)
 	require.NoError(t, err)
 	assert.Empty(t, got)
+}
+
+// TestScanTreatsFolderAsUnit covers the canonical drop pattern: a
+// folder with one main video + a sibling audio/ subdir of per-track
+// rips + a photos/ subdir. The scanner must produce exactly one queue
+// entry pointing at the main video, with extras_count covering the
+// audio tracks. Photos / non-media are ignored.
+func TestScanTreatsFolderAsUnit(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir,
+		"Halcyon Crossing - Broadway - September, 2024 [fixturetrader14]")
+	main := filepath.Join(folder,
+		"Halcyon Crossing - Broadway - September, 2024.mkv")
+	track1 := filepath.Join(folder, "audio", "01 - Wedding Song.mp3")
+	track2 := filepath.Join(folder, "audio", "02 - Way Down Halcyon Crossing.mp3")
+	track3 := filepath.Join(folder, "audio", "03 - Anyway the Wind Blows.mp3")
+	photo1 := filepath.Join(folder, "photos", "backdrop.jpg")
+	photo2 := filepath.Join(folder, "photos", "cast.jpg")
+
+	// Main video is by far the largest media file; extras are smaller
+	// so the heuristic doesn't have to lean on any tie-breaker.
+	writeFile(t, main, 1024*1024)
+	writeFile(t, track1, 4*1024)
+	writeFile(t, track2, 4*1024)
+	writeFile(t, track3, 4*1024)
+	writeFile(t, photo1, 2*1024)
+	writeFile(t, photo2, 2*1024)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued, "exactly one queue row per folder")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, main, got[0].FilePath, "FilePath = the main video")
+	assert.Equal(t, 3, got[0].ExtrasCount,
+		"three audio tracks counted as extras; photos ignored")
+}
+
+// TestScanFolderUnitPicksLargestVideo verifies the largest-file
+// heuristic when two media files sit at the folder root. The bigger
+// one wins regardless of name order on disk.
+func TestScanFolderUnitPicksLargestVideo(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Some Show 2024-03-15")
+	smaller := filepath.Join(folder, "trailer.mkv")
+	larger := filepath.Join(folder, "main.mkv")
+
+	writeFile(t, smaller, 8*1024)
+	writeFile(t, larger, 1024*1024)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued)
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, larger, got[0].FilePath,
+		"largest media file wins as the main")
+	assert.Equal(t, 1, got[0].ExtrasCount,
+		"the other root-level video counts as one extra")
+}
+
+// TestScanFolderUnitPrefersRootOverNested verifies the close-band
+// tie-breaker: when two media files are within ~10% of each other in
+// size, the root-level one beats the nested one. Mirrors a folder
+// where audio/track-01.mp3 happens to be similar in size to a tiny
+// teaser.mp3 the user dropped at the root.
+func TestScanFolderUnitPrefersRootOverNested(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Tied Sizes")
+	rootClip := filepath.Join(folder, "teaser.mp3")
+	nested := filepath.Join(folder, "audio", "track-01.mp3")
+
+	// Nested file is fractionally larger but well within the 10% band,
+	// so the root-level tie-breaker should still pick teaser.mp3.
+	writeFile(t, rootClip, 100*1024)
+	writeFile(t, nested, 102*1024)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued)
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, rootClip, got[0].FilePath,
+		"close-band tie-breaker prefers root-level file")
+	assert.Equal(t, 1, got[0].ExtrasCount)
+}
+
+// TestScanSkipsEmptyFolder verifies that a folder with no media files
+// (only photos / readmes / etc.) is silently dropped — no queue row,
+// no error.
+func TestScanSkipsEmptyFolder(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Just Photos")
+	writeFile(t, filepath.Join(folder, "poster.jpg"), 4*1024)
+	writeFile(t, filepath.Join(folder, "notes.txt"), 32)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, res.Enqueued, "empty folder produces no row")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+// TestScanLooseFileExtrasCountIsZero pins the contract that loose
+// top-level files still produce a queue row with extras_count == 0
+// (folder-as-unit only kicks in for top-level directories).
+func TestScanLooseFileExtrasCountIsZero(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	path := f.writeVideo(t, "Greenwich Beacon-2024-03-15.mkv")
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued)
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, path, got[0].FilePath)
+	assert.Equal(t, 0, got[0].ExtrasCount,
+		"loose-file rows always have extras_count = 0")
 }

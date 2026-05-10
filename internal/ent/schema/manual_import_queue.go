@@ -43,6 +43,12 @@ func (ManualImportQueue) Fields() []ent.Field {
 		field.Int64("suggested_recording_id").Optional().Nillable(),
 		field.Text("suggested_confidence").Default(""),
 		field.Text("notes").Default(""),
+		// extras_count counts the OTHER media files in the same source
+		// folder when a queue row represents a folder-as-unit (i.e. the
+		// FilePath points at a "main" recording living in a folder that
+		// also holds per-track audio rips, photos, etc.). 0 for queue
+		// rows whose source is a loose file at the watched-dir root.
+		field.Int("extras_count").Default(0),
 	}
 }
 

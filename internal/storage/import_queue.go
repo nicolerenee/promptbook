@@ -27,7 +27,10 @@ var ErrQueueEntryNotFound = errors.New("storage: manual import queue entry not f
 // QueueEntry is one row in the manual_import_queue table — a file the
 // watched-folder scanner couldn't auto-resolve to an Encora recording.
 // SuggestedRecordingID is a pointer because the scanner may have no
-// suggestion at all.
+// suggestion at all. ExtrasCount is the number of OTHER media files in
+// the same source folder when the row represents a folder-as-unit
+// (i.e. FilePath is the "main" file living next to per-track audio rips
+// or photos). 0 for loose-file rows at the watched-dir root.
 type QueueEntry struct {
 	ID                   int64
 	FilePath             string
@@ -37,6 +40,7 @@ type QueueEntry struct {
 	SuggestedRecordingID *int64
 	SuggestedConfidence  string
 	Notes                string
+	ExtrasCount          int
 }
 
 // EnqueueFile inserts e into the queue, or updates the existing row if
@@ -53,7 +57,8 @@ func EnqueueFile(ctx context.Context, client *ent.Client, e QueueEntry) (int64, 
 		SetFileSizeBytes(e.FileSizeBytes).
 		SetLastSeenAt(now).
 		SetSuggestedConfidence(e.SuggestedConfidence).
-		SetNotes(e.Notes)
+		SetNotes(e.Notes).
+		SetExtrasCount(e.ExtrasCount)
 	if e.SuggestedRecordingID != nil {
 		create = create.SetSuggestedRecordingID(*e.SuggestedRecordingID)
 	}
@@ -69,6 +74,7 @@ func EnqueueFile(ctx context.Context, client *ent.Client, e QueueEntry) (int64, 
 			}
 			u.UpdateSuggestedConfidence()
 			u.UpdateNotes()
+			u.UpdateExtrasCount()
 		}).
 		Exec(ctx)
 	if err != nil {
@@ -154,6 +160,7 @@ func queueEntryFromEnt(r *ent.ManualImportQueue) QueueEntry {
 		LastSeenAt:          r.LastSeenAt,
 		SuggestedConfidence: r.SuggestedConfidence,
 		Notes:               r.Notes,
+		ExtrasCount:         r.ExtrasCount,
 	}
 	if r.SuggestedRecordingID != nil {
 		v := *r.SuggestedRecordingID

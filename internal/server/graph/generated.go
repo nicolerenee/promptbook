@@ -200,6 +200,7 @@ type ComplexityRoot struct {
 
 	QueueEntry struct {
 		DiscoveredAt         func(childComplexity int) int
+		ExtrasCount          func(childComplexity int) int
 		FilePath             func(childComplexity int) int
 		FileSizeBytes        func(childComplexity int) int
 		ID                   func(childComplexity int) int
@@ -1217,6 +1218,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.QueueEntry.DiscoveredAt(childComplexity), true
+	case "QueueEntry.extrasCount":
+		if e.ComplexityRoot.QueueEntry.ExtrasCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.ExtrasCount(childComplexity), true
 	case "QueueEntry.filePath":
 		if e.ComplexityRoot.QueueEntry.FilePath == nil {
 			break
@@ -2635,6 +2642,8 @@ func (ec *executionContext) childFields_QueueEntry(ctx context.Context, field gr
 		return ec.fieldContext_QueueEntry_suggestedConfidence(ctx, field)
 	case "notes":
 		return ec.fieldContext_QueueEntry_notes(ctx, field)
+	case "extrasCount":
+		return ec.fieldContext_QueueEntry_extrasCount(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type QueueEntry", field.Name)
 }
@@ -7130,6 +7139,29 @@ func (ec *executionContext) _QueueEntry_notes(ctx context.Context, field graphql
 }
 func (ec *executionContext) fieldContext_QueueEntry_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_extrasCount(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_extrasCount(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExtrasCount, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_extrasCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _Recording_id(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
@@ -20177,6 +20209,11 @@ func (ec *executionContext) _QueueEntry(ctx context.Context, sel ast.SelectionSe
 			}
 		case "notes":
 			out.Values[i] = ec._QueueEntry_notes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "extrasCount":
+			out.Values[i] = ec._QueueEntry_extrasCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

@@ -147,6 +147,27 @@ func (_u *ManualImportQueueUpdate) SetNillableNotes(v *string) *ManualImportQueu
 	return _u
 }
 
+// SetExtrasCount sets the "extras_count" field.
+func (_u *ManualImportQueueUpdate) SetExtrasCount(v int) *ManualImportQueueUpdate {
+	_u.mutation.ResetExtrasCount()
+	_u.mutation.SetExtrasCount(v)
+	return _u
+}
+
+// SetNillableExtrasCount sets the "extras_count" field if the given value is not nil.
+func (_u *ManualImportQueueUpdate) SetNillableExtrasCount(v *int) *ManualImportQueueUpdate {
+	if v != nil {
+		_u.SetExtrasCount(*v)
+	}
+	return _u
+}
+
+// AddExtrasCount adds value to the "extras_count" field.
+func (_u *ManualImportQueueUpdate) AddExtrasCount(v int) *ManualImportQueueUpdate {
+	_u.mutation.AddExtrasCount(v)
+	return _u
+}
+
 // Mutation returns the ManualImportQueueMutation object of the builder.
 func (_u *ManualImportQueueUpdate) Mutation() *ManualImportQueueMutation {
 	return _u.mutation
@@ -223,6 +244,12 @@ func (_u *ManualImportQueueUpdate) sqlSave(ctx context.Context) (_node int, err 
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(manualimportqueue.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ExtrasCount(); ok {
+		_spec.SetField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedExtrasCount(); ok {
+		_spec.AddField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
 	}
 	_spec.AddModifiers(_u.modifiers...)
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
@@ -364,6 +391,27 @@ func (_u *ManualImportQueueUpdateOne) SetNillableNotes(v *string) *ManualImportQ
 	return _u
 }
 
+// SetExtrasCount sets the "extras_count" field.
+func (_u *ManualImportQueueUpdateOne) SetExtrasCount(v int) *ManualImportQueueUpdateOne {
+	_u.mutation.ResetExtrasCount()
+	_u.mutation.SetExtrasCount(v)
+	return _u
+}
+
+// SetNillableExtrasCount sets the "extras_count" field if the given value is not nil.
+func (_u *ManualImportQueueUpdateOne) SetNillableExtrasCount(v *int) *ManualImportQueueUpdateOne {
+	if v != nil {
+		_u.SetExtrasCount(*v)
+	}
+	return _u
+}
+
+// AddExtrasCount adds value to the "extras_count" field.
+func (_u *ManualImportQueueUpdateOne) AddExtrasCount(v int) *ManualImportQueueUpdateOne {
+	_u.mutation.AddExtrasCount(v)
+	return _u
+}
+
 // Mutation returns the ManualImportQueueMutation object of the builder.
 func (_u *ManualImportQueueUpdateOne) Mutation() *ManualImportQueueMutation {
 	return _u.mutation
@@ -470,6 +518,12 @@ func (_u *ManualImportQueueUpdateOne) sqlSave(ctx context.Context) (_node *Manua
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(manualimportqueue.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ExtrasCount(); ok {
+		_spec.SetField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedExtrasCount(); ok {
+		_spec.AddField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
 	}
 	_spec.AddModifiers(_u.modifiers...)
 	_node = &ManualImportQueue{config: _u.config}

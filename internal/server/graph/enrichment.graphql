@@ -263,6 +263,11 @@ type QueueEntry {
   suggestedRecording: RecordingsListItem
   suggestedConfidence: String!
   notes: String!
+  # extrasCount is the number of OTHER media files in the same source
+  # folder when this row represents a folder-as-unit drop. Surfaced so
+  # the SPA can render "+N extras" next to the file path. 0 for loose
+  # files at the watched-dir root.
+  extrasCount: Int!
 }
 
 extend type Query {

@@ -1039,6 +1039,7 @@ func queueEntryToGraphQL(e storage.QueueEntry) *QueueEntry {
 		LastSeenAt:          e.LastSeenAt,
 		SuggestedConfidence: e.SuggestedConfidence,
 		Notes:               e.Notes,
+		ExtrasCount:         e.ExtrasCount,
 	}
 	if e.SuggestedRecordingID != nil {
 		v := *e.SuggestedRecordingID

@@ -112,6 +112,20 @@ func (_c *ManualImportQueueCreate) SetNillableNotes(v *string) *ManualImportQueu
 	return _c
 }
 
+// SetExtrasCount sets the "extras_count" field.
+func (_c *ManualImportQueueCreate) SetExtrasCount(v int) *ManualImportQueueCreate {
+	_c.mutation.SetExtrasCount(v)
+	return _c
+}
+
+// SetNillableExtrasCount sets the "extras_count" field if the given value is not nil.
+func (_c *ManualImportQueueCreate) SetNillableExtrasCount(v *int) *ManualImportQueueCreate {
+	if v != nil {
+		_c.SetExtrasCount(*v)
+	}
+	return _c
+}
+
 // Mutation returns the ManualImportQueueMutation object of the builder.
 func (_c *ManualImportQueueCreate) Mutation() *ManualImportQueueMutation {
 	return _c.mutation
@@ -167,6 +181,10 @@ func (_c *ManualImportQueueCreate) defaults() {
 		v := manualimportqueue.DefaultNotes
 		_c.mutation.SetNotes(v)
 	}
+	if _, ok := _c.mutation.ExtrasCount(); !ok {
+		v := manualimportqueue.DefaultExtrasCount
+		_c.mutation.SetExtrasCount(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -188,6 +206,9 @@ func (_c *ManualImportQueueCreate) check() error {
 	}
 	if _, ok := _c.mutation.Notes(); !ok {
 		return &ValidationError{Name: "notes", err: errors.New(`ent: missing required field "ManualImportQueue.notes"`)}
+	}
+	if _, ok := _c.mutation.ExtrasCount(); !ok {
+		return &ValidationError{Name: "extras_count", err: errors.New(`ent: missing required field "ManualImportQueue.extras_count"`)}
 	}
 	return nil
 }
@@ -243,6 +264,10 @@ func (_c *ManualImportQueueCreate) createSpec() (*ManualImportQueue, *sqlgraph.C
 	if value, ok := _c.mutation.Notes(); ok {
 		_spec.SetField(manualimportqueue.FieldNotes, field.TypeString, value)
 		_node.Notes = value
+	}
+	if value, ok := _c.mutation.ExtrasCount(); ok {
+		_spec.SetField(manualimportqueue.FieldExtrasCount, field.TypeInt, value)
+		_node.ExtrasCount = value
 	}
 	return _node, _spec
 }
@@ -395,6 +420,24 @@ func (u *ManualImportQueueUpsert) SetNotes(v string) *ManualImportQueueUpsert {
 // UpdateNotes sets the "notes" field to the value that was provided on create.
 func (u *ManualImportQueueUpsert) UpdateNotes() *ManualImportQueueUpsert {
 	u.SetExcluded(manualimportqueue.FieldNotes)
+	return u
+}
+
+// SetExtrasCount sets the "extras_count" field.
+func (u *ManualImportQueueUpsert) SetExtrasCount(v int) *ManualImportQueueUpsert {
+	u.Set(manualimportqueue.FieldExtrasCount, v)
+	return u
+}
+
+// UpdateExtrasCount sets the "extras_count" field to the value that was provided on create.
+func (u *ManualImportQueueUpsert) UpdateExtrasCount() *ManualImportQueueUpsert {
+	u.SetExcluded(manualimportqueue.FieldExtrasCount)
+	return u
+}
+
+// AddExtrasCount adds v to the "extras_count" field.
+func (u *ManualImportQueueUpsert) AddExtrasCount(v int) *ManualImportQueueUpsert {
+	u.Add(manualimportqueue.FieldExtrasCount, v)
 	return u
 }
 
@@ -554,6 +597,27 @@ func (u *ManualImportQueueUpsertOne) SetNotes(v string) *ManualImportQueueUpsert
 func (u *ManualImportQueueUpsertOne) UpdateNotes() *ManualImportQueueUpsertOne {
 	return u.Update(func(s *ManualImportQueueUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetExtrasCount sets the "extras_count" field.
+func (u *ManualImportQueueUpsertOne) SetExtrasCount(v int) *ManualImportQueueUpsertOne {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.SetExtrasCount(v)
+	})
+}
+
+// AddExtrasCount adds v to the "extras_count" field.
+func (u *ManualImportQueueUpsertOne) AddExtrasCount(v int) *ManualImportQueueUpsertOne {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.AddExtrasCount(v)
+	})
+}
+
+// UpdateExtrasCount sets the "extras_count" field to the value that was provided on create.
+func (u *ManualImportQueueUpsertOne) UpdateExtrasCount() *ManualImportQueueUpsertOne {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.UpdateExtrasCount()
 	})
 }
 
@@ -877,6 +941,27 @@ func (u *ManualImportQueueUpsertBulk) SetNotes(v string) *ManualImportQueueUpser
 func (u *ManualImportQueueUpsertBulk) UpdateNotes() *ManualImportQueueUpsertBulk {
 	return u.Update(func(s *ManualImportQueueUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetExtrasCount sets the "extras_count" field.
+func (u *ManualImportQueueUpsertBulk) SetExtrasCount(v int) *ManualImportQueueUpsertBulk {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.SetExtrasCount(v)
+	})
+}
+
+// AddExtrasCount adds v to the "extras_count" field.
+func (u *ManualImportQueueUpsertBulk) AddExtrasCount(v int) *ManualImportQueueUpsertBulk {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.AddExtrasCount(v)
+	})
+}
+
+// UpdateExtrasCount sets the "extras_count" field to the value that was provided on create.
+func (u *ManualImportQueueUpsertBulk) UpdateExtrasCount() *ManualImportQueueUpsertBulk {
+	return u.Update(func(s *ManualImportQueueUpsert) {
+		s.UpdateExtrasCount()
 	})
 }
 

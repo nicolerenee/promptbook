@@ -27,6 +27,8 @@ const (
 	FieldSuggestedConfidence = "suggested_confidence"
 	// FieldNotes holds the string denoting the notes field in the database.
 	FieldNotes = "notes"
+	// FieldExtrasCount holds the string denoting the extras_count field in the database.
+	FieldExtrasCount = "extras_count"
 	// Table holds the table name of the manualimportqueue in the database.
 	Table = "manual_import_queue"
 )
@@ -41,6 +43,7 @@ var Columns = []string{
 	FieldSuggestedRecordingID,
 	FieldSuggestedConfidence,
 	FieldNotes,
+	FieldExtrasCount,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -64,6 +67,8 @@ var (
 	DefaultSuggestedConfidence string
 	// DefaultNotes holds the default value on creation for the "notes" field.
 	DefaultNotes string
+	// DefaultExtrasCount holds the default value on creation for the "extras_count" field.
+	DefaultExtrasCount int
 )
 
 // OrderOption defines the ordering options for the ManualImportQueue queries.
@@ -107,4 +112,9 @@ func BySuggestedConfidence(opts ...sql.OrderTermOption) OrderOption {
 // ByNotes orders the results by the notes field.
 func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNotes, opts...).ToFunc()
+}
+
+// ByExtrasCount orders the results by the extras_count field.
+func ByExtrasCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExtrasCount, opts...).ToFunc()
 }

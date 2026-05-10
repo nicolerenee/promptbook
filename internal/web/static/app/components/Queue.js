@@ -58,6 +58,7 @@ const QUEUE_QUERY = `
       suggestedRecordingID
       suggestedConfidence
       notes
+      extrasCount
       suggestedRecording {
         id
         showID
@@ -102,6 +103,8 @@ function mapSuggestedRecording(node) {
 // the legacy renderer was written against. id + suggested_recording_id
 // fall back to bare integers; suggested_recording carries the rich
 // summary (or null) used by the table cell + the modal's pre-fill.
+// extras_count is the number of OTHER media files in the row's source
+// folder (folder-as-unit drops); 0 for loose-file rows.
 function mapQueueItem(node) {
   if (!node) return null;
   const out = {
@@ -112,6 +115,7 @@ function mapQueueItem(node) {
     last_seen_at:         node.lastSeenAt || '',
     suggested_confidence: node.suggestedConfidence || '',
     notes:                node.notes || '',
+    extras_count:         node.extrasCount || 0,
     suggested_recording:  mapSuggestedRecording(node.suggestedRecording),
   };
   if (node.suggestedRecordingID) {
@@ -251,10 +255,20 @@ function Row(item) {
     m('td', ConfidenceBadge(item.suggested_confidence)),
     m('td', SuggestedMatchCell(item)),
     m('td',
-      m('span', {
-        class: 'font-mono text-sm block truncate max-w-[480px]',
-        title: item.file_path || '',
-      }, item.file_path || '')),
+      m('div', { class: 'flex items-center gap-2 min-w-0' }, [
+        m('span', {
+          class: 'font-mono text-sm truncate max-w-[480px]',
+          title: item.file_path || '',
+        }, item.file_path || ''),
+        item.extras_count > 0
+          ? m('span', {
+              class: 'badge badge-ghost badge-sm shrink-0',
+              title: 'Other media files in the same folder. ' +
+                     'Only the main file imports; extras stay in place.',
+            }, '+' + item.extras_count + ' extra' +
+               (item.extras_count === 1 ? '' : 's'))
+          : null,
+      ])),
     m('td', { class: 'font-mono text-sm whitespace-nowrap' },
       humanSize(item.file_size_bytes)),
   ]);

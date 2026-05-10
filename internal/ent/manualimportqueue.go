@@ -30,7 +30,9 @@ type ManualImportQueue struct {
 	// SuggestedConfidence holds the value of the "suggested_confidence" field.
 	SuggestedConfidence string `json:"suggested_confidence,omitempty"`
 	// Notes holds the value of the "notes" field.
-	Notes        string `json:"notes,omitempty"`
+	Notes string `json:"notes,omitempty"`
+	// ExtrasCount holds the value of the "extras_count" field.
+	ExtrasCount  int `json:"extras_count,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -39,7 +41,7 @@ func (*ManualImportQueue) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case manualimportqueue.FieldID, manualimportqueue.FieldFileSizeBytes, manualimportqueue.FieldSuggestedRecordingID:
+		case manualimportqueue.FieldID, manualimportqueue.FieldFileSizeBytes, manualimportqueue.FieldSuggestedRecordingID, manualimportqueue.FieldExtrasCount:
 			values[i] = new(sql.NullInt64)
 		case manualimportqueue.FieldFilePath, manualimportqueue.FieldSuggestedConfidence, manualimportqueue.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -109,6 +111,12 @@ func (_m *ManualImportQueue) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				_m.Notes = value.String
 			}
+		case manualimportqueue.FieldExtrasCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field extras_count", values[i])
+			} else if value.Valid {
+				_m.ExtrasCount = int(value.Int64)
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -167,6 +175,9 @@ func (_m *ManualImportQueue) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("notes=")
 	builder.WriteString(_m.Notes)
+	builder.WriteString(", ")
+	builder.WriteString("extras_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ExtrasCount))
 	builder.WriteByte(')')
 	return builder.String()
 }

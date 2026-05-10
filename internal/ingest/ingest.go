@@ -264,6 +264,13 @@ func (e *Engine) fillDryRunPaths(item *ItemResult) {
 }
 
 func (e *Engine) applyPlan(ctx context.Context, item *ItemResult) {
+	// Plan.Apply moves ONLY the source file into the canonical library
+	// destination. When the queue row was a folder-as-unit drop (the
+	// scanner picked the main recording out of a folder that also
+	// holds per-track audio rips, photos, etc.), the extras stay in
+	// the source folder untouched. Surfacing them as proper "extras"
+	// in Jellyfin is a future feature; for now the user manages those
+	// files manually after the main recording lands.
 	if _, applyErr := item.Plan.Apply(); applyErr != nil {
 		item.Err = applyErr
 		item.Action = ActionSkipped
