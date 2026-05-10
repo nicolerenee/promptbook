@@ -178,19 +178,26 @@ func TestNFO_WithPublicURL(t *testing.T) {
 			got := string(body)
 
 			// Movie poster: <thumb aspect="poster">URL</thumb> at the
-			// recording's poster slot.
-			assert.Contains(t, got,
-				`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg</thumb>`)
+			// recording's poster slot. WriteOptions had no Cache so
+			// the placeholder fall-through stamps "?v=generated".
+			assert.Contains(
+				t,
+				got,
+				`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg?v=generated</thumb>`,
+			)
 			// Fanart wraps a <thumb> child.
-			assert.Contains(t, got,
-				`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg</thumb>`)
+			assert.Contains(
+				t,
+				got,
+				`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg?v=generated</thumb>`,
+			)
 			// First cast entry on the Marigold fixture is Avery Morrison
 			// James (performer id 90001001, role Marigold).
 			assert.Contains(t, got,
-				`<thumb>https://promptbook.example.com/images/actors/90001001.jpg</thumb>`)
+				`<thumb>https://promptbook.example.com/images/actors/90001001.jpg?v=generated</thumb>`)
 			// And the last named cast entry is Marisol Vandermeer (id 90001018).
 			assert.Contains(t, got,
-				`<thumb>https://promptbook.example.com/images/actors/90001018.jpg</thumb>`)
+				`<thumb>https://promptbook.example.com/images/actors/90001018.jpg?v=generated</thumb>`)
 			// No double-slash anywhere.
 			assert.NotContains(t, got, `//images/`)
 		})
@@ -245,7 +252,8 @@ func TestNFO_PublicURLCacheBust(t *testing.T) {
 	// XML chardata.
 	assert.Contains(t, got, fmt.Sprintf(
 		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg?v=%d</thumb>`,
-		posterMtime))
+		posterMtime,
+	))
 	assert.Contains(t, got, fmt.Sprintf(
 		`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg?v=%d</thumb>`,
 		fanartMtime))
@@ -282,12 +290,23 @@ func TestNFO_PublicURLNoCacheBareURLs(t *testing.T) {
 	require.NoError(t, err)
 	got := string(body)
 
-	// No `?v=` suffix anywhere — Cache was nil so every mtime returns
-	// 0 and versionedURL emits the bare URL.
-	assert.NotContains(t, got, "?v=")
-	// Bare URLs still present.
+	// Cache nil → every mtime is 0 and versionedURL stamps
+	// `?v=generated` so media servers know the URL points at a
+	// synthesized placeholder. No `?v={number}` should leak through.
+	assert.NotContains(t, got, "?v=1") // any unix-second mtime value
+	// Generated marker present on every URL.
+	assert.Contains(
+		t,
+		got,
+		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg?v=generated</thumb>`,
+	)
+	assert.Contains(
+		t,
+		got,
+		`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg?v=generated</thumb>`,
+	)
 	assert.Contains(t, got,
-		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg</thumb>`)
+		`<thumb>https://promptbook.example.com/images/actors/90001001.jpg?v=generated</thumb>`)
 }
 
 // TestNFO_PublicURLPartialMtime covers the mixed case: PublicURL set,
@@ -321,13 +340,18 @@ func TestNFO_PublicURLPartialMtime(t *testing.T) {
 
 	assert.Contains(t, got, fmt.Sprintf(
 		`<thumb aspect="poster">https://promptbook.example.com/images/recordings/90100222/poster.jpg?v=%d</thumb>`,
-		posterMtime))
-	// Fanart bare — no `?v=` suffix.
+		posterMtime,
+	))
+	// Fanart placeholder — file isn't on disk so versionedURL stamps
+	// the "generated" marker.
+	assert.Contains(
+		t,
+		got,
+		`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg?v=generated</thumb>`,
+	)
+	// Headshot 90001001 placeholder — file isn't on disk.
 	assert.Contains(t, got,
-		`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg</thumb>`)
-	// Headshot 90001001 bare — file isn't on disk.
-	assert.Contains(t, got,
-		`<thumb>https://promptbook.example.com/images/actors/90001001.jpg</thumb>`)
+		`<thumb>https://promptbook.example.com/images/actors/90001001.jpg?v=generated</thumb>`)
 }
 
 // writeImageWithMtime writes a 1-byte placeholder at path and

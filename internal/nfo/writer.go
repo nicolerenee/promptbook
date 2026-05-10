@@ -445,14 +445,20 @@ func applyPublicURLImages(
 	}
 }
 
-// versionedURL appends `?v={mtime}` when mtime > 0 and returns the
-// bare base URL otherwise. The bare-URL fallback is intentional: a
-// missing on-disk file means "no image yet"; emitting `?v=0` would
-// mask the case and make later debugging harder when comparing the
-// NFO against the cache state.
+// versionedURL appends a cache-buster to base. With a real on-disk
+// mtime (mtime > 0) the buster is the unix-second timestamp so a
+// freshly-uploaded image bumps the URL and media servers re-fetch on
+// their next NFO scan. With no on-disk file (mtime == 0) the buster
+// is the literal "generated" — the server's /images/* route falls
+// through to the placeholder generator on cache miss, so the URL is
+// still useful, and the explicit "generated" tag tells operators
+// (and grep) that the URL points at a synthesized placeholder rather
+// than a real upload. When the user later uploads a real image, the
+// rewrite cascade replaces "generated" with the actual mtime, which
+// invalidates the placeholder in any media server's URL cache.
 func versionedURL(base string, mtime int64) string {
 	if mtime <= 0 {
-		return base
+		return base + "?v=generated"
 	}
 	return fmt.Sprintf("%s?v=%d", base, mtime)
 }
