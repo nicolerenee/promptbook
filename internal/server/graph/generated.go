@@ -96,6 +96,12 @@ type ComplexityRoot struct {
 		Node   func(childComplexity int) int
 	}
 
+	ImportPreview struct {
+		DestAbsolute func(childComplexity int) int
+		DestFile     func(childComplexity int) int
+		DestFolder   func(childComplexity int) int
+	}
+
 	ImportQueueEntryPayload struct {
 		Action func(childComplexity int) int
 		Dest   func(childComplexity int) int
@@ -170,24 +176,26 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		CollectionEntries func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, where *ent.CollectionEntryWhereInput) int
-		CollectionEntry   func(childComplexity int, id int64) int
-		Node              func(childComplexity int, id int64) int
-		Nodes             func(childComplexity int, ids []int64) int
-		PeopleList        func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
-		Performer         func(childComplexity int, id int64) int
-		Performers        func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.PerformerOrder, where *ent.PerformerWhereInput) int
-		Person            func(childComplexity int, id int64) int
-		Queue             func(childComplexity int) int
-		Recording         func(childComplexity int, id int64) int
-		Recordings        func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
-		RecordingsList    func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
-		Show              func(childComplexity int, id int64) int
-		Shows             func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.ShowOrder, where *ent.ShowWhereInput) int
-		ShowsList         func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
-		SyncRuns          func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.SyncRunOrder, where *ent.SyncRunWhereInput) int
-		WantsEntries      func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.WantsEntryOrder, where *ent.WantsEntryWhereInput) int
-		WantsEntry        func(childComplexity int, id int64) int
+		CollectionEntries  func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, where *ent.CollectionEntryWhereInput) int
+		CollectionEntry    func(childComplexity int, id int64) int
+		Node               func(childComplexity int, id int64) int
+		Nodes              func(childComplexity int, ids []int64) int
+		PeopleList         func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
+		Performer          func(childComplexity int, id int64) int
+		Performers         func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.PerformerOrder, where *ent.PerformerWhereInput) int
+		Person             func(childComplexity int, id int64) int
+		PreviewQueueImport func(childComplexity int, input PreviewQueueImportInput) int
+		Queue              func(childComplexity int) int
+		Recording          func(childComplexity int, id int64) int
+		Recordings         func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
+		RecordingsList     func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
+		SearchRecordings   func(childComplexity int, query string, limit *int) int
+		Show               func(childComplexity int, id int64) int
+		Shows              func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.ShowOrder, where *ent.ShowWhereInput) int
+		ShowsList          func(childComplexity int, sort *string, dir *string, limit *int, offset *int) int
+		SyncRuns           func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.SyncRunOrder, where *ent.SyncRunWhereInput) int
+		WantsEntries       func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.WantsEntryOrder, where *ent.WantsEntryWhereInput) int
+		WantsEntry         func(childComplexity int, id int64) int
 	}
 
 	QueueEntry struct {
@@ -198,6 +206,7 @@ type ComplexityRoot struct {
 		LastSeenAt           func(childComplexity int) int
 		Notes                func(childComplexity int) int
 		SuggestedConfidence  func(childComplexity int) int
+		SuggestedRecording   func(childComplexity int) int
 		SuggestedRecordingID func(childComplexity int) int
 	}
 
@@ -446,6 +455,8 @@ type QueryResolver interface {
 	PeopleList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*PersonListPage, error)
 	Person(ctx context.Context, id int64) (*PersonDetail, error)
 	Queue(ctx context.Context) ([]*QueueEntry, error)
+	SearchRecordings(ctx context.Context, query string, limit *int) ([]*RecordingsListItem, error)
+	PreviewQueueImport(ctx context.Context, input PreviewQueueImportInput) (*ImportPreview, error)
 }
 type RecordingResolver interface {
 	Status(ctx context.Context, obj *ent.Recording) (string, error)
@@ -690,6 +701,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CollectionEntryEdge.Node(childComplexity), true
+
+	case "ImportPreview.destAbsolute":
+		if e.ComplexityRoot.ImportPreview.DestAbsolute == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportPreview.DestAbsolute(childComplexity), true
+	case "ImportPreview.destFile":
+		if e.ComplexityRoot.ImportPreview.DestFile == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportPreview.DestFile(childComplexity), true
+	case "ImportPreview.destFolder":
+		if e.ComplexityRoot.ImportPreview.DestFolder == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ImportPreview.DestFolder(childComplexity), true
 
 	case "ImportQueueEntryPayload.action":
 		if e.ComplexityRoot.ImportQueueEntryPayload.Action == nil {
@@ -1053,6 +1083,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Person(childComplexity, args["id"].(int64)), true
+	case "Query.previewQueueImport":
+		if e.ComplexityRoot.Query.PreviewQueueImport == nil {
+			break
+		}
+
+		args, err := ec.field_Query_previewQueueImport_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.PreviewQueueImport(childComplexity, args["input"].(PreviewQueueImportInput)), true
 	case "Query.queue":
 		if e.ComplexityRoot.Query.Queue == nil {
 			break
@@ -1092,6 +1133,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.RecordingsList(childComplexity, args["status"].(*string), args["sort"].(*string), args["dir"].(*string), args["limit"].(*int), args["offset"].(*int)), true
+	case "Query.searchRecordings":
+		if e.ComplexityRoot.Query.SearchRecordings == nil {
+			break
+		}
+
+		args, err := ec.field_Query_searchRecordings_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.SearchRecordings(childComplexity, args["query"].(string), args["limit"].(*int)), true
 	case "Query.show":
 		if e.ComplexityRoot.Query.Show == nil {
 			break
@@ -1201,6 +1253,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.QueueEntry.SuggestedConfidence(childComplexity), true
+	case "QueueEntry.suggestedRecording":
+		if e.ComplexityRoot.QueueEntry.SuggestedRecording == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueEntry.SuggestedRecording(childComplexity), true
 	case "QueueEntry.suggestedRecordingID":
 		if e.ComplexityRoot.QueueEntry.SuggestedRecordingID == nil {
 			break
@@ -2193,6 +2251,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputImportQueueEntryInput,
 		ec.unmarshalInputPerformerOrder,
 		ec.unmarshalInputPerformerWhereInput,
+		ec.unmarshalInputPreviewQueueImportInput,
 		ec.unmarshalInputRecordingOrder,
 		ec.unmarshalInputRecordingVersionWhereInput,
 		ec.unmarshalInputRecordingWhereInput,
@@ -2406,6 +2465,18 @@ func (ec *executionContext) childFields_CollectionEntryEdge(ctx context.Context,
 	return nil, fmt.Errorf("no field named %q was found under type CollectionEntryEdge", field.Name)
 }
 
+func (ec *executionContext) childFields_ImportPreview(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "destFolder":
+		return ec.fieldContext_ImportPreview_destFolder(ctx, field)
+	case "destFile":
+		return ec.fieldContext_ImportPreview_destFile(ctx, field)
+	case "destAbsolute":
+		return ec.fieldContext_ImportPreview_destAbsolute(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ImportPreview", field.Name)
+}
+
 func (ec *executionContext) childFields_ImportQueueEntryPayload(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "ok":
@@ -2558,6 +2629,8 @@ func (ec *executionContext) childFields_QueueEntry(ctx context.Context, field gr
 		return ec.fieldContext_QueueEntry_lastSeenAt(ctx, field)
 	case "suggestedRecordingID":
 		return ec.fieldContext_QueueEntry_suggestedRecordingID(ctx, field)
+	case "suggestedRecording":
+		return ec.fieldContext_QueueEntry_suggestedRecording(ctx, field)
 	case "suggestedConfidence":
 		return ec.fieldContext_QueueEntry_suggestedConfidence(ctx, field)
 	case "notes":
@@ -3356,6 +3429,20 @@ func (ec *executionContext) field_Query_person_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_previewQueueImport_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (PreviewQueueImportInput, error) {
+			return ec.unmarshalNPreviewQueueImportInput2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐPreviewQueueImportInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_recording_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -3467,6 +3554,28 @@ func (ec *executionContext) field_Query_recordings_args(ctx context.Context, raw
 		return nil, err
 	}
 	args["where"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_searchRecordings_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "query",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["query"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "limit",
+		func(ctx context.Context, v any) (*int, error) {
+			return ec.unmarshalOInt2ᚖint(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg1
 	return args, nil
 }
 
@@ -4728,6 +4837,75 @@ func (ec *executionContext) _CollectionEntryEdge_cursor(ctx context.Context, fie
 }
 func (ec *executionContext) fieldContext_CollectionEntryEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CollectionEntryEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
+}
+
+func (ec *executionContext) _ImportPreview_destFolder(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportPreview_destFolder(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DestFolder, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportPreview_destFolder(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ImportPreview_destFile(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportPreview_destFile(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DestFile, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportPreview_destFile(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ImportPreview_destAbsolute(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ImportPreview_destAbsolute(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DestAbsolute, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ImportPreview_destAbsolute(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ImportPreview", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _ImportQueueEntryPayload_ok(ctx context.Context, field graphql.CollectedField, obj *ImportQueueEntryPayload) (ret graphql.Marshaler) {
@@ -6574,6 +6752,94 @@ func (ec *executionContext) fieldContext_Query_queue(_ context.Context, field gr
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_searchRecordings(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_searchRecordings(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().SearchRecordings(ctx, fc.Args["query"].(string), fc.Args["limit"].(*int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*RecordingsListItem) graphql.Marshaler {
+			return ec.marshalNRecordingsListItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItemᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_searchRecordings(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordingsListItem(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_searchRecordings_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_previewQueueImport(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_previewQueueImport(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().PreviewQueueImport(ctx, fc.Args["input"].(PreviewQueueImportInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ImportPreview) graphql.Marshaler {
+			return ec.marshalNImportPreview2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportPreview(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_previewQueueImport(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ImportPreview(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_previewQueueImport_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6786,6 +7052,38 @@ func (ec *executionContext) _QueueEntry_suggestedRecordingID(ctx context.Context
 }
 func (ec *executionContext) fieldContext_QueueEntry_suggestedRecordingID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("QueueEntry", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _QueueEntry_suggestedRecording(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueEntry_suggestedRecording(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SuggestedRecording, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *RecordingsListItem) graphql.Marshaler {
+			return ec.marshalORecordingsListItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItem(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_QueueEntry_suggestedRecording(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "QueueEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordingsListItem(ctx, field)
+		},
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _QueueEntry_suggestedConfidence(ctx context.Context, field graphql.CollectedField, obj *QueueEntry) (ret graphql.Marshaler) {
@@ -13830,6 +14128,43 @@ func (ec *executionContext) unmarshalInputPerformerWhereInput(ctx context.Contex
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputPreviewQueueImportInput(ctx context.Context, obj any) (PreviewQueueImportInput, error) {
+	var it PreviewQueueImportInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"queueID", "recordingID"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "queueID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("queueID"))
+			data, err := ec.unmarshalNID2int64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.QueueID = data
+		case "recordingID":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("recordingID"))
+			data, err := ec.unmarshalNID2int64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RecordingID = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputRecordingOrder(ctx context.Context, obj any) (ent.RecordingOrder, error) {
 	var it ent.RecordingOrder
 	if obj == nil {
@@ -18693,6 +19028,55 @@ func (ec *executionContext) _CollectionEntryEdge(ctx context.Context, sel ast.Se
 	return out
 }
 
+var importPreviewImplementors = []string{"ImportPreview"}
+
+func (ec *executionContext) _ImportPreview(ctx context.Context, sel ast.SelectionSet, obj *ImportPreview) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, importPreviewImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ImportPreview")
+		case "destFolder":
+			out.Values[i] = ec._ImportPreview_destFolder(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "destFile":
+			out.Values[i] = ec._ImportPreview_destFile(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "destAbsolute":
+			out.Values[i] = ec._ImportPreview_destAbsolute(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var importQueueEntryPayloadImplementors = []string{"ImportQueueEntryPayload"}
 
 func (ec *executionContext) _ImportQueueEntryPayload(ctx context.Context, sel ast.SelectionSet, obj *ImportQueueEntryPayload) graphql.Marshaler {
@@ -19671,6 +20055,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "searchRecordings":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_searchRecordings(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "previewQueueImport":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_previewQueueImport(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -19740,6 +20168,8 @@ func (ec *executionContext) _QueueEntry(ctx context.Context, sel ast.SelectionSe
 			}
 		case "suggestedRecordingID":
 			out.Values[i] = ec._QueueEntry_suggestedRecordingID(ctx, field, obj)
+		case "suggestedRecording":
+			out.Values[i] = ec._QueueEntry_suggestedRecording(ctx, field, obj)
 		case "suggestedConfidence":
 			out.Values[i] = ec._QueueEntry_suggestedConfidence(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -22419,6 +22849,20 @@ func (ec *executionContext) marshalNID2ᚕint64ᚄ(ctx context.Context, sel ast.
 	return ret
 }
 
+func (ec *executionContext) marshalNImportPreview2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportPreview(ctx context.Context, sel ast.SelectionSet, v ImportPreview) graphql.Marshaler {
+	return ec._ImportPreview(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNImportPreview2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportPreview(ctx context.Context, sel ast.SelectionSet, v *ImportPreview) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ImportPreview(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNImportQueueEntryInput2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐImportQueueEntryInput(ctx context.Context, v any) (ImportQueueEntryInput, error) {
 	res, err := ec.unmarshalInputImportQueueEntryInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -22593,6 +23037,11 @@ func (ec *executionContext) marshalNPersonRecording2ᚖgithubᚗcomᚋnicolerene
 		return graphql.Null
 	}
 	return ec._PersonRecording(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPreviewQueueImportInput2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐPreviewQueueImportInput(ctx context.Context, v any) (PreviewQueueImportInput, error) {
+	res, err := ec.unmarshalInputPreviewQueueImportInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNQueueEntry2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐQueueEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*QueueEntry) graphql.Marshaler {
@@ -23589,6 +24038,13 @@ func (ec *executionContext) unmarshalORecordingWhereInput2ᚖgithubᚗcomᚋnico
 	}
 	res, err := ec.unmarshalInputRecordingWhereInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalORecordingsListItem2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRecordingsListItem(ctx context.Context, sel ast.SelectionSet, v *RecordingsListItem) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._RecordingsListItem(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOShow2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐShow(ctx context.Context, sel ast.SelectionSet, v *ent.Show) graphql.Marshaler {

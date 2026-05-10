@@ -11,6 +11,12 @@ type BannerLayout struct {
 	ImageRegion string `json:"imageRegion"`
 }
 
+type ImportPreview struct {
+	DestFolder   string `json:"destFolder"`
+	DestFile     string `json:"destFile"`
+	DestAbsolute string `json:"destAbsolute"`
+}
+
 type ImportQueueEntryInput struct {
 	QueueID     int64  `json:"queueID"`
 	RecordingID *int64 `json:"recordingID,omitempty"`
@@ -58,15 +64,21 @@ type PersonRecording struct {
 	State          string `json:"state"`
 }
 
+type PreviewQueueImportInput struct {
+	QueueID     int64 `json:"queueID"`
+	RecordingID int64 `json:"recordingID"`
+}
+
 type QueueEntry struct {
-	ID                   int64     `json:"id"`
-	FilePath             string    `json:"filePath"`
-	FileSizeBytes        int       `json:"fileSizeBytes"`
-	DiscoveredAt         time.Time `json:"discoveredAt"`
-	LastSeenAt           time.Time `json:"lastSeenAt"`
-	SuggestedRecordingID *int64    `json:"suggestedRecordingID,omitempty"`
-	SuggestedConfidence  string    `json:"suggestedConfidence"`
-	Notes                string    `json:"notes"`
+	ID                   int64               `json:"id"`
+	FilePath             string              `json:"filePath"`
+	FileSizeBytes        int                 `json:"fileSizeBytes"`
+	DiscoveredAt         time.Time           `json:"discoveredAt"`
+	LastSeenAt           time.Time           `json:"lastSeenAt"`
+	SuggestedRecordingID *int64              `json:"suggestedRecordingID,omitempty"`
+	SuggestedRecording   *RecordingsListItem `json:"suggestedRecording,omitempty"`
+	SuggestedConfidence  string              `json:"suggestedConfidence"`
+	Notes                string              `json:"notes"`
 }
 
 type RecordingsListItem struct {

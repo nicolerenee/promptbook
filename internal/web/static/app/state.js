@@ -141,15 +141,20 @@ export const state = {
     // an alert-info toast (mirrors recording.imageInfo).
     imageInfo: null,
   },
-  // queue mirrors the legacy /static/queue.js view-model. items holds
-  // the current /api/v1/queue rows; importing tracks per-row buttons
-  // disabled while a POST is in flight so a re-render doesn't lose
-  // the "Importing…" affordance.
+  // queue mirrors the manual_import_queue view-model. items holds
+  // the latest GraphQL `queue` payload (with the rich
+  // suggestedRecording field unwrapped per row). importingItem +
+  // importingLocal drive the QueueImportModal: importingItem is the
+  // row whose modal is open (null when closed); importingLocal is
+  // the per-modal local state (typed query, search results, picked
+  // match, preview path, in-flight flag) — held on the page so it
+  // survives Mithril redraws while the modal is open.
   queue: {
     items: [],
     loading: true,
     error: null,
-    importing: {},        // {[queueID]: true} while a POST is mid-flight.
+    importingItem:  null,
+    importingLocal: null,
   },
   // history mirrors the legacy /static/history.js view-model. kind is
   // the active filter tab; recordingID, when set, scopes the list to

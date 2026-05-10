@@ -34,20 +34,23 @@ const graphqlAPQCacheSize = 100
 const websocketKeepAlive = 10 * time.Second
 
 // newGraphQLHandler builds a configured gqlgen server backed by the
-// supplied ent client + image cache + ingest runner + logger. Mirrors
-// gqlgen's deprecated NewDefaultServer (transports + introspection +
-// APQ + LRU query cache) but pinned to the constants defined above.
-// cache may be nil — the enrichment resolvers nil-check before
-// reading. ingestEngine may be nil — the importQueueEntry mutation
-// returns an "ingest not configured" error in that case so the rest of
-// the schema stays usable.
+// supplied ent client + image cache + ingest runner + library plan +
+// logger. Mirrors gqlgen's deprecated NewDefaultServer (transports +
+// introspection + APQ + LRU query cache) but pinned to the constants
+// defined above. cache may be nil — the enrichment resolvers
+// nil-check before reading. ingestEngine may be nil — the
+// importQueueEntry mutation returns an "ingest not configured" error
+// in that case so the rest of the schema stays usable. libraryPlan
+// may be the zero value — the previewQueueImport query returns a
+// "library not configured" error in that mode.
 func newGraphQLHandler(
 	client *ent.Client,
 	cache *imagecache.Cache,
 	ingestEngine graph.IngestRunner,
+	libraryPlan graph.LibraryPlan,
 	logger zerolog.Logger,
 ) *handler.Server {
-	srv := handler.New(graph.NewSchema(client, cache, ingestEngine, logger))
+	srv := handler.New(graph.NewSchema(client, cache, ingestEngine, libraryPlan, logger))
 	srv.AddTransport(transport.Websocket{KeepAlivePingInterval: websocketKeepAlive})
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
@@ -75,7 +78,9 @@ func newGraphQLHandler(
 // enrichment resolvers + the importQueueEntry mutation can drive the
 // same surfaces the legacy REST handlers used to.
 func (s *Server) registerGraphQL() {
-	gql := newGraphQLHandler(s.db, s.imageCache, s.ingestEngine, s.logger)
+	gql := newGraphQLHandler(
+		s.db, s.imageCache, s.ingestEngine, s.libraryPlan(), s.logger,
+	)
 	s.echo.POST("/graphql", echo.WrapHandler(gql))
 	s.echo.GET("/graphql", echo.WrapHandler(gql))
 	s.echo.GET(

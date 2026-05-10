@@ -287,6 +287,18 @@ func (s *Server) ImageRenderer() *imagerender.Renderer { return s.imageRenderer 
 // renders. Defaults to "dev" when no Options.Version was configured.
 func (s *Server) Version() string { return s.version }
 
+// libraryPlan projects the loaded library config into the
+// graph.LibraryPlan shape the previewQueueImport resolver needs. The
+// fallthrough zero value (root="" or empty templates) marks the plan
+// as unconfigured; the resolver returns a typed error in that mode.
+func (s *Server) libraryPlan() graph.LibraryPlan {
+	return graph.LibraryPlan{
+		Root:           s.config.Library.Root,
+		FolderTemplate: s.config.Library.FolderTemplate,
+		FileTemplate:   s.config.Library.FileTemplate,
+	}
+}
+
 // Compile-time guard: the real *encora.Client must satisfy
 // EncoraWriteClient so production wiring can pass it on Options.Encora
 // without a wrapper. This isn't a runtime use; the underscore drops the

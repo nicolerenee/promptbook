@@ -1,29 +1,38 @@
-// Queue.js — Mithril port of the legacy /static/queue.js.
+// Queue.js — Mithril port of the legacy /static/queue.js, redesigned
+// in wave 2.5 to expose a richer manual-import flow.
 //
-// Renders the manual import queue (files dropped into
-// library.incomingDirs awaiting ingest). High-confidence rows expose a
-// `Match` button that fires the importQueueEntry GraphQL mutation;
-// lower-confidence rows show a disabled `Resolve…` stub.
+// Layout:
+//   - Page header (title + sub-text + cosmetic action stubs).
+//   - Three-stat tile cluster (discovered / auto-resolvable / needs you).
+//   - Sortable table. Each row carries a rich Suggested-match cell
+//     (show name + date · master) when the scanner had a high-
+//     confidence guess; otherwise a muted "pick a recording"
+//     placeholder. The whole row is clickable — opens the
+//     QueueImportModal for that file.
+//   - Footer hint about the [encora-N] auto-import shortcuts.
 //
-// Wire format: the GraphQL surface returns prefixed string ids
-// (queue-N, recording-N) so the SPA strips them at the boundary +
-// converts the camelCase fields back to snake_case so the existing
-// renderer stays untouched.
+// The Match / Resolve buttons that lived on the right of each row
+// are gone — the modal owns the entire import flow now (including a
+// typeahead picker for low-confidence rows + a planner-side dest
+// preview before committing).
+//
+// Wire format: GraphQL prefixed string ids (queue-N, recording-N)
+// are stripped at the boundary; the SPA holds bare ints in
+// state.queue.items so the existing renderer sort + key paths stay
+// untouched. The new suggestedRecording rich field is unwrapped into
+// snake_case to match the rest of the row shape.
 //
 // Behavior parity notes:
 //   - Re-scan + Import-all-auto-resolved are cosmetic stubs (legacy
 //     behavior). They stay disabled until a future wave wires them.
-//   - The legacy 503 / 404 status branches map onto GraphQL error
-//     messages: "ingest not configured" → config hint alert;
-//     "queue entry … not found" → drop the row optimistically.
-//     Other errors re-enable the button + alert with the message.
 //   - Items are sorted newest-first by discovered_at, matching the
 //     legacy display order.
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import { humanSize, relativeTime, errorMessage } from '../utils/format.js';
+import { humanSize, smartDate, relativeTime, errorMessage } from '../utils/format.js';
+import QueueImportModal, { makeLocalState } from './QueueImportModal.js';
 
 // CONF_META keys on the lowercase API tokens. high → success (auto),
 // medium → warning, low → error. Maps to DaisyUI badge color classes
@@ -35,7 +44,9 @@ const CONF_META = {
 };
 
 // QUEUE_QUERY pulls every column the row renderer + sort keys need.
-// The schema's QueueEntry mirrors the legacy REST shape one-to-one.
+// suggestedRecording surfaces the rich match summary the table
+// renders inline (show / date / master) so the page is one round-
+// trip per refresh.
 const QUEUE_QUERY = `
   query Queue {
     queue {
@@ -47,21 +58,16 @@ const QUEUE_QUERY = `
       suggestedRecordingID
       suggestedConfidence
       notes
-    }
-  }
-`;
-
-// IMPORT_QUEUE_MUTATION drives the per-row `Match` button. recordingID
-// stays null in the input; the resolver falls back to the queue
-// entry's suggestedRecordingID. An explicit override could pass a
-// "recording-N" string here in a future wave (Resolve… picker).
-const IMPORT_QUEUE_MUTATION = `
-  mutation ImportQueueEntry($input: ImportQueueEntryInput!) {
-    importQueueEntry(input: $input) {
-      ok
-      action
-      dest
-      error
+      suggestedRecording {
+        id
+        showID
+        show
+        tour
+        dateFull
+        dateMonthKnown
+        dateDayKnown
+        master
+      }
     }
   }
 `;
@@ -74,9 +80,28 @@ function stripIDPrefix(id) {
   return idx < 0 ? String(id) : String(id).substring(idx + 1);
 }
 
+// mapSuggestedRecording rewrites the GraphQL RecordingsListItem nested
+// under QueueEntry.suggestedRecording into the snake_case shape the
+// modal + row renderer share. Returns null when the field is null
+// (no suggestion present, or the suggestion points at a stale row).
+function mapSuggestedRecording(node) {
+  if (!node) return null;
+  return {
+    id:               Number(stripIDPrefix(node.id)),
+    show_id:          Number(stripIDPrefix(node.showID)),
+    show:             node.show || '',
+    tour:             node.tour || '',
+    date_full:        node.dateFull || '',
+    date_month_known: !!node.dateMonthKnown,
+    date_day_known:   !!node.dateDayKnown,
+    master:           node.master || '',
+  };
+}
+
 // mapQueueItem rewrites a GraphQL QueueEntry into the snake_case shape
 // the legacy renderer was written against. id + suggested_recording_id
-// fall back to bare integers.
+// fall back to bare integers; suggested_recording carries the rich
+// summary (or null) used by the table cell + the modal's pre-fill.
 function mapQueueItem(node) {
   if (!node) return null;
   const out = {
@@ -87,6 +112,7 @@ function mapQueueItem(node) {
     last_seen_at:         node.lastSeenAt || '',
     suggested_confidence: node.suggestedConfidence || '',
     notes:                node.notes || '',
+    suggested_recording:  mapSuggestedRecording(node.suggestedRecording),
   };
   if (node.suggestedRecordingID) {
     out.suggested_recording_id = Number(stripIDPrefix(node.suggestedRecordingID));
@@ -126,76 +152,42 @@ function countMetrics(items) {
 }
 
 // removeRow drops the queue entry with the supplied id from local state
-// after a successful (or 404) import. Mithril's auto-redraw triggers on
-// the next mutation cycle so the table re-renders without it.
+// after a successful import. Mithril's auto-redraw triggers on the
+// next mutation cycle so the table re-renders without it.
 function removeRow(queueID) {
   state.queue.items = state.queue.items.filter((it) =>
     String(it.id) !== String(queueID));
 }
 
-// importErrorKind maps a GraphQL error message back to the legacy
-// status-branch UX. The resolver writes specific phrases ("ingest not
-// configured", "queue entry … not found") so the SPA can branch on
-// substring without parsing extension codes.
-function importErrorKind(err) {
-  const msg = (err && err.message ? String(err.message) : '').toLowerCase();
-  if (msg.includes('ingest not configured')) return 'unconfigured';
-  if (msg.includes('queue entry') && msg.includes('not found')) return 'gone';
-  return 'other';
+// openImportModal pins the row + a fresh local-state object onto
+// state.queue so the modal renders open with the per-row context.
+// Storing local state here (rather than rebuilding it on every
+// redraw) keeps user-typed text alive while the modal is open.
+function openImportModal(item) {
+  state.queue.importingItem = item;
+  state.queue.importingLocal = makeLocalState(item);
+  m.redraw();
 }
 
-// handleImport fires the importQueueEntry mutation after a confirm
-// dialog. Mirrors the legacy REST handler's status-code branching but
-// re-keyed onto GraphQL error messages — see importErrorKind.
-function handleImport(item) {
-  const q = state.queue;
-  const id = item.id;
-  const path = item.file_path || '';
-  const suggested = item.suggested_recording_id || '';
-  const msg = 'Import ' + path + ' as recording enc-' + suggested + '?';
-  if (!window.confirm(msg)) return;
+// closeImportModal clears the per-row context so the dialog closes.
+// The local state is dropped so the next open starts from a clean
+// slate — leaving stale typeahead results around would be confusing.
+function closeImportModal() {
+  state.queue.importingItem = null;
+  state.queue.importingLocal = null;
+}
 
-  q.importing[id] = true;
-  m.redraw();
-
-  const variables = {
-    input: { queueID: 'queue-' + id },
-  };
-
-  graphql.query(IMPORT_QUEUE_MUTATION, variables)
-    .then((data) => {
-      const resp = (data && data.importQueueEntry) || {};
-      if (resp.ok) {
-        delete q.importing[id];
-        removeRow(id);
-        return;
-      }
-      delete q.importing[id];
-      window.alert('Import failed: ' + (resp.error || 'unknown error'));
-      m.redraw();
-    })
-    .catch((err) => {
-      delete q.importing[id];
-      const kind = importErrorKind(err);
-      if (kind === 'unconfigured') {
-        window.alert('Queue import is disabled — set library.root and ' +
-          'PROMPTBOOK_ENCORA_APIKEY in config to enable.');
-        m.redraw();
-        return;
-      }
-      if (kind === 'gone') {
-        // Entry already imported by a parallel scan; drop it locally.
-        removeRow(id);
-        return;
-      }
-      window.alert('Import failed: ' + errorMessage(err));
-      m.redraw();
-    });
+// onImportSucceeded fires after the modal's mutation returns ok=true.
+// Drops the row from local state + closes the modal. Mirrors the
+// legacy handleImport's success branch.
+function onImportSucceeded(item) {
+  removeRow(item.id);
+  closeImportModal();
 }
 
 // MetricTile renders one DaisyUI `stat` block. Mirrors the helper from
-// Library.js, but kept local so each page can tune its tone classes
-// without leaking visual tokens through utils/.
+// the legacy queue page; kept local so each page can tune its tone
+// classes without leaking visual tokens through utils/.
 function MetricTile(label, num, sub, valueClass) {
   return m('div', { class: 'stat' }, [
     m('div', { class: 'stat-title' }, label),
@@ -213,59 +205,47 @@ function ConfidenceBadge(conf) {
   return m('span', { class: 'badge ' + meta.badge }, meta.label);
 }
 
-// SuggestedMatchCell renders the "Suggested match" column. When a
-// recording id is suggested we link to /recordings/:id via the SPA
-// router; otherwise show a muted placeholder.
+// SuggestedMatchCell renders the "Suggested match" column. When the
+// resolver populated the rich summary we render a two-line block
+// (show in font-medium, date · master in a smaller muted line) that
+// mirrors the row pattern used in Recordings.js. Otherwise show a
+// muted placeholder so the user knows the row needs them to pick.
 function SuggestedMatchCell(item) {
-  if (item.suggested_recording_id) {
-    const href = '/recordings/' + item.suggested_recording_id;
-    return m('a', {
-      class: 'link link-hover font-mono text-sm',
-      href,
-      onclick: (ev) => { ev.preventDefault(); m.route.set(href); },
-    }, 'enc-' + item.suggested_recording_id);
+  const rec = item.suggested_recording;
+  if (!rec) {
+    return m('span', { class: 'opacity-60 italic' }, '— pick a recording —');
   }
-  return m('span', { class: 'font-mono text-sm opacity-60' }, '— pick a recording —');
+  const subtitleParts = [];
+  const date = smartDate(rec.date_full, rec.date_month_known, rec.date_day_known);
+  if (date && date !== '—') subtitleParts.push(date);
+  if (rec.tour)   subtitleParts.push(rec.tour);
+  if (rec.master) subtitleParts.push(rec.master);
+  return m('div', { class: 'min-w-0' }, [
+    m('div', { class: 'font-medium truncate', title: rec.show || '' },
+      rec.show || '— Unknown show —'),
+    m('div', { class: 'text-xs opacity-60 truncate' },
+      subtitleParts.join(' · ') || ('enc-' + rec.id)),
+  ]);
 }
 
-// ActionButton emits the right-aligned button for a queue row. High-
-// confidence + suggested id → live `Match` button. Anything else →
-// disabled `Resolve…` stub.
-function ActionButton(item) {
-  const importing = !!state.queue.importing[item.id];
-  if (item.suggested_confidence === 'high' && item.suggested_recording_id) {
-    if (importing) {
-      return m('button', {
-        type: 'button',
-        class: 'btn btn-primary btn-sm',
-        disabled: true,
-      }, [
-        m('span', { class: 'loading loading-spinner loading-xs' }),
-        'Importing…',
-      ]);
-    }
-    return m('button', {
-      type: 'button',
-      class: 'btn btn-primary btn-sm',
-      onclick: () => handleImport(item),
-    }, 'Match');
-  }
-  return m('button', {
-    type: 'button',
-    class: 'btn btn-sm',
-    title: '(coming soon)',
-    disabled: true,
-  }, 'Resolve…');
-}
-
-// Row renders one queue entry. Path is rendered with truncate +
-// title=full-path so long paths don't blow out the cell while still
-// being inspectable on hover.
+// Row renders one queue entry. The whole row is clickable — clicks
+// route to openImportModal — so users can open the modal without
+// hunting for a button. The disabled selection checkbox stays
+// because a future bulk-action wave will use it; clicking the cell
+// stops propagation so toggling the (eventual) checkbox doesn't
+// accidentally open the modal.
 function Row(item) {
-  return m('tr', { key: item.id }, [
-    m('td',
-      m('input', { type: 'checkbox', class: 'checkbox checkbox-sm',
-        disabled: true, title: '(coming soon)' })),
+  return m('tr', {
+    key: item.id,
+    class: 'cursor-pointer hover:bg-base-300',
+    onclick: () => openImportModal(item),
+  }, [
+    m('td', {
+      onclick: (ev) => ev.stopPropagation(),
+    }, m('input', {
+      type: 'checkbox', class: 'checkbox checkbox-sm',
+      disabled: true, title: '(coming soon)',
+    })),
     m('td', { class: 'font-mono text-sm whitespace-nowrap' },
       relativeTime(item.discovered_at)),
     m('td', ConfidenceBadge(item.suggested_confidence)),
@@ -277,7 +257,6 @@ function Row(item) {
     m('td', SuggestedMatchCell(item)),
     m('td', { class: 'font-mono text-sm whitespace-nowrap' },
       humanSize(item.file_size_bytes)),
-    m('td', { class: 'text-right' }, ActionButton(item)),
   ]);
 }
 
@@ -345,11 +324,10 @@ const Queue = {
             m('th', 'File'),
             m('th', 'Suggested match'),
             m('th', 'Size'),
-            m('th', { class: 'text-right', style: 'width:140px' }),
           ])),
           m('tbody', items.length === 0
             ? m('tr', m('td', {
-                colspan: 7, class: 'text-center opacity-60 py-8',
+                colspan: 6, class: 'text-center opacity-60 py-8',
               }, [
                 'Queue is empty. Drop video files into your ',
                 m('code', 'library.incomingDirs'),
@@ -365,6 +343,17 @@ const Queue = {
         m('code', '.encora-id'),
         ' sidecar next to a video to add the ID without renaming.',
       ]),
+
+      // Per-row import modal. Renders an empty placeholder dialog
+      // when no row is open; the modal component handles the dialog
+      // lifecycle (showModal / close) off the `open` flag.
+      m(QueueImportModal, {
+        open:       !!q.importingItem,
+        item:       q.importingItem,
+        local:      q.importingLocal,
+        onClose:    closeImportModal,
+        onImported: () => onImportSucceeded(q.importingItem),
+      }),
     ]);
   },
 };

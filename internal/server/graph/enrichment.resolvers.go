@@ -68,6 +68,20 @@ func (r *queryResolver) Queue(ctx context.Context) ([]*QueueEntry, error) {
 	return r.Resolver.queue(ctx)
 }
 
+// SearchRecordings is the resolver for the searchRecordings field.
+// Pass-through to the resolver-package helper so the body stays in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *queryResolver) SearchRecordings(ctx context.Context, query string, limit *int) ([]*RecordingsListItem, error) {
+	return r.Resolver.searchRecordings(ctx, query, limit)
+}
+
+// PreviewQueueImport is the resolver for the previewQueueImport
+// field. Same pass-through pattern as SearchRecordings.
+func (r *queryResolver) PreviewQueueImport(ctx context.Context, input PreviewQueueImportInput) (*ImportPreview, error) {
+	return r.Resolver.previewQueueImport(ctx, input)
+}
+
 // Status is the resolver for the status field. The reconciler runs
 // per-recording — same code path that powers the REST list page —
 // so the GraphQL surface agrees with the legacy taxonomy.

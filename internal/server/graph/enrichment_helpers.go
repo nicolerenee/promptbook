@@ -23,6 +23,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent/show"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
 )
 
@@ -944,7 +945,9 @@ var errIngestNotConfigured = errors.New(
 // in storage.QueueEntry order (oldest-first) and projects each onto
 // the GraphQL QueueEntry type. Empty queue returns an empty
 // (non-nil) slice so the schema's `[QueueEntry!]!` non-null promise
-// holds.
+// holds. The suggestedRecording field is populated inline via a
+// batched lookup so the SPA's queue page renders the rich match
+// summary in a single round-trip.
 func (r *Resolver) queue(ctx context.Context) ([]*QueueEntry, error) {
 	entries, err := storage.ListQueue(ctx, r.client)
 	if err != nil {
@@ -954,7 +957,71 @@ func (r *Resolver) queue(ctx context.Context) ([]*QueueEntry, error) {
 	for _, e := range entries {
 		out = append(out, queueEntryToGraphQL(e))
 	}
+	if attachErr := r.attachSuggestedRecordings(ctx, out); attachErr != nil {
+		return nil, attachErr
+	}
 	return out, nil
+}
+
+// attachSuggestedRecordings fans the per-row suggestedRecordingID
+// across a single batched lookup, then decorates each entry with the
+// rich RecordingsListItem the SPA's queue page renders. Stale ids
+// (the suggestion points at a recording that's been deleted) leave
+// the field nil. Pulled out so the queue resolver stays a thin
+// projection.
+func (r *Resolver) attachSuggestedRecordings(
+	ctx context.Context, entries []*QueueEntry,
+) error {
+	idSet := map[int64]struct{}{}
+	for _, e := range entries {
+		if e.SuggestedRecordingID != nil {
+			idSet[*e.SuggestedRecordingID] = struct{}{}
+		}
+	}
+	if len(idSet) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	recs, err := r.client.Recording.Query().
+		Where(recording.IDIn(ids...)).All(ctx)
+	if err != nil {
+		return fmt.Errorf("graphql: load suggested recordings: %w", err)
+	}
+	showNames, err := loadShowNames(ctx, r.client, recs)
+	if err != nil {
+		return err
+	}
+	byID := make(map[int64]*ent.Recording, len(recs))
+	for _, rec := range recs {
+		byID[rec.ID] = rec
+	}
+	for _, e := range entries {
+		if e.SuggestedRecordingID == nil {
+			continue
+		}
+		rec, ok := byID[*e.SuggestedRecordingID]
+		if !ok {
+			continue
+		}
+		item := &RecordingsListItem{
+			ID:             rec.ID,
+			ShowID:         rec.ShowID,
+			Show:           showNames[rec.ShowID],
+			Tour:           rec.Tour,
+			DateFull:       rec.DateFull,
+			DateMonthKnown: rec.DateMonthKnown,
+			DateDayKnown:   rec.DateDayKnown,
+			Master:         rec.Master,
+		}
+		if r.imageCache != nil && !r.imageCache.Disabled() {
+			item.LocalPosterURL = r.imageCache.RecordingPosterURL(rec.ID)
+		}
+		e.SuggestedRecording = item
+	}
+	return nil
 }
 
 // queueEntryToGraphQL projects storage.QueueEntry onto the GraphQL
@@ -1089,4 +1156,179 @@ func resolveImportRecordingID(override *int64, entry *storage.QueueEntry) (int64
 			"graphql: no recordingID supplied and queue entry has no suggestion")
 	}
 	return *entry.SuggestedRecordingID, nil
+}
+
+// errLibraryNotConfigured is the resolver-side analog of "no library
+// root + templates configured". Returned by previewQueueImport when
+// the server was started without a library.root / templates pair.
+// Surfaced in the GraphQL `errors` array; the SPA renders an inline
+// "could not compute preview" message and lets the user import
+// anyway.
+var errLibraryNotConfigured = errors.New(
+	"graphql: library not configured")
+
+// searchRecordingsLimitDefault is the default cap on the typeahead
+// dropdown. The modal uses this dropdown to narrow down — not
+// paginate — so a small cap keeps the in-memory scan cheap.
+const searchRecordingsLimitDefault = 25
+
+// searchRecordingsLimitMax bounds the user-supplied limit on the
+// typeahead. A bigger limit dilutes the dropdown and pushes the
+// scoring loop toward the wider ent.Recording table; 100 is overkill
+// for any sane UX but keeps the door open for future bulk pickers
+// without unbounded growth.
+const searchRecordingsLimitMax = 100
+
+// searchRecordingsMinQuery is the minimum trimmed query length that
+// triggers a real lookup. Below this we return [] so the user doesn't
+// see a flood of unrelated results from a one-character keystroke.
+const searchRecordingsMinQuery = 2
+
+// searchRecordings is the resolver body for the searchRecordings
+// query — the typeahead source for the queue import modal. Walks
+// every recording (the catalog stays small enough that the in-memory
+// filter is fine) and returns the rows whose show name or tour
+// contains the query as a case-insensitive substring. Ranking is a
+// simple score: prefix match > non-prefix substring; tour matches are
+// tie-broken below show matches because the user is overwhelmingly
+// typing the show.
+func (r *Resolver) searchRecordings(
+	ctx context.Context, query string, limitArg *int,
+) ([]*RecordingsListItem, error) {
+	q := strings.TrimSpace(query)
+	if len(q) < searchRecordingsMinQuery {
+		return []*RecordingsListItem{}, nil
+	}
+	limit := searchRecordingsLimitDefault
+	if limitArg != nil && *limitArg > 0 {
+		limit = *limitArg
+	}
+	if limit > searchRecordingsLimitMax {
+		limit = searchRecordingsLimitMax
+	}
+	needle := strings.ToLower(q)
+
+	recs, err := r.client.Recording.Query().All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: query recordings for search: %w", err)
+	}
+	showNames, err := loadShowNames(ctx, r.client, recs)
+	if err != nil {
+		return nil, err
+	}
+
+	type scored struct {
+		score int
+		item  *RecordingsListItem
+	}
+	scoredItems := make([]scored, 0, len(recs))
+	for _, rec := range recs {
+		showName := showNames[rec.ShowID]
+		s := searchScore(needle, showName, rec.Tour)
+		if s == 0 {
+			continue
+		}
+		item := &RecordingsListItem{
+			ID:             rec.ID,
+			ShowID:         rec.ShowID,
+			Show:           showName,
+			Tour:           rec.Tour,
+			DateFull:       rec.DateFull,
+			DateMonthKnown: rec.DateMonthKnown,
+			DateDayKnown:   rec.DateDayKnown,
+			Master:         rec.Master,
+		}
+		if r.imageCache != nil && !r.imageCache.Disabled() {
+			item.LocalPosterURL = r.imageCache.RecordingPosterURL(rec.ID)
+		}
+		scoredItems = append(scoredItems, scored{score: s, item: item})
+	}
+	sort.SliceStable(scoredItems, func(i, j int) bool {
+		if scoredItems[i].score != scoredItems[j].score {
+			return scoredItems[i].score > scoredItems[j].score
+		}
+		if scoredItems[i].item.Show != scoredItems[j].item.Show {
+			return scoredItems[i].item.Show < scoredItems[j].item.Show
+		}
+		// Prefer newer dates within the same show — the user is
+		// likeliest typing the show name to narrow down to a recent
+		// recording rather than an ancient one.
+		return scoredItems[i].item.DateFull > scoredItems[j].item.DateFull
+	})
+	if len(scoredItems) > limit {
+		scoredItems = scoredItems[:limit]
+	}
+	out := make([]*RecordingsListItem, 0, len(scoredItems))
+	for _, s := range scoredItems {
+		out = append(out, s.item)
+	}
+	return out, nil
+}
+
+// searchScore is the per-row scorer searchRecordings uses. Returns
+// zero when the row doesn't match at all; higher scores rank better.
+// Show prefix matches lead, then show substring, then tour prefix,
+// then tour substring. Pulled out so the comparator stays tiny.
+func searchScore(needle, show, tour string) int {
+	if needle == "" {
+		return 0
+	}
+	showLower := strings.ToLower(show)
+	tourLower := strings.ToLower(tour)
+	score := 0
+	if strings.HasPrefix(showLower, needle) {
+		score += 100
+	} else if strings.Contains(showLower, needle) {
+		score += 60
+	}
+	switch {
+	case strings.HasPrefix(tourLower, needle):
+		score += 30
+	case strings.Contains(tourLower, needle):
+		score += 15
+	}
+	return score
+}
+
+// previewQueueImport is the resolver body for the previewQueueImport
+// query — runs the rename Plan path against the queue row + chosen
+// recording and returns the planned destination paths. Does NOT move
+// the file. Mirrors the Plan-build branch of importQueueEntry.
+func (r *Resolver) previewQueueImport(
+	ctx context.Context, input PreviewQueueImportInput,
+) (*ImportPreview, error) {
+	if !r.libraryPlan.Configured() {
+		return nil, errLibraryNotConfigured
+	}
+	entry, err := storage.LoadQueueEntry(ctx, r.client, input.QueueID)
+	if errors.Is(err, storage.ErrQueueEntryNotFound) {
+		return nil, fmt.Errorf("graphql: %w", err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: load queue entry %d: %w", input.QueueID, err)
+	}
+	if input.RecordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	loaded, err := storage.LoadRecording(ctx, r.client, input.RecordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: load recording %d: %w", input.RecordingID, err)
+	}
+	plan, err := rename.BuildPlan(rename.PlanInputs{
+		Recording:      loaded.Recording,
+		Source:         entry.FilePath,
+		LibraryRoot:    r.libraryPlan.Root,
+		FolderTemplate: r.libraryPlan.FolderTemplate,
+		FileTemplate:   r.libraryPlan.FileTemplate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("graphql: build plan: %w", err)
+	}
+	return &ImportPreview{
+		DestFolder:   plan.TargetFolder,
+		DestFile:     plan.TargetFile + plan.Extension,
+		DestAbsolute: plan.AbsoluteFile(),
+	}, nil
 }

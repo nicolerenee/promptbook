@@ -28,6 +28,24 @@ type IngestRunner interface {
 	Ingest(ctx context.Context, src string, opts ingest.Options) (*ingest.Result, error)
 }
 
+// LibraryPlan carries the rename Plan inputs the previewQueueImport
+// resolver needs (LibraryRoot + the two templates). The IngestRunner
+// interface deliberately doesn't expose these — Plan-side previews
+// are a separate read surface from the engine's Apply path. Pass the
+// zero value when no library is configured; the resolver returns a
+// "library not configured" error in that mode.
+type LibraryPlan struct {
+	Root           string
+	FolderTemplate string
+	FileTemplate   string
+}
+
+// Configured reports whether the LibraryPlan carries enough to drive
+// rename.BuildPlan. All three fields must be non-empty.
+func (p LibraryPlan) Configured() bool {
+	return p.Root != "" && p.FolderTemplate != "" && p.FileTemplate != ""
+}
+
 // Resolver is the root resolver. It carries the ent client every
 // generated resolver method calls into, plus the image cache the
 // enrichment resolvers (poster URL, fanart URL, headshot URL) use to
@@ -39,22 +57,27 @@ type IngestRunner interface {
 // return empty strings so the SPA renders its placeholder branch.
 // ingestEngine may be nil — when nil the importQueueEntry resolver
 // returns a "ingest not configured" error so the rest of the read
-// surface stays alive.
+// surface stays alive. libraryPlan may be the zero value — when not
+// Configured() the previewQueueImport resolver returns a "library
+// not configured" error.
 type Resolver struct {
 	client       *ent.Client
 	imageCache   *imagecache.Cache
 	ingestEngine IngestRunner
+	libraryPlan  LibraryPlan
 	logger       zerolog.Logger
 }
 
 // NewSchema builds an executable GraphQL schema rooted at the supplied
-// ent client + image cache + ingest runner + logger. The image cache
-// and ingest runner are both optional; pass nil when the surface is
-// not configured at the server layer.
+// ent client + image cache + ingest runner + library plan + logger.
+// The image cache and ingest runner are both optional; pass nil when
+// the surface is not configured at the server layer. libraryPlan may
+// be the zero value when no library.root / templates are configured.
 func NewSchema(
 	client *ent.Client,
 	cache *imagecache.Cache,
 	ingestEngine IngestRunner,
+	libraryPlan LibraryPlan,
 	logger zerolog.Logger,
 ) graphql.ExecutableSchema {
 	return NewExecutableSchema(Config{
@@ -62,6 +85,7 @@ func NewSchema(
 			client:       client,
 			imageCache:   cache,
 			ingestEngine: ingestEngine,
+			libraryPlan:  libraryPlan,
 			logger:       logger,
 		},
 	})

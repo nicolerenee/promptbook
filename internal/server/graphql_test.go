@@ -738,6 +738,33 @@ func TestGraphQLImportQueueEntryEngineNotConfigured(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestGraphQLPreviewQueueImportNotConfigured covers the
+// errLibraryNotConfigured branch: a server built without a library
+// root surfaces an error rather than rendering a partial plan.
+func TestGraphQLPreviewQueueImportNotConfigured(t *testing.T) {
+	t.Parallel()
+	srv, db := queueImportTestServer(t, &stubIngestRunner{})
+
+	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
+		FilePath: "/incoming/marigold.mkv",
+	})
+	require.NoError(t, err)
+
+	query := `query Q($input: PreviewQueueImportInput!) {
+		previewQueueImport(input: $input) { destAbsolute }
+	}`
+	body, rr := graphqlPostVars(t, srv.Handler(), query, map[string]any{
+		"input": map[string]any{
+			"queueID":     "queue-" + strconv.FormatInt(queueID, 10),
+			"recordingID": "recording-90100222",
+		},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, string(body))
+	assert.Contains(t, string(body), `"errors":`,
+		"missing library config must surface a GraphQL error: %s", string(body))
+	assert.Contains(t, string(body), "library not configured", string(body))
+}
+
 // TestGraphQLImportQueueEntryExplicitID asserts that a non-nil
 // recordingID input overrides the queue entry's suggestedRecordingID,
 // matching the legacy TestAPIImportQueueExplicitID behavior.

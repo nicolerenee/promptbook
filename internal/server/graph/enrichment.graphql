@@ -249,6 +249,10 @@ type PersonDetail {
 # storage.QueueEntry; the wire id is the prefixed "queue-N" form so
 # the Mithril SPA can route on it without juggling raw int64s.
 # suggestedRecordingID is nullable when the scanner had no candidate.
+# suggestedRecording surfaces the same recording in its rich shape
+# (show name, date, tour, master) so the queue table can render the
+# match summary without a follow-up round-trip; null when
+# suggestedRecordingID is null or the row no longer exists.
 type QueueEntry {
   id: ID!
   filePath: String!
@@ -256,6 +260,7 @@ type QueueEntry {
   discoveredAt: Time!
   lastSeenAt: Time!
   suggestedRecordingID: ID
+  suggestedRecording: RecordingsListItem
   suggestedConfidence: String!
   notes: String!
 }
@@ -265,6 +270,38 @@ extend type Query {
   # oldest-first. Empty queue still returns [] so the client can
   # range over it safely.
   queue: [QueueEntry!]!
+
+  # searchRecordings is the typeahead source for the queue import
+  # modal. Matches on show name and tour, ranked by simple
+  # substring + position score against the query string.
+  # Empty/short queries return []. Limited to ~25 results — the
+  # dropdown is meant to narrow down, not paginate.
+  searchRecordings(query: String!, limit: Int): [RecordingsListItem!]!
+
+  # previewQueueImport returns the planned destination path for
+  # importing the given queue entry as the given recording. Drives
+  # the filename preview in the queue import modal. Does NOT move
+  # the file; this is purely a Plan-side dry-run.
+  previewQueueImport(input: PreviewQueueImportInput!): ImportPreview!
+}
+
+# PreviewQueueImportInput drives the previewQueueImport query — the
+# queue row's source path + the chosen target recording. Both ids
+# are prefixed strings (queue-N, recording-N) so the wire format
+# stays consistent with importQueueEntry.
+input PreviewQueueImportInput {
+  queueID: ID!
+  recordingID: ID!
+}
+
+# ImportPreview is the planned-destination payload the queue import
+# modal renders as a code block. destAbsolute is the full path
+# (LibraryRoot + folder + file + ext); destFolder + destFile are the
+# split-apart pieces in case the UI wants to render them separately.
+type ImportPreview {
+  destFolder: String!
+  destFile: String!
+  destAbsolute: String!
 }
 
 # ImportQueueEntryInput drives the importQueueEntry mutation.
