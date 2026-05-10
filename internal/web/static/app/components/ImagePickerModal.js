@@ -23,6 +23,41 @@
 
 import m from 'https://esm.sh/mithril@2.2.2';
 
+// dimsCache stashes natural width × height for any image the picker
+// has loaded. Keyed by the rendered <img src> so stale entries get
+// replaced naturally when callers append cache-busters (?v= or ?gen=).
+// The browser already loads each image once for its visual render —
+// reading naturalWidth/naturalHeight in onload is free, no extra
+// request. m.redraw() on first capture surfaces the dimensions caption
+// in the next tick.
+const dimsCache = new Map();
+
+// captureDims is the shared <img onload> handler. We only redraw when
+// we actually learn something new so a redraw storm doesn't fire from
+// every picker-strip render.
+function captureDims(ev) {
+  const el = ev.target;
+  if (!el || !el.src) return;
+  const w = el.naturalWidth | 0;
+  const h = el.naturalHeight | 0;
+  if (!w || !h) return;
+  const prev = dimsCache.get(el.src);
+  if (prev && prev.w === w && prev.h === h) return;
+  dimsCache.set(el.src, { w, h });
+  m.redraw();
+}
+
+// dimsLabel returns the small "1280 × 720" caption for src, or null
+// when we haven't loaded the image yet (browser hasn't fired onload).
+// Callers wrap it in their own layout; we only own the styling.
+function dimsLabel(src) {
+  const dims = dimsCache.get(src);
+  if (!dims) return null;
+  return m('span', {
+    class: 'text-xs font-mono opacity-60 leading-tight',
+  }, dims.w + ' × ' + dims.h);
+}
+
 // PencilIcon is the small pencil-on-square glyph used for the
 // "Edit images" header button. Inlined as a Mithril vnode so the
 // component file stays self-contained.
@@ -157,18 +192,22 @@ export function renderUpstreamPicker(attrs) {
     m('div', { class: 'space-y-2' }, [
       m('h3', { class: 'text-sm font-semibold' }, currentLabel),
       currentURL
-        ? m('figure', {
-            class: 'relative rounded overflow-hidden bg-base-200 ' + currentClass,
-          }, [
-            m('img', {
-              src: currentURL,
-              alt: currentAlt || '',
-              class: 'w-full h-full object-cover',
-              loading: 'lazy',
-            }),
-            m('span', {
-              class: 'absolute top-2 left-2 badge badge-primary badge-sm',
-            }, 'Current'),
+        ? m('div', { class: 'flex flex-col gap-1' }, [
+            m('figure', {
+              class: 'relative rounded overflow-hidden bg-base-200 ' + currentClass,
+            }, [
+              m('img', {
+                src: currentURL,
+                alt: currentAlt || '',
+                class: 'w-full h-full object-cover',
+                loading: 'lazy',
+                onload: captureDims,
+              }),
+              m('span', {
+                class: 'absolute top-2 left-2 badge badge-primary badge-sm',
+              }, 'Current'),
+            ]),
+            dimsLabel(currentURL),
           ])
         : m('div', {
             class: 'rounded bg-base-200 flex items-center justify-center ' +
@@ -260,23 +299,30 @@ function renderUpstreamStrip(attrs) {
       const stagedCls = isStaged
         ? ' border-primary ring-2 ring-primary ring-offset-2 ring-offset-base-100'
         : ' border-transparent hover:border-primary focus:border-primary';
-      return m('button', {
+      const thumbSrc = proxyURL(opt.url, gen);
+      return m('div', {
         key: opt.url + '-' + idx + '-' + gen,
-        type: 'button',
-        class: 'shrink-0 rounded overflow-hidden bg-base-200 ' +
-               'border-2 focus:outline-none ' +
-               'disabled:opacity-50 disabled:cursor-not-allowed ' +
-               thumbClass + stagedCls,
-        title: opt.source ? 'from ' + opt.source : '',
-        'aria-pressed': isStaged ? 'true' : 'false',
-        disabled: busy,
-        onclick: () => onPick(opt.url),
-      }, m('img', {
-        src: proxyURL(opt.url, gen),
-        alt: opt.source || 'upstream option ' + (idx + 1),
-        class: 'w-full h-full object-cover',
-        loading: 'lazy',
-      }));
+        class: 'shrink-0 flex flex-col items-center gap-1',
+      }, [
+        m('button', {
+          type: 'button',
+          class: 'rounded overflow-hidden bg-base-200 ' +
+                 'border-2 focus:outline-none ' +
+                 'disabled:opacity-50 disabled:cursor-not-allowed ' +
+                 thumbClass + stagedCls,
+          title: opt.source ? 'from ' + opt.source : '',
+          'aria-pressed': isStaged ? 'true' : 'false',
+          disabled: busy,
+          onclick: () => onPick(opt.url),
+        }, m('img', {
+          src: thumbSrc,
+          alt: opt.source || 'upstream option ' + (idx + 1),
+          class: 'w-full h-full object-cover',
+          loading: 'lazy',
+          onload: captureDims,
+        })),
+        dimsLabel(thumbSrc),
+      ]);
     }));
 }
 
