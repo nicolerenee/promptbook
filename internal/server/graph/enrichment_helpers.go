@@ -379,6 +379,7 @@ func (r *Resolver) recordingsList(
 			DateFull:       m.dateFull,
 			DateMonthKnown: m.monthKnown,
 			DateDayKnown:   m.dayKnown,
+			DateVariant:    m.dateVariant,
 			Master:         m.master,
 			Status:         string(st.Status),
 			InCollection:   st.InCollection,
@@ -576,13 +577,14 @@ func (r *Resolver) finalizeShowsItems(
 // both list resolvers to attach show name / tour / date / master to
 // each row in a single follow-up query.
 type recordingMeta struct {
-	showID     int64
-	show       string
-	tour       string
-	dateFull   string
-	monthKnown bool
-	dayKnown   bool
-	master     string
+	showID      int64
+	show        string
+	tour        string
+	dateFull    string
+	monthKnown  bool
+	dayKnown    bool
+	dateVariant *string
+	master      string
 }
 
 func loadRecordingMeta(
@@ -620,13 +622,14 @@ func loadRecordingMeta(
 	out := make(map[int64]recordingMeta, len(recs))
 	for _, rec := range recs {
 		out[rec.ID] = recordingMeta{
-			showID:     rec.ShowID,
-			show:       showNames[rec.ShowID],
-			tour:       rec.Tour,
-			dateFull:   rec.DateFull,
-			monthKnown: rec.DateMonthKnown,
-			dayKnown:   rec.DateDayKnown,
-			master:     rec.Master,
+			showID:      rec.ShowID,
+			show:        showNames[rec.ShowID],
+			tour:        rec.Tour,
+			dateFull:    rec.DateFull,
+			monthKnown:  rec.DateMonthKnown,
+			dayKnown:    rec.DateDayKnown,
+			dateVariant: rec.DateVariant,
+			master:      rec.Master,
 		}
 	}
 	return out, nil
@@ -971,6 +974,7 @@ func (r *Resolver) loadPersonRecordings(
 			DateFull:       rec.DateFull,
 			DateMonthKnown: rec.DateMonthKnown,
 			DateDayKnown:   rec.DateDayKnown,
+			DateVariant:    rec.DateVariant,
 			ShowID:         rec.ShowID,
 		})
 	}
@@ -1196,6 +1200,7 @@ func (r *Resolver) attachSuggestedRecordings(
 			DateFull:       rec.DateFull,
 			DateMonthKnown: rec.DateMonthKnown,
 			DateDayKnown:   rec.DateDayKnown,
+			DateVariant:    rec.DateVariant,
 			Master:         rec.Master,
 		}
 		if r.imageCache != nil && !r.imageCache.Disabled() {
@@ -1662,6 +1667,7 @@ func (r *Resolver) searchRecordings(
 			DateFull:       rec.DateFull,
 			DateMonthKnown: rec.DateMonthKnown,
 			DateDayKnown:   rec.DateDayKnown,
+			DateVariant:    rec.DateVariant,
 			Master:         rec.Master,
 		}
 		if r.imageCache != nil && !r.imageCache.Disabled() {

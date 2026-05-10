@@ -203,6 +203,11 @@ type RecordingsListItem {
   dateFull: String!
   dateMonthKnown: Boolean!
   dateDayKnown: Boolean!
+  # dateVariant is the encora date_variant disambiguator (e.g. "1",
+  # "4") that distinguishes recordings sharing the same calendar day
+  # — typically matinee/evening pairs. Null when the recording has no
+  # variant flag. Frontend renderers append it as " (N)" when set.
+  dateVariant: String
   master: String!
   status: String!
   inCollection: Boolean!
@@ -321,6 +326,9 @@ type PersonRecording {
   dateFull: String!
   dateMonthKnown: Boolean!
   dateDayKnown: Boolean!
+  # dateVariant is the encora date_variant disambiguator — see
+  # RecordingsListItem.dateVariant. Null when unset.
+  dateVariant: String
   showID: ID!
   state: String!
 }

@@ -25,7 +25,7 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import { smartDate } from '../utils/format.js';
+import { smartDateWithVariant } from '../utils/format.js';
 import Pagination from './Pagination.js';
 
 // LS_VIEW is the localStorage key the recordings page uses to persist
@@ -146,6 +146,7 @@ const RECORDINGS_LIST_QUERY = `
         dateFull
         dateMonthKnown
         dateDayKnown
+        dateVariant
         master
         status
         inCollection
@@ -184,6 +185,7 @@ function mapRecordingItem(node) {
     date_full:        node.dateFull || '',
     date_month_known: !!node.dateMonthKnown,
     date_day_known:   !!node.dateDayKnown,
+    date_variant:     node.dateVariant || '',
     master:           node.master || '',
     status:           node.status || '',
     in_collection:    !!node.inCollection,
@@ -315,7 +317,8 @@ function Row(it) {
       m('div', { class: 'text-xs opacity-60' }, subtitle),
     ]),
     m('td', { class: 'font-mono text-sm' },
-      smartDate(it.date_full, it.date_month_known, it.date_day_known)),
+      smartDateWithVariant(
+        it.date_full, it.date_month_known, it.date_day_known, it.date_variant)),
     m('td', it.master || '—'),
     m('td', { class: 'font-mono text-sm' }, it.local_release_format || '—'),
     m('td', m('span', { class: 'badge ' + meta.badge }, meta.label)),
@@ -357,7 +360,8 @@ function PosterCard(it) {
         it.show || '—'),
       m('div', { class: 'text-xs opacity-60 font-mono truncate' },
         (it.tour ? it.tour + ' · ' : '') +
-        smartDate(it.date_full, it.date_month_known, it.date_day_known)),
+        smartDateWithVariant(
+          it.date_full, it.date_month_known, it.date_day_known, it.date_variant)),
     ]),
   ]);
 }

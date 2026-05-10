@@ -18,7 +18,7 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import { smartDate } from '../utils/format.js';
+import { smartDateWithVariant } from '../utils/format.js';
 import {
   uploadFile,
   errorMessageFromUpload,
@@ -118,6 +118,7 @@ const SHOW_DETAIL_QUERY = `
             dateFull
             dateMonthKnown
             dateDayKnown
+            dateVariant
             status
             inCollection
             inWants
@@ -155,6 +156,7 @@ function mapShowDetail(node) {
       date_full:        r.dateFull || '',
       date_month_known: !!r.dateMonthKnown,
       date_day_known:   !!r.dateDayKnown,
+      date_variant:     r.dateVariant || '',
       status:           r.status || '',
       in_collection:    !!r.inCollection,
       in_wants:         !!r.inWants,
@@ -568,7 +570,8 @@ function renderImagePickerModal(detail) {
 // edge to match Recordings + ShowsList.
 function Row(it) {
   const meta = STATUS_META[it.status] || STATUS_META.orphan;
-  const date = smartDate(it.date_full, it.date_month_known, it.date_day_known);
+  const date = smartDateWithVariant(
+    it.date_full, it.date_month_known, it.date_day_known, it.date_variant);
   return m('tr', {
     class: 'hover:bg-base-200 cursor-pointer',
     onclick: () => m.route.set('/recordings/' + it.id),
@@ -598,7 +601,8 @@ function PosterCard(it) {
     loading: 'lazy',
     class: 'aspect-[2/3] w-full object-cover',
   });
-  const date = smartDate(it.date_full, it.date_month_known, it.date_day_known);
+  const date = smartDateWithVariant(
+    it.date_full, it.date_month_known, it.date_day_known, it.date_variant);
   return m('div', {
     class: 'card bg-base-200 shadow-sm hover:shadow-md ' +
            'hover:ring-1 hover:ring-primary cursor-pointer transition-shadow',

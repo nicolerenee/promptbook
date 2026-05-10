@@ -33,7 +33,12 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import { humanSize, smartDate, relativeTime, errorMessage } from '../utils/format.js';
+import {
+  humanSize,
+  smartDateWithVariant,
+  relativeTime,
+  errorMessage,
+} from '../utils/format.js';
 import QueueImportModal, { makeLocalState } from './QueueImportModal.js';
 
 // CONF_META keys on the lowercase API tokens. high → success (auto),
@@ -71,6 +76,7 @@ const QUEUE_QUERY = `
         dateFull
         dateMonthKnown
         dateDayKnown
+        dateVariant
         master
       }
       classification {
@@ -114,6 +120,7 @@ function mapSuggestedRecording(node) {
     date_full:        node.dateFull || '',
     date_month_known: !!node.dateMonthKnown,
     date_day_known:   !!node.dateDayKnown,
+    date_variant:     node.dateVariant || '',
     master:           node.master || '',
   };
 }
@@ -323,7 +330,8 @@ function SuggestedMatchCell(item) {
     return m('span', { class: 'opacity-60' }, 'Not matched');
   }
   const subtitleParts = [];
-  const date = smartDate(rec.date_full, rec.date_month_known, rec.date_day_known);
+  const date = smartDateWithVariant(
+    rec.date_full, rec.date_month_known, rec.date_day_known, rec.date_variant);
   if (date && date !== '—') subtitleParts.push(date);
   if (rec.tour)   subtitleParts.push(rec.tour);
   if (rec.master) subtitleParts.push(rec.master);

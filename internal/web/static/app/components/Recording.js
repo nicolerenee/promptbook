@@ -30,7 +30,13 @@ import m from 'https://esm.sh/mithril@2.2.2';
 import api from '../api.js';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import { smartDate, humanSize, relativeTime, formatNFTDate } from '../utils/format.js';
+import {
+  smartDate,
+  smartDateWithVariant,
+  humanSize,
+  relativeTime,
+  formatNFTDate,
+} from '../utils/format.js';
 import {
   uploadFile,
   errorMessageFromUpload,
@@ -1106,56 +1112,87 @@ function renderHero(loaded) {
   const posterURL = withImageVersion(loaded.local_poster_url ||
     '/images/recordings/' + id + '/poster.jpg');
 
-  // Title block — Show is a route link, "—" separators are plain text.
+  // Title — just the Show name. Clickable link to /shows/:id when we
+  // have a show id; plain span otherwise.
   const showName = r.show || '—';
   const showID = loaded.showID;
-  const titleParts = [];
-  if (showID && showID > 0) {
-    titleParts.push(m('a', {
-      class: 'link link-hover',
-      href: '#',
-      onclick: (ev) => {
-        ev.preventDefault();
-        m.route.set('/shows/' + encodeURIComponent(String(showID)));
-      },
-    }, showName));
-  } else {
-    titleParts.push(m('span', showName));
-  }
-  if (r.tour) {
-    titleParts.push(m('span', { class: 'opacity-70' }, ' — '));
-    titleParts.push(m('span', r.tour));
-  }
-  const date = smartDate(
+  const titleNode = (showID && showID > 0)
+    ? m('a', {
+        class: 'link link-hover',
+        href: '#',
+        onclick: (ev) => {
+          ev.preventDefault();
+          m.route.set('/shows/' + encodeURIComponent(String(showID)));
+        },
+      }, showName)
+    : m('span', showName);
+
+  // Subtitle — "Tour · DateWithVariant". Either piece may be empty;
+  // joinSep collapses to whichever side has content. The variant comes
+  // from raw_json.date.date_variant — see smartDateWithVariant().
+  const date = smartDateWithVariant(
     r.date && r.date.full_date,
     r.date && r.date.month_known,
     r.date && r.date.day_known,
+    r.date && r.date.date_variant,
   );
-  if (date && date !== '—') {
-    titleParts.push(m('span', { class: 'opacity-70' }, ' — '));
-    titleParts.push(m('span', date));
+  const dateStr = date && date !== '—' ? date : '';
+  const subtitle = joinSep(r.tour || '', dateStr, ' · ');
+
+  // Master / Pro-Shot badge. Pro-shot recordings get a single warning
+  // badge regardless of master string (the master is irrelevant for
+  // broadcast); other recordings show the bare master string in a
+  // ghost badge. Both branches return null when there's nothing to
+  // render so the row collapses cleanly.
+  const meta = r.metadata || {};
+  const recordingType = meta.recording_type || '';
+  let masterBadge = null;
+  if (recordingType === 'pro-shot') {
+    masterBadge = m('span', { class: 'badge badge-warning' }, 'Pro-Shot');
+  } else if (r.master) {
+    masterBadge = m('span', { class: 'badge badge-ghost' }, r.master);
   }
 
-  // Metadata badges + chips.
-  const status = statusForRecording(loaded);
-  const statusMeta = STATUS_META[status] || STATUS_META.orphan;
+  // Media info line — "{LocalReleaseFormat} · {runtime}" in a muted
+  // mono font. Either segment may be empty; the whole line is hidden
+  // when both are missing. The format part keeps the mono face so
+  // codecs/resolution line up; the runtime stays plain.
   const mi = loaded.media_info;
-  const quality = mi ? qualityFromHeight(mi.height) : '';
   const runtime = (mi && mi.durationSeconds > 0)
     ? formatMediaRunTime(mi.durationSeconds) : '';
-  const metaChips = [
+  const releaseFormat = loaded.LocalReleaseFormat || '';
+  let mediaInfoLine = null;
+  if (releaseFormat || runtime) {
+    const parts = [];
+    if (releaseFormat) {
+      parts.push(m('span', { class: 'font-mono' }, releaseFormat));
+    }
+    if (releaseFormat && runtime) {
+      parts.push(m('span', { class: 'opacity-60' }, ' · '));
+    }
+    if (runtime) parts.push(m('span', runtime));
+    mediaInfoLine = m('div',
+      { class: 'text-sm opacity-70' }, parts);
+  }
+
+  // Badge row — Status / Gifting / Trading / Owners / Wanters / enc-id.
+  // Each helper returns null when its underlying field is unset, so
+  // the row stays compact for legacy / sparsely-populated rows.
+  const status = statusForRecording(loaded);
+  const statusMeta = STATUS_META[status] || STATUS_META.orphan;
+  const owners = (meta.owners_count != null) ? Number(meta.owners_count) : 0;
+  const wanters = (meta.wanters_count != null) ? Number(meta.wanters_count) : 0;
+  const badgeRow = [
     m('span', { class: 'badge ' + statusMeta.badge }, statusMeta.label),
-    nftBadge(loaded),
-    quality ? m('span', { class: 'badge badge-ghost' }, quality) : null,
-    runtime
-      ? m('span', { class: 'text-sm font-mono opacity-80' }, runtime)
+    giftingBadge(meta.gifting_status || ''),
+    tradingBadge(loaded),
+    owners > 0
+      ? m('span', { class: 'badge badge-ghost badge-sm' },
+          String(owners) + ' owners')
       : null,
-    r.master
-      ? m('span', { class: 'text-sm opacity-80' }, 'master ' + r.master)
-      : null,
-    loaded.LocalReleaseFormat
-      ? m('span', { class: 'badge badge-outline badge-sm' },
-          loaded.LocalReleaseFormat)
+    wanters > 0
+      ? m('span', { class: 'badge badge-ghost badge-sm' },
+          String(wanters) + ' wants')
       : null,
     m('span', { class: 'text-xs font-mono opacity-60' },
       'enc-' + String(id)),
@@ -1176,8 +1213,23 @@ function renderHero(loaded) {
   // Plot — prefer the parsed metadata.show_description (HTML stripped)
   // since that's the upstream Encora blurb; legacy NFOs may carry a
   // plot field too but we only surface upstream copy here.
-  const meta = r.metadata || {};
   const plot = stripHTML(meta.show_description || '');
+
+  // Build the master/NFT row inline so the renderer below stays a
+  // flat list. Either or both badges may be present; null when both
+  // are absent so the JSX collapses.
+  const nft = nftBadge(loaded);
+  let masterRow = null;
+  if (masterBadge && nft) {
+    masterRow = m('div', { class: 'flex flex-wrap items-center gap-2' },
+      [masterBadge, nft]);
+  } else if (masterBadge) {
+    masterRow = m('div', { class: 'flex flex-wrap items-center gap-2' },
+      [masterBadge]);
+  } else if (nft) {
+    masterRow = m('div', { class: 'flex flex-wrap items-center gap-2' },
+      [nft]);
+  }
 
   return m('div', {
     class: 'hero rounded-box overflow-hidden bg-base-300',
@@ -1197,10 +1249,18 @@ function renderHero(loaded) {
         loading: 'lazy',
       }),
       m('div', { class: 'flex-1 space-y-3 min-w-0' }, [
+        // Stacked text block: h1 (Show), subtitle (Tour · Date),
+        // master/pro-shot badge, media info line. Each section
+        // gracefully collapses when its source data is empty.
         m('h1', { class: 'text-3xl sm:text-4xl font-bold leading-tight' },
-          titleParts),
+          titleNode),
+        subtitle
+          ? m('p', { class: 'text-base sm:text-lg opacity-80' }, subtitle)
+          : null,
+        masterRow,
+        mediaInfoLine,
         m('div', { class: 'flex flex-wrap items-center gap-x-3 gap-y-1' },
-          metaChips),
+          badgeRow),
         linksRow,
         plot
           ? m('p', {
@@ -1210,6 +1270,52 @@ function renderHero(loaded) {
       ]),
     ])),
   ]);
+}
+
+// giftingBadge maps the encora gifting_status string to a coloured
+// badge. Returns null for empty / unknown so the badge row collapses.
+// "Always Gift (no trading)" loses the parenthetical (the trading
+// half is rendered as a separate "No Trading" badge in tradingBadge).
+function giftingBadge(status) {
+  if (!status) return null;
+  switch (status) {
+  case 'Never Gift':
+    return m('span', { class: 'badge badge-error' }, 'Never Gift');
+  case 'Always Gift (no trading)':
+    return m('span', { class: 'badge badge-success' }, 'Always Gift');
+  case 'Gift On Request':
+    return m('span', { class: 'badge badge-success' }, 'Gift on Request');
+  case 'Gift at your Discretion':
+    return m('span', { class: 'badge badge-success' }, 'Gift at Discretion');
+  default:
+    return null;
+  }
+}
+
+// tradingBadge combines gifting_status + nft to render the trading
+// pill. Hard "No Trading" when the gifting status forbids it or NFT
+// is set forever; warning "No Trading until YYYY-MM-DD" when an NFT
+// expiry date applies; success "Trading OK" otherwise. Always returns
+// a badge so the row carries a clear trading-state signal.
+function tradingBadge(loaded) {
+  const r = loaded.Recording || {};
+  const meta = r.metadata || {};
+  const nft = r.nft || {};
+  if ((meta.gifting_status || '') === 'Always Gift (no trading)') {
+    return m('span', { class: 'badge badge-error' }, 'No Trading');
+  }
+  if (nft.nft_forever) {
+    return m('span', { class: 'badge badge-error' }, 'No Trading');
+  }
+  if (nft.nft_date) {
+    // Truncate to YYYY-MM-DD — server stores the field as ISO date /
+    // RFC3339 timestamp depending on origin; either way the date
+    // portion is the leading 10 chars.
+    const stamp = String(nft.nft_date).substring(0, 10);
+    return m('span', { class: 'badge badge-warning' },
+      'No Trading until ' + stamp);
+  }
+  return m('span', { class: 'badge badge-success' }, 'Trading OK');
 }
 
 // renderCastCard lists every performer as a portrait card in a
@@ -1620,33 +1726,19 @@ function extraDirSection(name, children) {
   ]);
 }
 
-// renderDetailsSection surfaces the metadata fields phase 1's hero
-// dropped from the page (Cataloged, Gifting, Owners, Wanters, Folder).
-// Rendered as a 2-column responsive grid above the Files section so
-// the user can confirm the per-recording state at a glance. Empty /
-// zero values fall through to "—" so the grid stays a stable shape.
+// renderDetailsSection surfaces the per-recording catalog metadata
+// the hero doesn't already carry — Cataloged timestamp + Folder path.
+// Gifting / Owners / Wanters moved to the hero badge row; this
+// section is intentionally short. Empty values fall through to "—".
 function renderDetailsSection(loaded) {
-  const r = loaded.Recording || {};
-  const meta = r.metadata || {};
   const versions = loaded.Versions || [];
   // Folder = the canonical destination folder for the recording's
-  // first version. Falls back to the source_folder hint via the
-  // Versions shape — but the SPA only carries dirname(FilePath) on
+  // first version. The SPA only carries dirname(FilePath) on
   // versions, so the displayed folder is always destination-side.
   const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
   const cataloged = loaded.CollectedAt || '';
-  // Encora fields: metadata.gifting_status / owners_count / wanters_count
-  // (raw_json round-trip — see internal/encora/types.go). Render zero
-  // counts as "0" rather than "—" so an actively-zero state reads
-  // distinctly from "no data".
-  const gifting = meta.gifting_status || '';
-  const owners = (meta.owners_count != null) ? String(meta.owners_count) : '';
-  const wanters = (meta.wanters_count != null) ? String(meta.wanters_count) : '';
   const rows = [
     ['Cataloged', cataloged],
-    ['Gifting', gifting],
-    ['Owners', owners],
-    ['Wanters', wanters],
   ];
   return m('section', { class: 'space-y-2' }, [
     m('h2', { class: 'text-base font-semibold opacity-80' }, 'Details'),

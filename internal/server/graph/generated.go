@@ -192,6 +192,7 @@ type ComplexityRoot struct {
 		DateDayKnown   func(childComplexity int) int
 		DateFull       func(childComplexity int) int
 		DateMonthKnown func(childComplexity int) int
+		DateVariant    func(childComplexity int) int
 		ID             func(childComplexity int) int
 		Show           func(childComplexity int) int
 		ShowID         func(childComplexity int) int
@@ -361,6 +362,7 @@ type ComplexityRoot struct {
 		DateDayKnown       func(childComplexity int) int
 		DateFull           func(childComplexity int) int
 		DateMonthKnown     func(childComplexity int) int
+		DateVariant        func(childComplexity int) int
 		EncoraFormat       func(childComplexity int) int
 		FileCount          func(childComplexity int) int
 		ID                 func(childComplexity int) int
@@ -1170,6 +1172,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.PersonRecording.DateMonthKnown(childComplexity), true
+	case "PersonRecording.dateVariant":
+		if e.ComplexityRoot.PersonRecording.DateVariant == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PersonRecording.DateVariant(childComplexity), true
 	case "PersonRecording.id":
 		if e.ComplexityRoot.PersonRecording.ID == nil {
 			break
@@ -2091,6 +2099,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RecordingsListItem.DateMonthKnown(childComplexity), true
+	case "RecordingsListItem.dateVariant":
+		if e.ComplexityRoot.RecordingsListItem.DateVariant == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordingsListItem.DateVariant(childComplexity), true
 	case "RecordingsListItem.encoraFormat":
 		if e.ComplexityRoot.RecordingsListItem.EncoraFormat == nil {
 			break
@@ -3087,6 +3101,8 @@ func (ec *executionContext) childFields_PersonRecording(ctx context.Context, fie
 		return ec.fieldContext_PersonRecording_dateMonthKnown(ctx, field)
 	case "dateDayKnown":
 		return ec.fieldContext_PersonRecording_dateDayKnown(ctx, field)
+	case "dateVariant":
+		return ec.fieldContext_PersonRecording_dateVariant(ctx, field)
 	case "showID":
 		return ec.fieldContext_PersonRecording_showID(ctx, field)
 	case "state":
@@ -3379,6 +3395,8 @@ func (ec *executionContext) childFields_RecordingsListItem(ctx context.Context, 
 		return ec.fieldContext_RecordingsListItem_dateMonthKnown(ctx, field)
 	case "dateDayKnown":
 		return ec.fieldContext_RecordingsListItem_dateDayKnown(ctx, field)
+	case "dateVariant":
+		return ec.fieldContext_RecordingsListItem_dateVariant(ctx, field)
 	case "master":
 		return ec.fieldContext_RecordingsListItem_master(ctx, field)
 	case "status":
@@ -7032,6 +7050,29 @@ func (ec *executionContext) _PersonRecording_dateDayKnown(ctx context.Context, f
 }
 func (ec *executionContext) fieldContext_PersonRecording_dateDayKnown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PersonRecording", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _PersonRecording_dateVariant(ctx context.Context, field graphql.CollectedField, obj *PersonRecording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PersonRecording_dateVariant(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DateVariant, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_PersonRecording_dateVariant(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PersonRecording", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _PersonRecording_showID(ctx context.Context, field graphql.CollectedField, obj *PersonRecording) (ret graphql.Marshaler) {
@@ -10805,6 +10846,29 @@ func (ec *executionContext) _RecordingsListItem_dateDayKnown(ctx context.Context
 }
 func (ec *executionContext) fieldContext_RecordingsListItem_dateDayKnown(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _RecordingsListItem_dateVariant(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordingsListItem_dateVariant(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DateVariant, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_RecordingsListItem_dateVariant(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordingsListItem", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _RecordingsListItem_master(ctx context.Context, field graphql.CollectedField, obj *RecordingsListItem) (ret graphql.Marshaler) {
@@ -22088,6 +22152,8 @@ func (ec *executionContext) _PersonRecording(ctx context.Context, sel ast.Select
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "dateVariant":
+			out.Values[i] = ec._PersonRecording_dateVariant(ctx, field, obj)
 		case "showID":
 			out.Values[i] = ec._PersonRecording_showID(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -24130,6 +24196,8 @@ func (ec *executionContext) _RecordingsListItem(ctx context.Context, sel ast.Sel
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "dateVariant":
+			out.Values[i] = ec._RecordingsListItem_dateVariant(ctx, field, obj)
 		case "master":
 			out.Values[i] = ec._RecordingsListItem_master(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

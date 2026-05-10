@@ -16,6 +16,21 @@ export function smartDate(full, monthKnown, dayKnown) {
   return String(full).substring(0, 10);
 }
 
+// smartDateWithVariant adds the encora date_variant disambiguator
+// (a small integer denoting which performance of the day this is —
+// matinee vs evening, etc.) when one is set. Renders as
+// "YYYY-MM-DD (N)" or the truncated form when the date precision is
+// lower. An empty / null variant collapses to plain smartDate output
+// so callers can pass the raw field unconditionally.
+export function smartDateWithVariant(full, monthKnown, dayKnown, variant) {
+  const base = smartDate(full, monthKnown, dayKnown);
+  if (base === '—') return base;
+  if (variant == null) return base;
+  const v = String(variant).trim();
+  if (v === '') return base;
+  return base + ' (' + v + ')';
+}
+
 // relativeTime returns a coarse "N units ago" string for an ISO
 // timestamp, or '—' when the input is empty/invalid. Used by
 // pages that want a human-friendly age column (history, queue).

@@ -42,7 +42,7 @@
 
 import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
-import { humanSize, smartDate, errorMessage } from '../utils/format.js';
+import { humanSize, smartDateWithVariant, errorMessage } from '../utils/format.js';
 
 // SEARCH_QUERY drives the typeahead. Empty / short queries return
 // [] (server-side guard); we still debounce so the user can type
@@ -57,6 +57,7 @@ const SEARCH_QUERY = `
       dateFull
       dateMonthKnown
       dateDayKnown
+      dateVariant
       master
     }
   }
@@ -115,6 +116,7 @@ function mapRecordingItem(node) {
     date_full:        node.dateFull || '',
     date_month_known: !!node.dateMonthKnown,
     date_day_known:   !!node.dateDayKnown,
+    date_variant:     node.dateVariant || '',
     master:           node.master || '',
   };
 }
@@ -435,7 +437,8 @@ function pickRecording(local, queueID, rec) {
 function recordingSummary(rec) {
   if (!rec) return null;
   const subtitleParts = [];
-  const date = smartDate(rec.date_full, rec.date_month_known, rec.date_day_known);
+  const date = smartDateWithVariant(
+    rec.date_full, rec.date_month_known, rec.date_day_known, rec.date_variant);
   if (date && date !== '—') subtitleParts.push(date);
   if (rec.tour)   subtitleParts.push(rec.tour);
   if (rec.master) subtitleParts.push(rec.master);

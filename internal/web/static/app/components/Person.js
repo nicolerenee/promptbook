@@ -16,7 +16,7 @@
 import m from 'https://esm.sh/mithril@2.2.2';
 import graphql from '../graphql.js';
 import state from '../state.js';
-import { smartDate } from '../utils/format.js';
+import { smartDateWithVariant } from '../utils/format.js';
 
 // PERSON_DETAIL_QUERY pulls the performer + their full credit list
 // via the custom person(id:) resolver. Image-cache URL + per-row
@@ -38,6 +38,7 @@ const PERSON_DETAIL_QUERY = `
         dateFull
         dateMonthKnown
         dateDayKnown
+        dateVariant
         state
       }
     }
@@ -64,6 +65,7 @@ function mapPersonDetail(node) {
     date_full:        r.dateFull || '',
     date_month_known: !!r.dateMonthKnown,
     date_day_known:   !!r.dateDayKnown,
+    date_variant:     r.dateVariant || '',
     state:            r.state || '',
   }));
   return {
@@ -273,7 +275,8 @@ function Row(r) {
       m('div', { class: 'text-xs opacity-60' }, subtitle),
     ]),
     m('td', { class: 'font-mono text-sm' },
-      smartDate(r.date_full, r.date_month_known, r.date_day_known)),
+      smartDateWithVariant(
+        r.date_full, r.date_month_known, r.date_day_known, r.date_variant)),
     m('td', '—'),
     m('td', '—'),
   ]);

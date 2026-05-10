@@ -84,14 +84,15 @@ type PersonListPage struct {
 }
 
 type PersonRecording struct {
-	ID             int64  `json:"id"`
-	Show           string `json:"show"`
-	Tour           string `json:"tour"`
-	DateFull       string `json:"dateFull"`
-	DateMonthKnown bool   `json:"dateMonthKnown"`
-	DateDayKnown   bool   `json:"dateDayKnown"`
-	ShowID         int64  `json:"showID"`
-	State          string `json:"state"`
+	ID             int64   `json:"id"`
+	Show           string  `json:"show"`
+	Tour           string  `json:"tour"`
+	DateFull       string  `json:"dateFull"`
+	DateMonthKnown bool    `json:"dateMonthKnown"`
+	DateDayKnown   bool    `json:"dateDayKnown"`
+	DateVariant    *string `json:"dateVariant,omitempty"`
+	ShowID         int64   `json:"showID"`
+	State          string  `json:"state"`
 }
 
 type PreviewQueueImportInput struct {
@@ -136,22 +137,23 @@ type RecordingExtra struct {
 }
 
 type RecordingsListItem struct {
-	ID                 int64  `json:"id"`
-	ShowID             int64  `json:"showID"`
-	Show               string `json:"show"`
-	Tour               string `json:"tour"`
-	DateFull           string `json:"dateFull"`
-	DateMonthKnown     bool   `json:"dateMonthKnown"`
-	DateDayKnown       bool   `json:"dateDayKnown"`
-	Master             string `json:"master"`
-	Status             string `json:"status"`
-	InCollection       bool   `json:"inCollection"`
-	InWants            bool   `json:"inWants"`
-	FileCount          int    `json:"fileCount"`
-	EncoraFormat       string `json:"encoraFormat"`
-	LocalFormat        string `json:"localFormat"`
-	LocalReleaseFormat string `json:"localReleaseFormat"`
-	LocalPosterURL     string `json:"localPosterURL"`
+	ID                 int64   `json:"id"`
+	ShowID             int64   `json:"showID"`
+	Show               string  `json:"show"`
+	Tour               string  `json:"tour"`
+	DateFull           string  `json:"dateFull"`
+	DateMonthKnown     bool    `json:"dateMonthKnown"`
+	DateDayKnown       bool    `json:"dateDayKnown"`
+	DateVariant        *string `json:"dateVariant,omitempty"`
+	Master             string  `json:"master"`
+	Status             string  `json:"status"`
+	InCollection       bool    `json:"inCollection"`
+	InWants            bool    `json:"inWants"`
+	FileCount          int     `json:"fileCount"`
+	EncoraFormat       string  `json:"encoraFormat"`
+	LocalFormat        string  `json:"localFormat"`
+	LocalReleaseFormat string  `json:"localReleaseFormat"`
+	LocalPosterURL     string  `json:"localPosterURL"`
 }
 
 type RecordingsListPage struct {
