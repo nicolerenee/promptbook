@@ -68,6 +68,12 @@ const NAV_GROUPS = [
     ],
   },
   {
+    label: 'Tools',
+    items: [
+      { href: '/export', name: 'Export', match: (p) => p === '/export' },
+    ],
+  },
+  {
     label: 'System',
     items: [
       { href: '/jobs', name: 'Jobs', match: (p) => p === '/jobs' },

@@ -28,6 +28,7 @@ import Person from './components/Person.js';
 import Mismatches from './components/Mismatches.js';
 import Jobs from './components/Jobs.js';
 import Settings from './components/Settings.js';
+import Export from './components/Export.js';
 import stubPage from './components/StubPage.js';
 import { initTheme } from './components/Topbar.js';
 
@@ -88,5 +89,6 @@ if (!root) {
     '/apply':           wrap(stubPage('Apply')),
     '/jobs':            wrap(Jobs),
     '/settings':        wrap(Settings),
+    '/export':          wrap(Export),
   });
 }
