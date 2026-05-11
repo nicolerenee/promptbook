@@ -519,6 +519,20 @@ func (_u *RecordingUpdate) SetNillableExternallyManaged(v *bool) *RecordingUpdat
 	return _u
 }
 
+// SetPrivateNotes sets the "private_notes" field.
+func (_u *RecordingUpdate) SetPrivateNotes(v string) *RecordingUpdate {
+	_u.mutation.SetPrivateNotes(v)
+	return _u
+}
+
+// SetNillablePrivateNotes sets the "private_notes" field if the given value is not nil.
+func (_u *RecordingUpdate) SetNillablePrivateNotes(v *string) *RecordingUpdate {
+	if v != nil {
+		_u.SetPrivateNotes(*v)
+	}
+	return _u
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (_u *RecordingUpdate) SetLastUpdated(v string) *RecordingUpdate {
 	_u.mutation.SetLastUpdated(v)
@@ -848,6 +862,9 @@ func (_u *RecordingUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.ExternallyManaged(); ok {
 		_spec.SetField(recording.FieldExternallyManaged, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PrivateNotes(); ok {
+		_spec.SetField(recording.FieldPrivateNotes, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastUpdated(); ok {
 		_spec.SetField(recording.FieldLastUpdated, field.TypeString, value)
@@ -1530,6 +1547,20 @@ func (_u *RecordingUpdateOne) SetNillableExternallyManaged(v *bool) *RecordingUp
 	return _u
 }
 
+// SetPrivateNotes sets the "private_notes" field.
+func (_u *RecordingUpdateOne) SetPrivateNotes(v string) *RecordingUpdateOne {
+	_u.mutation.SetPrivateNotes(v)
+	return _u
+}
+
+// SetNillablePrivateNotes sets the "private_notes" field if the given value is not nil.
+func (_u *RecordingUpdateOne) SetNillablePrivateNotes(v *string) *RecordingUpdateOne {
+	if v != nil {
+		_u.SetPrivateNotes(*v)
+	}
+	return _u
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (_u *RecordingUpdateOne) SetLastUpdated(v string) *RecordingUpdateOne {
 	_u.mutation.SetLastUpdated(v)
@@ -1889,6 +1920,9 @@ func (_u *RecordingUpdateOne) sqlSave(ctx context.Context) (_node *Recording, er
 	}
 	if value, ok := _u.mutation.ExternallyManaged(); ok {
 		_spec.SetField(recording.FieldExternallyManaged, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PrivateNotes(); ok {
+		_spec.SetField(recording.FieldPrivateNotes, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastUpdated(); ok {
 		_spec.SetField(recording.FieldLastUpdated, field.TypeString, value)

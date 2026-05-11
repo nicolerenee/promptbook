@@ -7374,6 +7374,7 @@ type RecordingMutation struct {
 	wanters_count         *int
 	addwanters_count      *int
 	externally_managed    *bool
+	private_notes         *string
 	last_updated          *string
 	raw_json              *string
 	last_seen_at          *time.Time
@@ -8742,6 +8743,42 @@ func (m *RecordingMutation) ResetExternallyManaged() {
 	m.externally_managed = nil
 }
 
+// SetPrivateNotes sets the "private_notes" field.
+func (m *RecordingMutation) SetPrivateNotes(s string) {
+	m.private_notes = &s
+}
+
+// PrivateNotes returns the value of the "private_notes" field in the mutation.
+func (m *RecordingMutation) PrivateNotes() (r string, exists bool) {
+	v := m.private_notes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrivateNotes returns the old "private_notes" field's value of the Recording entity.
+// If the Recording object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RecordingMutation) OldPrivateNotes(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrivateNotes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrivateNotes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrivateNotes: %w", err)
+	}
+	return oldValue.PrivateNotes, nil
+}
+
+// ResetPrivateNotes resets all changes to the "private_notes" field.
+func (m *RecordingMutation) ResetPrivateNotes() {
+	m.private_notes = nil
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (m *RecordingMutation) SetLastUpdated(s string) {
 	m.last_updated = &s
@@ -9073,7 +9110,7 @@ func (m *RecordingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RecordingMutation) Fields() []string {
-	fields := make([]string, 0, 35)
+	fields := make([]string, 0, 36)
 	if m.show != nil {
 		fields = append(fields, recording.FieldShowID)
 	}
@@ -9170,6 +9207,9 @@ func (m *RecordingMutation) Fields() []string {
 	if m.externally_managed != nil {
 		fields = append(fields, recording.FieldExternallyManaged)
 	}
+	if m.private_notes != nil {
+		fields = append(fields, recording.FieldPrivateNotes)
+	}
 	if m.last_updated != nil {
 		fields = append(fields, recording.FieldLastUpdated)
 	}
@@ -9251,6 +9291,8 @@ func (m *RecordingMutation) Field(name string) (ent.Value, bool) {
 		return m.WantersCount()
 	case recording.FieldExternallyManaged:
 		return m.ExternallyManaged()
+	case recording.FieldPrivateNotes:
+		return m.PrivateNotes()
 	case recording.FieldLastUpdated:
 		return m.LastUpdated()
 	case recording.FieldRawJSON:
@@ -9330,6 +9372,8 @@ func (m *RecordingMutation) OldField(ctx context.Context, name string) (ent.Valu
 		return m.OldWantersCount(ctx)
 	case recording.FieldExternallyManaged:
 		return m.OldExternallyManaged(ctx)
+	case recording.FieldPrivateNotes:
+		return m.OldPrivateNotes(ctx)
 	case recording.FieldLastUpdated:
 		return m.OldLastUpdated(ctx)
 	case recording.FieldRawJSON:
@@ -9569,6 +9613,13 @@ func (m *RecordingMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetExternallyManaged(v)
 		return nil
+	case recording.FieldPrivateNotes:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrivateNotes(v)
+		return nil
 	case recording.FieldLastUpdated:
 		v, ok := value.(string)
 		if !ok {
@@ -9788,6 +9839,9 @@ func (m *RecordingMutation) ResetField(name string) error {
 		return nil
 	case recording.FieldExternallyManaged:
 		m.ResetExternallyManaged()
+		return nil
+	case recording.FieldPrivateNotes:
+		m.ResetPrivateNotes()
 		return nil
 	case recording.FieldLastUpdated:
 		m.ResetLastUpdated()

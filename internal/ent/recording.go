@@ -82,6 +82,8 @@ type Recording struct {
 	WantersCount int `json:"wanters_count,omitempty"`
 	// ExternallyManaged holds the value of the "externally_managed" field.
 	ExternallyManaged bool `json:"externally_managed,omitempty"`
+	// PrivateNotes holds the value of the "private_notes" field.
+	PrivateNotes string `json:"private_notes,omitempty"`
 	// LastUpdated holds the value of the "last_updated" field.
 	LastUpdated string `json:"last_updated,omitempty"`
 	// RawJSON holds the value of the "raw_json" field.
@@ -162,7 +164,7 @@ func (*Recording) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case recording.FieldID, recording.FieldShowID, recording.FieldOwnersCount, recording.FieldWantersCount:
 			values[i] = new(sql.NullInt64)
-		case recording.FieldTour, recording.FieldDateFull, recording.FieldDateVariant, recording.FieldDateTime, recording.FieldMaster, recording.FieldNftDate, recording.FieldNotes, recording.FieldMasterNotes, recording.FieldReleaseFormat, recording.FieldVenue, recording.FieldCity, recording.FieldMediaType, recording.FieldRecordingType, recording.FieldAmountRecorded, recording.FieldGiftingStatus, recording.FieldLimitedStatus, recording.FieldLastUpdated, recording.FieldRawJSON:
+		case recording.FieldTour, recording.FieldDateFull, recording.FieldDateVariant, recording.FieldDateTime, recording.FieldMaster, recording.FieldNftDate, recording.FieldNotes, recording.FieldMasterNotes, recording.FieldReleaseFormat, recording.FieldVenue, recording.FieldCity, recording.FieldMediaType, recording.FieldRecordingType, recording.FieldAmountRecorded, recording.FieldGiftingStatus, recording.FieldLimitedStatus, recording.FieldPrivateNotes, recording.FieldLastUpdated, recording.FieldRawJSON:
 			values[i] = new(sql.NullString)
 		case recording.FieldLastSeenAt:
 			values[i] = new(sql.NullTime)
@@ -383,6 +385,12 @@ func (_m *Recording) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ExternallyManaged = value.Bool
 			}
+		case recording.FieldPrivateNotes:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field private_notes", values[i])
+			} else if value.Valid {
+				_m.PrivateNotes = value.String
+			}
 		case recording.FieldLastUpdated:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field last_updated", values[i])
@@ -560,6 +568,9 @@ func (_m *Recording) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("externally_managed=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ExternallyManaged))
+	builder.WriteString(", ")
+	builder.WriteString("private_notes=")
+	builder.WriteString(_m.PrivateNotes)
 	builder.WriteString(", ")
 	builder.WriteString("last_updated=")
 	builder.WriteString(_m.LastUpdated)

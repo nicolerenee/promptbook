@@ -466,6 +466,20 @@ func (_c *RecordingCreate) SetNillableExternallyManaged(v *bool) *RecordingCreat
 	return _c
 }
 
+// SetPrivateNotes sets the "private_notes" field.
+func (_c *RecordingCreate) SetPrivateNotes(v string) *RecordingCreate {
+	_c.mutation.SetPrivateNotes(v)
+	return _c
+}
+
+// SetNillablePrivateNotes sets the "private_notes" field if the given value is not nil.
+func (_c *RecordingCreate) SetNillablePrivateNotes(v *string) *RecordingCreate {
+	if v != nil {
+		_c.SetPrivateNotes(*v)
+	}
+	return _c
+}
+
 // SetLastUpdated sets the "last_updated" field.
 func (_c *RecordingCreate) SetLastUpdated(v string) *RecordingCreate {
 	_c.mutation.SetLastUpdated(v)
@@ -699,6 +713,10 @@ func (_c *RecordingCreate) defaults() {
 		v := recording.DefaultExternallyManaged
 		_c.mutation.SetExternallyManaged(v)
 	}
+	if _, ok := _c.mutation.PrivateNotes(); !ok {
+		v := recording.DefaultPrivateNotes
+		_c.mutation.SetPrivateNotes(v)
+	}
 	if _, ok := _c.mutation.LastUpdated(); !ok {
 		v := recording.DefaultLastUpdated
 		_c.mutation.SetLastUpdated(v)
@@ -794,6 +812,9 @@ func (_c *RecordingCreate) check() error {
 	}
 	if _, ok := _c.mutation.ExternallyManaged(); !ok {
 		return &ValidationError{Name: "externally_managed", err: errors.New(`ent: missing required field "Recording.externally_managed"`)}
+	}
+	if _, ok := _c.mutation.PrivateNotes(); !ok {
+		return &ValidationError{Name: "private_notes", err: errors.New(`ent: missing required field "Recording.private_notes"`)}
 	}
 	if _, ok := _c.mutation.LastUpdated(); !ok {
 		return &ValidationError{Name: "last_updated", err: errors.New(`ent: missing required field "Recording.last_updated"`)}
@@ -963,6 +984,10 @@ func (_c *RecordingCreate) createSpec() (*Recording, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ExternallyManaged(); ok {
 		_spec.SetField(recording.FieldExternallyManaged, field.TypeBool, value)
 		_node.ExternallyManaged = value
+	}
+	if value, ok := _c.mutation.PrivateNotes(); ok {
+		_spec.SetField(recording.FieldPrivateNotes, field.TypeString, value)
+		_node.PrivateNotes = value
 	}
 	if value, ok := _c.mutation.LastUpdated(); ok {
 		_spec.SetField(recording.FieldLastUpdated, field.TypeString, value)
@@ -1510,6 +1535,18 @@ func (u *RecordingUpsert) SetExternallyManaged(v bool) *RecordingUpsert {
 // UpdateExternallyManaged sets the "externally_managed" field to the value that was provided on create.
 func (u *RecordingUpsert) UpdateExternallyManaged() *RecordingUpsert {
 	u.SetExcluded(recording.FieldExternallyManaged)
+	return u
+}
+
+// SetPrivateNotes sets the "private_notes" field.
+func (u *RecordingUpsert) SetPrivateNotes(v string) *RecordingUpsert {
+	u.Set(recording.FieldPrivateNotes, v)
+	return u
+}
+
+// UpdatePrivateNotes sets the "private_notes" field to the value that was provided on create.
+func (u *RecordingUpsert) UpdatePrivateNotes() *RecordingUpsert {
+	u.SetExcluded(recording.FieldPrivateNotes)
 	return u
 }
 
@@ -2084,6 +2121,20 @@ func (u *RecordingUpsertOne) SetExternallyManaged(v bool) *RecordingUpsertOne {
 func (u *RecordingUpsertOne) UpdateExternallyManaged() *RecordingUpsertOne {
 	return u.Update(func(s *RecordingUpsert) {
 		s.UpdateExternallyManaged()
+	})
+}
+
+// SetPrivateNotes sets the "private_notes" field.
+func (u *RecordingUpsertOne) SetPrivateNotes(v string) *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetPrivateNotes(v)
+	})
+}
+
+// UpdatePrivateNotes sets the "private_notes" field to the value that was provided on create.
+func (u *RecordingUpsertOne) UpdatePrivateNotes() *RecordingUpsertOne {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdatePrivateNotes()
 	})
 }
 
@@ -2830,6 +2881,20 @@ func (u *RecordingUpsertBulk) SetExternallyManaged(v bool) *RecordingUpsertBulk 
 func (u *RecordingUpsertBulk) UpdateExternallyManaged() *RecordingUpsertBulk {
 	return u.Update(func(s *RecordingUpsert) {
 		s.UpdateExternallyManaged()
+	})
+}
+
+// SetPrivateNotes sets the "private_notes" field.
+func (u *RecordingUpsertBulk) SetPrivateNotes(v string) *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.SetPrivateNotes(v)
+	})
+}
+
+// UpdatePrivateNotes sets the "private_notes" field to the value that was provided on create.
+func (u *RecordingUpsertBulk) UpdatePrivateNotes() *RecordingUpsertBulk {
+	return u.Update(func(s *RecordingUpsert) {
+		s.UpdatePrivateNotes()
 	})
 }
 

@@ -143,6 +143,18 @@ export const state = {
     // toggles. Failures surface on state.recording.dangerError to
     // reuse the existing alert pattern.
     externallyManagedBusy: false,
+    // notesDraft is the controlled-input string for the private-notes
+    // textarea on the recording detail page. Kept separate from the
+    // loaded.private_notes server value so a half-typed edit survives
+    // a redraw without committing. null means "draft not initialized
+    // yet — show the loaded value verbatim"; the editor seeds this
+    // on first paint. notesBusy disables the Save button + textarea
+    // while the setRecordingPrivateNotes mutation is in flight.
+    // notesError carries an inline failure message; cleared on next
+    // save attempt.
+    notesDraft: null,
+    notesBusy: false,
+    notesError: null,
     // expandedVersions tracks which Files-section Versions table rows
     // are showing their inline Media Info expansion. Keyed by the
     // row's index in the versions array. Reset on every recording

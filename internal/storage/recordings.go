@@ -44,6 +44,10 @@ type LoadedRecording struct {
 	// detail page hides rename / NFO / move controls in this mode;
 	// the toggle flips it via setRecordingExternallyManaged.
 	ExternallyManaged bool
+	// PrivateNotes is user-owned free text that never syncs to Encora.
+	// Empty string is the "no notes" sentinel. Edited from the
+	// recording detail page via setRecordingPrivateNotes.
+	PrivateNotes string
 }
 
 // ResolvedCastEntry pairs a cast row with the canonical performer +
@@ -79,6 +83,7 @@ func LoadRecording(
 		Recording:         r,
 		RawJSONPresent:    true,
 		ExternallyManaged: row.ExternallyManaged,
+		PrivateNotes:      row.PrivateNotes,
 	}
 
 	if cerr := fillCollectionState(ctx, client, id, loaded); cerr != nil {
@@ -193,6 +198,26 @@ func SetRecordingExternallyManaged(
 	if err != nil {
 		return fmt.Errorf(
 			"update recordings.externally_managed for %d: %w", recordingID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("recording %d: %w", recordingID, ErrRecordingNotFound)
+	}
+	return nil
+}
+
+// SetRecordingPrivateNotes overwrites recordings.private_notes for the
+// given recording. Empty string is valid (the "no notes" sentinel).
+// Returns ErrRecordingNotFound when the row is missing.
+func SetRecordingPrivateNotes(
+	ctx context.Context, client *ent.Client, recordingID int64, notes string,
+) error {
+	n, err := client.Recording.Update().
+		Where(recording.IDEQ(recordingID)).
+		SetPrivateNotes(notes).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf(
+			"update recordings.private_notes for %d: %w", recordingID, err)
 	}
 	if n == 0 {
 		return fmt.Errorf("recording %d: %w", recordingID, ErrRecordingNotFound)

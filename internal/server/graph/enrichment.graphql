@@ -639,4 +639,13 @@ type Mutation {
     recordingID: ID!
     externallyManaged: Boolean!
   ): Recording!
+
+  # setRecordingPrivateNotes overwrites the recording's private_notes
+  # text. Empty string is valid (the "no notes" state). The field is
+  # local-only: never synced to Encora. Returns the refreshed
+  # Recording so the SPA can paint the saved value verbatim.
+  setRecordingPrivateNotes(
+    recordingID: ID!
+    notes: String!
+  ): Recording!
 }

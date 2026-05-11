@@ -78,6 +78,8 @@ const (
 	FieldWantersCount = "wanters_count"
 	// FieldExternallyManaged holds the string denoting the externally_managed field in the database.
 	FieldExternallyManaged = "externally_managed"
+	// FieldPrivateNotes holds the string denoting the private_notes field in the database.
+	FieldPrivateNotes = "private_notes"
 	// FieldLastUpdated holds the string denoting the last_updated field in the database.
 	FieldLastUpdated = "last_updated"
 	// FieldRawJSON holds the string denoting the raw_json field in the database.
@@ -167,6 +169,7 @@ var Columns = []string{
 	FieldOwnersCount,
 	FieldWantersCount,
 	FieldExternallyManaged,
+	FieldPrivateNotes,
 	FieldLastUpdated,
 	FieldRawJSON,
 	FieldLastSeenAt,
@@ -237,6 +240,8 @@ var (
 	DefaultWantersCount int
 	// DefaultExternallyManaged holds the default value on creation for the "externally_managed" field.
 	DefaultExternallyManaged bool
+	// DefaultPrivateNotes holds the default value on creation for the "private_notes" field.
+	DefaultPrivateNotes string
 	// DefaultLastUpdated holds the default value on creation for the "last_updated" field.
 	DefaultLastUpdated string
 	// DefaultLastSeenAt holds the default value on creation for the "last_seen_at" field.
@@ -409,6 +414,11 @@ func ByWantersCount(opts ...sql.OrderTermOption) OrderOption {
 // ByExternallyManaged orders the results by the externally_managed field.
 func ByExternallyManaged(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldExternallyManaged, opts...).ToFunc()
+}
+
+// ByPrivateNotes orders the results by the private_notes field.
+func ByPrivateNotes(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPrivateNotes, opts...).ToFunc()
 }
 
 // ByLastUpdated orders the results by the last_updated field.

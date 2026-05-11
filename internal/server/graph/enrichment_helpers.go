@@ -2205,6 +2205,32 @@ func (r *Resolver) setRecordingExternallyManaged(
 	return row, nil
 }
 
+// setRecordingPrivateNotes is the resolver body for the
+// setRecordingPrivateNotes mutation. Overwrites the local-only
+// private_notes column verbatim — no trimming, no sanitization (the
+// SPA's textarea is the trust boundary). Empty string is the
+// "cleared notes" path. Reloads the recording so the returned
+// payload reflects the just-saved value.
+func (r *Resolver) setRecordingPrivateNotes(
+	ctx context.Context, recordingID int64, notes string,
+) (*ent.Recording, error) {
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	if err := storage.SetRecordingPrivateNotes(
+		ctx, r.client, recordingID, notes,
+	); err != nil {
+		return nil, fmt.Errorf(
+			"graphql: set private_notes for %d: %w", recordingID, err)
+	}
+	row, getErr := r.client.Recording.Get(ctx, recordingID)
+	if getErr != nil {
+		return nil, fmt.Errorf(
+			"graphql: reload recording %d after notes save: %w", recordingID, getErr)
+	}
+	return row, nil
+}
+
 // uniqueVersionDirs returns the deduplicated set of parent
 // directories across the recording's versions. Multipart recordings
 // share one folder; loose-file legacy imports may sit in disparate

@@ -47,6 +47,15 @@ func (r *mutationResolver) SetRecordingExternallyManaged(ctx context.Context, re
 	return r.Resolver.setRecordingExternallyManaged(ctx, recordingID, externallyManaged)
 }
 
+// SetRecordingPrivateNotes is the resolver for the
+// setRecordingPrivateNotes field. Pass-through to the
+// resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *mutationResolver) SetRecordingPrivateNotes(ctx context.Context, recordingID int64, notes string) (*ent.Recording, error) {
+	return r.Resolver.setRecordingPrivateNotes(ctx, recordingID, notes)
+}
+
 // LocalHeadshotURL is the resolver for the localHeadshotURL field.
 func (r *performerResolver) LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error) {
 	if r.imageCache == nil || r.imageCache.Disabled() {

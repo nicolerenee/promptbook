@@ -215,6 +215,11 @@ func ExternallyManaged(v bool) predicate.Recording {
 	return predicate.Recording(sql.FieldEQ(FieldExternallyManaged, v))
 }
 
+// PrivateNotes applies equality check predicate on the "private_notes" field. It's identical to PrivateNotesEQ.
+func PrivateNotes(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldEQ(FieldPrivateNotes, v))
+}
+
 // LastUpdated applies equality check predicate on the "last_updated" field. It's identical to LastUpdatedEQ.
 func LastUpdated(v string) predicate.Recording {
 	return predicate.Recording(sql.FieldEQ(FieldLastUpdated, v))
@@ -1538,6 +1543,71 @@ func ExternallyManagedEQ(v bool) predicate.Recording {
 // ExternallyManagedNEQ applies the NEQ predicate on the "externally_managed" field.
 func ExternallyManagedNEQ(v bool) predicate.Recording {
 	return predicate.Recording(sql.FieldNEQ(FieldExternallyManaged, v))
+}
+
+// PrivateNotesEQ applies the EQ predicate on the "private_notes" field.
+func PrivateNotesEQ(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldEQ(FieldPrivateNotes, v))
+}
+
+// PrivateNotesNEQ applies the NEQ predicate on the "private_notes" field.
+func PrivateNotesNEQ(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldNEQ(FieldPrivateNotes, v))
+}
+
+// PrivateNotesIn applies the In predicate on the "private_notes" field.
+func PrivateNotesIn(vs ...string) predicate.Recording {
+	return predicate.Recording(sql.FieldIn(FieldPrivateNotes, vs...))
+}
+
+// PrivateNotesNotIn applies the NotIn predicate on the "private_notes" field.
+func PrivateNotesNotIn(vs ...string) predicate.Recording {
+	return predicate.Recording(sql.FieldNotIn(FieldPrivateNotes, vs...))
+}
+
+// PrivateNotesGT applies the GT predicate on the "private_notes" field.
+func PrivateNotesGT(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldGT(FieldPrivateNotes, v))
+}
+
+// PrivateNotesGTE applies the GTE predicate on the "private_notes" field.
+func PrivateNotesGTE(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldGTE(FieldPrivateNotes, v))
+}
+
+// PrivateNotesLT applies the LT predicate on the "private_notes" field.
+func PrivateNotesLT(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldLT(FieldPrivateNotes, v))
+}
+
+// PrivateNotesLTE applies the LTE predicate on the "private_notes" field.
+func PrivateNotesLTE(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldLTE(FieldPrivateNotes, v))
+}
+
+// PrivateNotesContains applies the Contains predicate on the "private_notes" field.
+func PrivateNotesContains(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldContains(FieldPrivateNotes, v))
+}
+
+// PrivateNotesHasPrefix applies the HasPrefix predicate on the "private_notes" field.
+func PrivateNotesHasPrefix(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldHasPrefix(FieldPrivateNotes, v))
+}
+
+// PrivateNotesHasSuffix applies the HasSuffix predicate on the "private_notes" field.
+func PrivateNotesHasSuffix(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldHasSuffix(FieldPrivateNotes, v))
+}
+
+// PrivateNotesEqualFold applies the EqualFold predicate on the "private_notes" field.
+func PrivateNotesEqualFold(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldEqualFold(FieldPrivateNotes, v))
+}
+
+// PrivateNotesContainsFold applies the ContainsFold predicate on the "private_notes" field.
+func PrivateNotesContainsFold(v string) predicate.Recording {
+	return predicate.Recording(sql.FieldContainsFold(FieldPrivateNotes, v))
 }
 
 // LastUpdatedEQ applies the EQ predicate on the "last_updated" field.

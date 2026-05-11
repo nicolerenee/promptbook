@@ -137,6 +137,7 @@ type ComplexityRoot struct {
 		ImportQueueEntry              func(childComplexity int, input ImportQueueEntryInput) int
 		RegenerateRecordingNfo        func(childComplexity int, recordingID int64) int
 		SetRecordingExternallyManaged func(childComplexity int, recordingID int64, externallyManaged bool) int
+		SetRecordingPrivateNotes      func(childComplexity int, recordingID int64, notes string) int
 	}
 
 	PageInfo struct {
@@ -307,6 +308,7 @@ type ComplexityRoot struct {
 		OverlayDisabled     func(childComplexity int) int
 		OverlayTextOverride func(childComplexity int) int
 		OwnersCount         func(childComplexity int) int
+		PrivateNotes        func(childComplexity int) int
 		RawJSON             func(childComplexity int) int
 		RecordingType       func(childComplexity int) int
 		ResolvedCast        func(childComplexity int) int
@@ -536,6 +538,7 @@ type MutationResolver interface {
 	ApplyRecordingRename(ctx context.Context, recordingID int64) ([]*RenameResultItem, error)
 	RegenerateRecordingNfo(ctx context.Context, recordingID int64) (*RegenerateNFOResult, error)
 	SetRecordingExternallyManaged(ctx context.Context, recordingID int64, externallyManaged bool) (*ent.Recording, error)
+	SetRecordingPrivateNotes(ctx context.Context, recordingID int64, notes string) (*ent.Recording, error)
 }
 type PerformerResolver interface {
 	LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error)
@@ -1003,6 +1006,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetRecordingExternallyManaged(childComplexity, args["recordingID"].(int64), args["externallyManaged"].(bool)), true
+	case "Mutation.setRecordingPrivateNotes":
+		if e.ComplexityRoot.Mutation.SetRecordingPrivateNotes == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setRecordingPrivateNotes_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetRecordingPrivateNotes(childComplexity, args["recordingID"].(int64), args["notes"].(string)), true
 
 	case "PageInfo.endCursor":
 		if e.ComplexityRoot.PageInfo.EndCursor == nil {
@@ -1891,6 +1905,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Recording.OwnersCount(childComplexity), true
+	case "Recording.privateNotes":
+		if e.ComplexityRoot.Recording.PrivateNotes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Recording.PrivateNotes(childComplexity), true
 	case "Recording.rawJSON":
 		if e.ComplexityRoot.Recording.RawJSON == nil {
 			break
@@ -3346,6 +3366,8 @@ func (ec *executionContext) childFields_Recording(ctx context.Context, field gra
 		return ec.fieldContext_Recording_wantersCount(ctx, field)
 	case "externallyManaged":
 		return ec.fieldContext_Recording_externallyManaged(ctx, field)
+	case "privateNotes":
+		return ec.fieldContext_Recording_privateNotes(ctx, field)
 	case "lastUpdated":
 		return ec.fieldContext_Recording_lastUpdated(ctx, field)
 	case "rawJSON":
@@ -3997,6 +4019,28 @@ func (ec *executionContext) field_Mutation_setRecordingExternallyManaged_args(ct
 		return nil, err
 	}
 	args["externallyManaged"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setRecordingPrivateNotes_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "notes",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["notes"] = arg1
 	return args, nil
 }
 
@@ -6386,6 +6430,50 @@ func (ec *executionContext) fieldContext_Mutation_setRecordingExternallyManaged(
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_setRecordingExternallyManaged_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setRecordingPrivateNotes(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setRecordingPrivateNotes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetRecordingPrivateNotes(ctx, fc.Args["recordingID"].(int64), fc.Args["notes"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *ent.Recording) graphql.Marshaler {
+			return ec.marshalNRecording2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐRecording(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setRecordingPrivateNotes(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Recording(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setRecordingPrivateNotes_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -9616,6 +9704,29 @@ func (ec *executionContext) _Recording_externallyManaged(ctx context.Context, fi
 }
 func (ec *executionContext) fieldContext_Recording_externallyManaged(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Recording", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Recording_privateNotes(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Recording_privateNotes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PrivateNotes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Recording_privateNotes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Recording", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Recording_lastUpdated(ctx context.Context, field graphql.CollectedField, obj *ent.Recording) (ret graphql.Marshaler) {
@@ -18010,7 +18121,7 @@ func (ec *executionContext) unmarshalInputRecordingWhereInput(ctx context.Contex
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"not", "and", "or", "id", "idNEQ", "idIn", "idNotIn", "idGT", "idGTE", "idLT", "idLTE", "showID", "showIDNEQ", "showIDIn", "showIDNotIn", "tour", "tourNEQ", "tourIn", "tourNotIn", "tourGT", "tourGTE", "tourLT", "tourLTE", "tourContains", "tourHasPrefix", "tourHasSuffix", "tourEqualFold", "tourContainsFold", "dateFull", "dateFullNEQ", "dateFullIn", "dateFullNotIn", "dateFullGT", "dateFullGTE", "dateFullLT", "dateFullLTE", "dateFullContains", "dateFullHasPrefix", "dateFullHasSuffix", "dateFullEqualFold", "dateFullContainsFold", "dateMonthKnown", "dateMonthKnownNEQ", "dateDayKnown", "dateDayKnownNEQ", "dateVariant", "dateVariantNEQ", "dateVariantIn", "dateVariantNotIn", "dateVariantGT", "dateVariantGTE", "dateVariantLT", "dateVariantLTE", "dateVariantContains", "dateVariantHasPrefix", "dateVariantHasSuffix", "dateVariantIsNil", "dateVariantNotNil", "dateVariantEqualFold", "dateVariantContainsFold", "dateTime", "dateTimeNEQ", "dateTimeIn", "dateTimeNotIn", "dateTimeGT", "dateTimeGTE", "dateTimeLT", "dateTimeLTE", "dateTimeContains", "dateTimeHasPrefix", "dateTimeHasSuffix", "dateTimeEqualFold", "dateTimeContainsFold", "master", "masterNEQ", "masterIn", "masterNotIn", "masterGT", "masterGTE", "masterLT", "masterLTE", "masterContains", "masterHasPrefix", "masterHasSuffix", "masterEqualFold", "masterContainsFold", "nftDate", "nftDateNEQ", "nftDateIn", "nftDateNotIn", "nftDateGT", "nftDateGTE", "nftDateLT", "nftDateLTE", "nftDateContains", "nftDateHasPrefix", "nftDateHasSuffix", "nftDateIsNil", "nftDateNotNil", "nftDateEqualFold", "nftDateContainsFold", "nftForever", "nftForeverNEQ", "notes", "notesNEQ", "notesIn", "notesNotIn", "notesGT", "notesGTE", "notesLT", "notesLTE", "notesContains", "notesHasPrefix", "notesHasSuffix", "notesEqualFold", "notesContainsFold", "masterNotes", "masterNotesNEQ", "masterNotesIn", "masterNotesNotIn", "masterNotesGT", "masterNotesGTE", "masterNotesLT", "masterNotesLTE", "masterNotesContains", "masterNotesHasPrefix", "masterNotesHasSuffix", "masterNotesIsNil", "masterNotesNotNil", "masterNotesEqualFold", "masterNotesContainsFold", "releaseFormat", "releaseFormatNEQ", "releaseFormatIn", "releaseFormatNotIn", "releaseFormatGT", "releaseFormatGTE", "releaseFormatLT", "releaseFormatLTE", "releaseFormatContains", "releaseFormatHasPrefix", "releaseFormatHasSuffix", "releaseFormatIsNil", "releaseFormatNotNil", "releaseFormatEqualFold", "releaseFormatContainsFold", "venue", "venueNEQ", "venueIn", "venueNotIn", "venueGT", "venueGTE", "venueLT", "venueLTE", "venueContains", "venueHasPrefix", "venueHasSuffix", "venueEqualFold", "venueContainsFold", "city", "cityNEQ", "cityIn", "cityNotIn", "cityGT", "cityGTE", "cityLT", "cityLTE", "cityContains", "cityHasPrefix", "cityHasSuffix", "cityEqualFold", "cityContainsFold", "mediaType", "mediaTypeNEQ", "mediaTypeIn", "mediaTypeNotIn", "mediaTypeGT", "mediaTypeGTE", "mediaTypeLT", "mediaTypeLTE", "mediaTypeContains", "mediaTypeHasPrefix", "mediaTypeHasSuffix", "mediaTypeEqualFold", "mediaTypeContainsFold", "recordingType", "recordingTypeNEQ", "recordingTypeIn", "recordingTypeNotIn", "recordingTypeGT", "recordingTypeGTE", "recordingTypeLT", "recordingTypeLTE", "recordingTypeContains", "recordingTypeHasPrefix", "recordingTypeHasSuffix", "recordingTypeEqualFold", "recordingTypeContainsFold", "amountRecorded", "amountRecordedNEQ", "amountRecordedIn", "amountRecordedNotIn", "amountRecordedGT", "amountRecordedGTE", "amountRecordedLT", "amountRecordedLTE", "amountRecordedContains", "amountRecordedHasPrefix", "amountRecordedHasSuffix", "amountRecordedEqualFold", "amountRecordedContainsFold", "giftingStatus", "giftingStatusNEQ", "giftingStatusIn", "giftingStatusNotIn", "giftingStatusGT", "giftingStatusGTE", "giftingStatusLT", "giftingStatusLTE", "giftingStatusContains", "giftingStatusHasPrefix", "giftingStatusHasSuffix", "giftingStatusEqualFold", "giftingStatusContainsFold", "limitedStatus", "limitedStatusNEQ", "limitedStatusIn", "limitedStatusNotIn", "limitedStatusGT", "limitedStatusGTE", "limitedStatusLT", "limitedStatusLTE", "limitedStatusContains", "limitedStatusHasPrefix", "limitedStatusHasSuffix", "limitedStatusEqualFold", "limitedStatusContainsFold", "isOpening", "isOpeningNEQ", "isClosing", "isClosingNEQ", "isPreview", "isPreviewNEQ", "isConcert", "isConcertNEQ", "isNfs", "isNfsNEQ", "isFavourite", "isFavouriteNEQ", "hasScreenshots", "hasScreenshotsNEQ", "hasSubtitles", "hasSubtitlesNEQ", "bootCampRecommended", "bootCampRecommendedNEQ", "ownersCount", "ownersCountNEQ", "ownersCountIn", "ownersCountNotIn", "ownersCountGT", "ownersCountGTE", "ownersCountLT", "ownersCountLTE", "wantersCount", "wantersCountNEQ", "wantersCountIn", "wantersCountNotIn", "wantersCountGT", "wantersCountGTE", "wantersCountLT", "wantersCountLTE", "externallyManaged", "externallyManagedNEQ", "lastUpdated", "lastUpdatedNEQ", "lastUpdatedIn", "lastUpdatedNotIn", "lastUpdatedGT", "lastUpdatedGTE", "lastUpdatedLT", "lastUpdatedLTE", "lastUpdatedContains", "lastUpdatedHasPrefix", "lastUpdatedHasSuffix", "lastUpdatedEqualFold", "lastUpdatedContainsFold", "rawJSON", "rawJSONNEQ", "rawJSONIn", "rawJSONNotIn", "rawJSONGT", "rawJSONGTE", "rawJSONLT", "rawJSONLTE", "rawJSONContains", "rawJSONHasPrefix", "rawJSONHasSuffix", "rawJSONEqualFold", "rawJSONContainsFold", "lastSeenAt", "lastSeenAtNEQ", "lastSeenAtIn", "lastSeenAtNotIn", "lastSeenAtGT", "lastSeenAtGTE", "lastSeenAtLT", "lastSeenAtLTE", "hasShow", "hasShowWith", "hasCastEntries", "hasCastEntriesWith", "hasVersions", "hasVersionsWith"}
+	fieldsInOrder := [...]string{"not", "and", "or", "id", "idNEQ", "idIn", "idNotIn", "idGT", "idGTE", "idLT", "idLTE", "showID", "showIDNEQ", "showIDIn", "showIDNotIn", "tour", "tourNEQ", "tourIn", "tourNotIn", "tourGT", "tourGTE", "tourLT", "tourLTE", "tourContains", "tourHasPrefix", "tourHasSuffix", "tourEqualFold", "tourContainsFold", "dateFull", "dateFullNEQ", "dateFullIn", "dateFullNotIn", "dateFullGT", "dateFullGTE", "dateFullLT", "dateFullLTE", "dateFullContains", "dateFullHasPrefix", "dateFullHasSuffix", "dateFullEqualFold", "dateFullContainsFold", "dateMonthKnown", "dateMonthKnownNEQ", "dateDayKnown", "dateDayKnownNEQ", "dateVariant", "dateVariantNEQ", "dateVariantIn", "dateVariantNotIn", "dateVariantGT", "dateVariantGTE", "dateVariantLT", "dateVariantLTE", "dateVariantContains", "dateVariantHasPrefix", "dateVariantHasSuffix", "dateVariantIsNil", "dateVariantNotNil", "dateVariantEqualFold", "dateVariantContainsFold", "dateTime", "dateTimeNEQ", "dateTimeIn", "dateTimeNotIn", "dateTimeGT", "dateTimeGTE", "dateTimeLT", "dateTimeLTE", "dateTimeContains", "dateTimeHasPrefix", "dateTimeHasSuffix", "dateTimeEqualFold", "dateTimeContainsFold", "master", "masterNEQ", "masterIn", "masterNotIn", "masterGT", "masterGTE", "masterLT", "masterLTE", "masterContains", "masterHasPrefix", "masterHasSuffix", "masterEqualFold", "masterContainsFold", "nftDate", "nftDateNEQ", "nftDateIn", "nftDateNotIn", "nftDateGT", "nftDateGTE", "nftDateLT", "nftDateLTE", "nftDateContains", "nftDateHasPrefix", "nftDateHasSuffix", "nftDateIsNil", "nftDateNotNil", "nftDateEqualFold", "nftDateContainsFold", "nftForever", "nftForeverNEQ", "notes", "notesNEQ", "notesIn", "notesNotIn", "notesGT", "notesGTE", "notesLT", "notesLTE", "notesContains", "notesHasPrefix", "notesHasSuffix", "notesEqualFold", "notesContainsFold", "masterNotes", "masterNotesNEQ", "masterNotesIn", "masterNotesNotIn", "masterNotesGT", "masterNotesGTE", "masterNotesLT", "masterNotesLTE", "masterNotesContains", "masterNotesHasPrefix", "masterNotesHasSuffix", "masterNotesIsNil", "masterNotesNotNil", "masterNotesEqualFold", "masterNotesContainsFold", "releaseFormat", "releaseFormatNEQ", "releaseFormatIn", "releaseFormatNotIn", "releaseFormatGT", "releaseFormatGTE", "releaseFormatLT", "releaseFormatLTE", "releaseFormatContains", "releaseFormatHasPrefix", "releaseFormatHasSuffix", "releaseFormatIsNil", "releaseFormatNotNil", "releaseFormatEqualFold", "releaseFormatContainsFold", "venue", "venueNEQ", "venueIn", "venueNotIn", "venueGT", "venueGTE", "venueLT", "venueLTE", "venueContains", "venueHasPrefix", "venueHasSuffix", "venueEqualFold", "venueContainsFold", "city", "cityNEQ", "cityIn", "cityNotIn", "cityGT", "cityGTE", "cityLT", "cityLTE", "cityContains", "cityHasPrefix", "cityHasSuffix", "cityEqualFold", "cityContainsFold", "mediaType", "mediaTypeNEQ", "mediaTypeIn", "mediaTypeNotIn", "mediaTypeGT", "mediaTypeGTE", "mediaTypeLT", "mediaTypeLTE", "mediaTypeContains", "mediaTypeHasPrefix", "mediaTypeHasSuffix", "mediaTypeEqualFold", "mediaTypeContainsFold", "recordingType", "recordingTypeNEQ", "recordingTypeIn", "recordingTypeNotIn", "recordingTypeGT", "recordingTypeGTE", "recordingTypeLT", "recordingTypeLTE", "recordingTypeContains", "recordingTypeHasPrefix", "recordingTypeHasSuffix", "recordingTypeEqualFold", "recordingTypeContainsFold", "amountRecorded", "amountRecordedNEQ", "amountRecordedIn", "amountRecordedNotIn", "amountRecordedGT", "amountRecordedGTE", "amountRecordedLT", "amountRecordedLTE", "amountRecordedContains", "amountRecordedHasPrefix", "amountRecordedHasSuffix", "amountRecordedEqualFold", "amountRecordedContainsFold", "giftingStatus", "giftingStatusNEQ", "giftingStatusIn", "giftingStatusNotIn", "giftingStatusGT", "giftingStatusGTE", "giftingStatusLT", "giftingStatusLTE", "giftingStatusContains", "giftingStatusHasPrefix", "giftingStatusHasSuffix", "giftingStatusEqualFold", "giftingStatusContainsFold", "limitedStatus", "limitedStatusNEQ", "limitedStatusIn", "limitedStatusNotIn", "limitedStatusGT", "limitedStatusGTE", "limitedStatusLT", "limitedStatusLTE", "limitedStatusContains", "limitedStatusHasPrefix", "limitedStatusHasSuffix", "limitedStatusEqualFold", "limitedStatusContainsFold", "isOpening", "isOpeningNEQ", "isClosing", "isClosingNEQ", "isPreview", "isPreviewNEQ", "isConcert", "isConcertNEQ", "isNfs", "isNfsNEQ", "isFavourite", "isFavouriteNEQ", "hasScreenshots", "hasScreenshotsNEQ", "hasSubtitles", "hasSubtitlesNEQ", "bootCampRecommended", "bootCampRecommendedNEQ", "ownersCount", "ownersCountNEQ", "ownersCountIn", "ownersCountNotIn", "ownersCountGT", "ownersCountGTE", "ownersCountLT", "ownersCountLTE", "wantersCount", "wantersCountNEQ", "wantersCountIn", "wantersCountNotIn", "wantersCountGT", "wantersCountGTE", "wantersCountLT", "wantersCountLTE", "externallyManaged", "externallyManagedNEQ", "privateNotes", "privateNotesNEQ", "privateNotesIn", "privateNotesNotIn", "privateNotesGT", "privateNotesGTE", "privateNotesLT", "privateNotesLTE", "privateNotesContains", "privateNotesHasPrefix", "privateNotesHasSuffix", "privateNotesEqualFold", "privateNotesContainsFold", "lastUpdated", "lastUpdatedNEQ", "lastUpdatedIn", "lastUpdatedNotIn", "lastUpdatedGT", "lastUpdatedGTE", "lastUpdatedLT", "lastUpdatedLTE", "lastUpdatedContains", "lastUpdatedHasPrefix", "lastUpdatedHasSuffix", "lastUpdatedEqualFold", "lastUpdatedContainsFold", "rawJSON", "rawJSONNEQ", "rawJSONIn", "rawJSONNotIn", "rawJSONGT", "rawJSONGTE", "rawJSONLT", "rawJSONLTE", "rawJSONContains", "rawJSONHasPrefix", "rawJSONHasSuffix", "rawJSONEqualFold", "rawJSONContainsFold", "lastSeenAt", "lastSeenAtNEQ", "lastSeenAtIn", "lastSeenAtNotIn", "lastSeenAtGT", "lastSeenAtGTE", "lastSeenAtLT", "lastSeenAtLTE", "hasShow", "hasShowWith", "hasCastEntries", "hasCastEntriesWith", "hasVersions", "hasVersionsWith"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -19928,6 +20039,97 @@ func (ec *executionContext) unmarshalInputRecordingWhereInput(ctx context.Contex
 				return it, err
 			}
 			it.ExternallyManagedNEQ = data
+		case "privateNotes":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotes"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotes = data
+		case "privateNotesNEQ":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesNEQ"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesNEQ = data
+		case "privateNotesIn":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesIn"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesIn = data
+		case "privateNotesNotIn":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesNotIn"))
+			data, err := ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesNotIn = data
+		case "privateNotesGT":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesGT"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesGT = data
+		case "privateNotesGTE":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesGTE"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesGTE = data
+		case "privateNotesLT":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesLT"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesLT = data
+		case "privateNotesLTE":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesLTE"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesLTE = data
+		case "privateNotesContains":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesContains"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesContains = data
+		case "privateNotesHasPrefix":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesHasPrefix"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesHasPrefix = data
+		case "privateNotesHasSuffix":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesHasSuffix"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesHasSuffix = data
+		case "privateNotesEqualFold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesEqualFold"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesEqualFold = data
+		case "privateNotesContainsFold":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("privateNotesContainsFold"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PrivateNotesContainsFold = data
 		case "lastUpdated":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("lastUpdated"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -22191,6 +22393,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "setRecordingPrivateNotes":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setRecordingPrivateNotes(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -23584,6 +23793,11 @@ func (ec *executionContext) _Recording(ctx context.Context, sel ast.SelectionSet
 			}
 		case "externallyManaged":
 			out.Values[i] = ec._Recording_externallyManaged(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "privateNotes":
+			out.Values[i] = ec._Recording_privateNotes(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				atomic.AddUint32(&out.Invalids, 1)
 			}

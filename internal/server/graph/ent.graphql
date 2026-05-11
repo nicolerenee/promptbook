@@ -797,6 +797,7 @@ type Recording implements Node {
   ownersCount: Int!
   wantersCount: Int!
   externallyManaged: Boolean!
+  privateNotes: String!
   lastUpdated: String!
   rawJSON: String!
   lastSeenAt: Time!
@@ -1551,6 +1552,22 @@ input RecordingWhereInput {
   """
   externallyManaged: Boolean
   externallyManagedNEQ: Boolean
+  """
+  private_notes field predicates
+  """
+  privateNotes: String
+  privateNotesNEQ: String
+  privateNotesIn: [String!]
+  privateNotesNotIn: [String!]
+  privateNotesGT: String
+  privateNotesGTE: String
+  privateNotesLT: String
+  privateNotesLTE: String
+  privateNotesContains: String
+  privateNotesHasPrefix: String
+  privateNotesHasSuffix: String
+  privateNotesEqualFold: String
+  privateNotesContainsFold: String
   """
   last_updated field predicates
   """

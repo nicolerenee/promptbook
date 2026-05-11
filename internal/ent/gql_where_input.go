@@ -1763,6 +1763,21 @@ type RecordingWhereInput struct {
 	ExternallyManaged    *bool `json:"externallyManaged,omitempty"`
 	ExternallyManagedNEQ *bool `json:"externallyManagedNEQ,omitempty"`
 
+	// "private_notes" field predicates.
+	PrivateNotes             *string  `json:"privateNotes,omitempty"`
+	PrivateNotesNEQ          *string  `json:"privateNotesNEQ,omitempty"`
+	PrivateNotesIn           []string `json:"privateNotesIn,omitempty"`
+	PrivateNotesNotIn        []string `json:"privateNotesNotIn,omitempty"`
+	PrivateNotesGT           *string  `json:"privateNotesGT,omitempty"`
+	PrivateNotesGTE          *string  `json:"privateNotesGTE,omitempty"`
+	PrivateNotesLT           *string  `json:"privateNotesLT,omitempty"`
+	PrivateNotesLTE          *string  `json:"privateNotesLTE,omitempty"`
+	PrivateNotesContains     *string  `json:"privateNotesContains,omitempty"`
+	PrivateNotesHasPrefix    *string  `json:"privateNotesHasPrefix,omitempty"`
+	PrivateNotesHasSuffix    *string  `json:"privateNotesHasSuffix,omitempty"`
+	PrivateNotesEqualFold    *string  `json:"privateNotesEqualFold,omitempty"`
+	PrivateNotesContainsFold *string  `json:"privateNotesContainsFold,omitempty"`
+
 	// "last_updated" field predicates.
 	LastUpdated             *string  `json:"lastUpdated,omitempty"`
 	LastUpdatedNEQ          *string  `json:"lastUpdatedNEQ,omitempty"`
@@ -2696,6 +2711,45 @@ func (i *RecordingWhereInput) P() (predicate.Recording, error) {
 	}
 	if i.ExternallyManagedNEQ != nil {
 		predicates = append(predicates, recording.ExternallyManagedNEQ(*i.ExternallyManagedNEQ))
+	}
+	if i.PrivateNotes != nil {
+		predicates = append(predicates, recording.PrivateNotesEQ(*i.PrivateNotes))
+	}
+	if i.PrivateNotesNEQ != nil {
+		predicates = append(predicates, recording.PrivateNotesNEQ(*i.PrivateNotesNEQ))
+	}
+	if len(i.PrivateNotesIn) > 0 {
+		predicates = append(predicates, recording.PrivateNotesIn(i.PrivateNotesIn...))
+	}
+	if len(i.PrivateNotesNotIn) > 0 {
+		predicates = append(predicates, recording.PrivateNotesNotIn(i.PrivateNotesNotIn...))
+	}
+	if i.PrivateNotesGT != nil {
+		predicates = append(predicates, recording.PrivateNotesGT(*i.PrivateNotesGT))
+	}
+	if i.PrivateNotesGTE != nil {
+		predicates = append(predicates, recording.PrivateNotesGTE(*i.PrivateNotesGTE))
+	}
+	if i.PrivateNotesLT != nil {
+		predicates = append(predicates, recording.PrivateNotesLT(*i.PrivateNotesLT))
+	}
+	if i.PrivateNotesLTE != nil {
+		predicates = append(predicates, recording.PrivateNotesLTE(*i.PrivateNotesLTE))
+	}
+	if i.PrivateNotesContains != nil {
+		predicates = append(predicates, recording.PrivateNotesContains(*i.PrivateNotesContains))
+	}
+	if i.PrivateNotesHasPrefix != nil {
+		predicates = append(predicates, recording.PrivateNotesHasPrefix(*i.PrivateNotesHasPrefix))
+	}
+	if i.PrivateNotesHasSuffix != nil {
+		predicates = append(predicates, recording.PrivateNotesHasSuffix(*i.PrivateNotesHasSuffix))
+	}
+	if i.PrivateNotesEqualFold != nil {
+		predicates = append(predicates, recording.PrivateNotesEqualFold(*i.PrivateNotesEqualFold))
+	}
+	if i.PrivateNotesContainsFold != nil {
+		predicates = append(predicates, recording.PrivateNotesContainsFold(*i.PrivateNotesContainsFold))
 	}
 	if i.LastUpdated != nil {
 		predicates = append(predicates, recording.LastUpdatedEQ(*i.LastUpdated))

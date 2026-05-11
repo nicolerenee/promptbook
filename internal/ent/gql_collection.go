@@ -722,6 +722,11 @@ func (_q *RecordingQuery) collectField(ctx context.Context, oneNode bool, opCtx 
 				selectedFields = append(selectedFields, recording.FieldExternallyManaged)
 				fieldSeen[recording.FieldExternallyManaged] = struct{}{}
 			}
+		case "privateNotes":
+			if _, ok := fieldSeen[recording.FieldPrivateNotes]; !ok {
+				selectedFields = append(selectedFields, recording.FieldPrivateNotes)
+				fieldSeen[recording.FieldPrivateNotes] = struct{}{}
+			}
 		case "lastUpdated":
 			if _, ok := fieldSeen[recording.FieldLastUpdated]; !ok {
 				selectedFields = append(selectedFields, recording.FieldLastUpdated)

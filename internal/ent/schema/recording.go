@@ -84,6 +84,12 @@ func (Recording) Fields() []ent.Field {
 		// rename, no NFO, no subtitles). Default false preserves the
 		// behaviour of every existing row.
 		field.Bool("externally_managed").Default(false),
+		// private_notes is user-owned free text that never syncs to
+		// Encora — trade notes, "I owe Alex a copy", subtitle
+		// quality reminders, etc. Empty string is the "no notes"
+		// sentinel; the SPA's notes editor commits the trimmed
+		// string verbatim.
+		field.Text("private_notes").Default(""),
 		field.Text("last_updated").Default("").
 			Annotations(entgql.OrderField("LAST_UPDATED")),
 		// raw_json holds the JSON-encoded encora.Recording. Plain Text

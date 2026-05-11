@@ -171,6 +171,7 @@ const RECORDING_DETAIL_QUERY = `
       overlayDisabled
       overlayTextOverride
       externallyManaged
+      privateNotes
       bannerLayout {
         position
         imageRegion
@@ -343,6 +344,7 @@ function shapeRecordingDetail(node) {
     overlay_disabled:      !!node.overlayDisabled,
     overlay_text_override: node.overlayTextOverride == null ? null : node.overlayTextOverride,
     externally_managed:    !!node.externallyManaged,
+    private_notes:         node.privateNotes || '',
     banner_layout: {
       position:     (node.bannerLayout && node.bannerLayout.position) || '',
       image_region: (node.bannerLayout && node.bannerLayout.imageRegion) || '',
@@ -614,6 +616,51 @@ function runSetExternallyManaged(id, value) {
       state.recording.externallyManagedBusy = false;
       state.recording.dangerError =
         'Failed to update externally-managed: ' + errorMessage(err);
+      m.redraw();
+    });
+}
+
+// SET_PRIVATE_NOTES_MUTATION writes the user-owned private notes
+// field on a recording. Server overwrites the column verbatim; empty
+// string clears the notes. Returns the refreshed recording so the
+// SPA can paint the saved value.
+const SET_PRIVATE_NOTES_MUTATION = `
+  mutation SetPrivateNotes($id: ID!, $notes: String!) {
+    setRecordingPrivateNotes(recordingID: $id, notes: $notes) {
+      id
+      privateNotes
+    }
+  }
+`;
+
+// runSavePrivateNotes fires the notes-save mutation. Re-loads on
+// success so the displayed value matches the persisted shape (the
+// server may normalize whitespace in the future). notesBusy disables
+// the textarea + button while in flight; notesError carries an
+// inline failure message scoped to the notes editor itself rather
+// than dangerError.
+function runSavePrivateNotes(id, notes) {
+  if (state.recording.notesBusy) return;
+  state.recording.notesBusy = true;
+  state.recording.notesError = null;
+  m.redraw();
+
+  graphql.query(SET_PRIVATE_NOTES_MUTATION, {
+    id:    'recording-' + id,
+    notes: String(notes || ''),
+  })
+    .then(() => {
+      state.recording.notesBusy = false;
+      // Clear the draft so the next paint reads from the loaded
+      // value (post-reload). Without this the textarea would keep
+      // its stale draft and look as if the save didn't take.
+      state.recording.notesDraft = null;
+      loadRecording(id);
+    })
+    .catch((err) => {
+      state.recording.notesBusy = false;
+      state.recording.notesError =
+        'Failed to save notes: ' + errorMessage(err);
       m.redraw();
     });
 }
@@ -2664,9 +2711,76 @@ function renderBody(loaded) {
   const callout = renderNFTCallout(loaded);
   return m('div', { class: 'space-y-6' }, [
     callout,
+    renderPrivateNotesSection(loaded),
     renderFilesSection(loaded),
     renderCastCard(loaded),
   ]);
+}
+
+// renderPrivateNotesSection is the user-owned free-text editor on
+// the recording detail page. Always rendered (no "no notes" empty
+// state — an empty textarea is the empty state) so the user can
+// always click in and start typing without an extra "Add notes"
+// step. The textarea is bound to state.recording.notesDraft when
+// the user has edited; otherwise it falls back to the server value.
+// Save / Cancel buttons surface only when the draft differs from
+// the loaded value so the section reads quiet when nothing's
+// pending.
+function renderPrivateNotesSection(loaded) {
+  const id = loaded && loaded.Recording && loaded.Recording.id;
+  if (!id) return null;
+  const saved = loaded.private_notes || '';
+  const draft = state.recording.notesDraft;
+  const value = draft == null ? saved : draft;
+  const dirty = draft != null && draft !== saved;
+  const busy = !!state.recording.notesBusy;
+  const error = state.recording.notesError;
+  return m('div', { class: 'card bg-base-100 shadow-sm' },
+    m('div', { class: 'card-body space-y-2' }, [
+      m('div', { class: 'flex items-center justify-between gap-2' }, [
+        m('h2', { class: 'card-title text-base' }, 'Private notes'),
+        m('span', {
+          class: 'text-xs opacity-60',
+          title: 'These notes are stored locally and never sent to Encora.',
+        }, 'local only'),
+      ]),
+      m('textarea', {
+        class: 'textarea textarea-bordered w-full min-h-24 font-mono text-sm',
+        placeholder: 'Trade notes, "I owe Alex a copy", subtitle quality, ' +
+                     'anything you want to track about this recording…',
+        value:    value,
+        disabled: busy,
+        oninput:  (ev) => { state.recording.notesDraft = ev.target.value; },
+      }),
+      error
+        ? m('div', { role: 'alert', class: 'alert alert-error text-sm' },
+            m('span', error))
+        : null,
+      dirty
+        ? m('div', { class: 'flex justify-end gap-2' }, [
+            m('button', {
+              type:     'button',
+              class:    'btn btn-ghost btn-sm',
+              disabled: busy,
+              onclick:  () => {
+                state.recording.notesDraft = null;
+                state.recording.notesError = null;
+              },
+            }, 'Cancel'),
+            m('button', {
+              type:     'button',
+              class:    'btn btn-primary btn-sm gap-2',
+              disabled: busy,
+              onclick:  () => runSavePrivateNotes(id, value),
+            }, [
+              busy
+                ? m('span', { class: 'loading loading-spinner loading-xs' })
+                : null,
+              m('span', busy ? 'Saving…' : 'Save'),
+            ]),
+          ])
+        : null,
+    ]));
 }
 
 // ─── Component ────────────────────────────────────────────────────────
@@ -2696,6 +2810,9 @@ const Recording = {
     state.recording.regenerateNFOMessage = null;
     state.recording.regenerateNFOError = null;
     state.recording.externallyManagedBusy = false;
+    state.recording.notesDraft = null;
+    state.recording.notesBusy = false;
+    state.recording.notesError = null;
     state.recording.pickerStaged = {};
     // Phase 2 disclosures: per-version Media Info expansion + the
     // NFO row's Show/Hide toggle. Reset on every recording switch so
