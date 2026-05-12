@@ -2018,11 +2018,25 @@ function extraDirSection(name, children) {
 function renderFilesSection(loaded) {
   const versions = loaded.Versions || [];
   const extras = loaded.extras || [];
-  const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
+  // recordingFolder = the canonical destination folder for the
+  // recording, NOT necessarily the dirname of the first version's
+  // file_path. For DVD recordings the version files live inside a
+  // `VIDEO_TS/` subfolder so we need to climb one extra level to get
+  // the recording-root folder where movie.nfo + extras + .encora-id
+  // sit. For everything else dirname is the recording folder.
+  const firstPath = versions.length > 0 ? String(versions[0].FilePath || '') : '';
   const isDVDLayout = versions.some((v) => {
     const path = String(v.FilePath || '');
     return path.indexOf('/VIDEO_TS/') !== -1;
   });
+  let folder = firstPath ? dirname(firstPath) : '';
+  if (isDVDLayout && folder) {
+    // Strip the trailing /VIDEO_TS so the displayed folder + the
+    // extras prefix-strip both reference the recording root. The
+    // VOBs live inside, but movie.nfo + non-DVD extras live at the
+    // root.
+    folder = folder.replace(/\/VIDEO_TS\/?$/i, '');
+  }
   return m('div', { class: 'card bg-base-100 shadow-sm' },
     m('div', { class: 'card-body space-y-4' }, [
       m('div', { class: 'space-y-1' }, [
