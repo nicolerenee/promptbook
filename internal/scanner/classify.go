@@ -17,7 +17,13 @@ import (
 // the SPA's queue modal) check Classification.DiscFormat against this
 // constant before applying the disc-aware mover branch. Empty
 // DiscFormat preserves all legacy behaviour for non-disc folders.
-const DiscFormatDVD = "dvd"
+//
+// Re-exported from ingest.DiscFormatDVD so the scanner package owns
+// the wire-format tokens its consumers (queue JSON, GraphQL) read,
+// while the ingest engine still has a non-cyclic constant of its
+// own — scanner already imports ingest for the assignment-kind
+// tokens.
+const DiscFormatDVD = ingest.DiscFormatDVD
 
 // dvdVideoTSDirName is the canonical DVD title-set folder name. Some
 // rips put the .IFO / .VOB scaffolding at the folder root; others nest

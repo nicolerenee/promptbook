@@ -164,6 +164,32 @@ type Options struct {
 	// ingest didn't successfully resolve a recording id (no row to
 	// anchor the upsert on).
 	ExternalIDs []externalids.ExternalID
+	// DiscFormat marks this import as a disc-shape recording the
+	// engine must preserve verbatim rather than rename via the file
+	// template. The only currently-supported value is "dvd", set by
+	// the scanner when it detects a VIDEO_TS layout. Empty preserves
+	// all legacy behaviour: file template runs as before.
+	//
+	// Effects when DiscFormat == "dvd":
+	//   - Every main / part assignment in FileAssignments has its
+	//     destination path overridden to
+	//     {recordingFolder}/VIDEO_TS/{basename(source)} so the
+	//     DVD-spec filenames the .IFO files reference stay intact.
+	//   - DiscScaffolding paths are moved into the same VIDEO_TS/
+	//     subfolder verbatim; no recording_versions or
+	//     recording_extras rows are written for them.
+	//   - The recording's parent folder template still renders
+	//     normally, so the outer folder name stays canonical
+	//     ({Show} ({Date}) [encora-{ID}]/).
+	DiscFormat string
+	// DiscScaffolding lists absolute source paths the disc-aware
+	// mover must carry alongside the content VOBs (.IFO / .BUP /
+	// menu VOB files). Ignored unless DiscFormat is set. These files
+	// move verbatim into the destination's VIDEO_TS/ subfolder; the
+	// engine doesn't probe them, doesn't write version rows, and
+	// doesn't surface them as extras — they're disc scaffolding the
+	// media server needs to parse the disc TOC.
+	DiscScaffolding []string
 }
 
 // FileAssignment routes one source file to a role inside a multi-
@@ -209,6 +235,20 @@ const (
 // enqueue me." Keeping it empty also means the external tool's own
 // scanners won't trip on unexpected metadata content.
 const ExternallyManagedSentinel = ".promptbook-externally-managed"
+
+// DiscFormatDVD is the Options.DiscFormat value the scanner emits
+// when it detects a VIDEO_TS DVD layout. Matches the value the
+// scanner package exports as DiscFormatDVD; defined here so the
+// ingest package doesn't import scanner (which would close a cycle —
+// scanner already imports ingest for the assignment-kind tokens).
+const DiscFormatDVD = "dvd"
+
+// DiscDestSubfolder is the canonical destination subfolder for DVD
+// imports. Plex / Emby / Jellyfin auto-detect DVD playback only when
+// the disc files (.IFO / .BUP / .VOB) live inside a VIDEO_TS/
+// subfolder of the recording folder, regardless of how the source
+// rip was laid out on disk.
+const DiscDestSubfolder = "VIDEO_TS"
 
 // ItemResult records what happened (or would happen) for one video.
 type ItemResult struct {
@@ -261,6 +301,11 @@ type ItemResult struct {
 	// Empty for callers that didn't supply ids; the writer falls back
 	// to the legacy single-Encora shape in that case.
 	ExternalIDs []externalids.ExternalID
+	// DiscFormat mirrors Options.DiscFormat onto the per-item state
+	// so buildPlan + applyPlan can take the disc-preserving branch
+	// without threading Options through every helper. Empty for
+	// non-disc imports. The only currently-supported value is "dvd".
+	DiscFormat string
 }
 
 // AppliedExtra is one extras row written during a multi-file ingest.
@@ -401,6 +446,7 @@ func (e *Engine) ingestOne(ctx context.Context, src string, opts Options) ItemRe
 		SourceFolder:      opts.SourceFolder,
 		ExternallyManaged: opts.ExternallyManaged,
 		ExternalIDs:       opts.ExternalIDs,
+		DiscFormat:        opts.DiscFormat,
 	})
 }
 
@@ -423,6 +469,11 @@ func (e *Engine) ingestOneWithSeed(
 	// per-item state. Stamp them here so the multi-file path
 	// (assignments.go) doesn't need to pre-populate the seed.
 	item.ExternalIDs = opts.ExternalIDs
+	// DiscFormat is an Options-level switch shared across every
+	// per-item ingest call in a batch — copy onto the seed so
+	// buildPlan / applyPlan can take the DVD branch without
+	// re-reading opts.
+	item.DiscFormat = opts.DiscFormat
 
 	if !e.resolveID(src, opts, &item) {
 		e.recordIngestEvent(ctx, opts, &item)
@@ -519,6 +570,16 @@ func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bo
 		item.Err = err
 		item.Action = ActionSkipped
 		return false
+	}
+	if item.DiscFormat == DiscFormatDVD {
+		// DVD imports preserve the original DVD-spec filename
+		// verbatim inside a VIDEO_TS/ subfolder so the .IFO files
+		// (which reference the VOBs by their original names) keep
+		// working. The recording folder name is still
+		// template-rendered (plan.TargetFolder); only the file's
+		// landing location changes.
+		plan.DestSubfolder = DiscDestSubfolder
+		plan.DestBasename = filepath.Base(src)
 	}
 	item.Plan = plan
 	return true

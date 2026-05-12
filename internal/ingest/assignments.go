@@ -248,7 +248,94 @@ func (e *Engine) ingestWithAssignments(
 		return res, nil
 	}
 	e.applyExtras(ctx, cls.extras, mains, opts.DryRun)
+	if opts.DiscFormat == DiscFormatDVD {
+		e.applyDiscScaffolding(opts, mains)
+	}
 	return res, nil
+}
+
+// applyDiscScaffolding moves every file in opts.DiscScaffolding
+// (DVD .IFO / .BUP / menu VOB files) into the canonical VIDEO_TS/
+// subfolder of the recording folder. No recording_versions or
+// recording_extras rows are written — these are disc-format
+// scaffolding the media-server playback engines need to parse the
+// disc TOC, not user-facing content.
+//
+// Externally-managed mode skips the move (no copy / no rename); the
+// scaffolding files stay where the external tool put them and the
+// version rows point at the source paths. The DVD shape composes
+// with externally-managed via the per-item path overrides in
+// buildPlan and the no-op apply path in applyExternallyManaged.
+//
+// Dry-run skips the moves; tests that exercise dry-run + DVD assert
+// the destination paths via Plan.AbsoluteFile().
+//
+// After every scaffolding file has been moved the source's VIDEO_TS/
+// subfolder (nested layout) or the source folder itself (flat
+// layout) may be empty; the best-effort cleanup in
+// maybeRemoveEmptySourceForDVD prunes those leftover directories so
+// the watch dir doesn't accumulate husk folders after each DVD
+// import.
+func (e *Engine) applyDiscScaffolding(
+	opts Options, mains mainsApplyOutcome,
+) {
+	if mains.externallyManaged {
+		return
+	}
+	if opts.DryRun {
+		return
+	}
+	if len(opts.DiscScaffolding) == 0 {
+		return
+	}
+	destDir := filepath.Join(mains.firstPlanFolder, DiscDestSubfolder)
+	if err := os.MkdirAll(destDir, libraryDirPerm); err != nil {
+		e.Logger.Warn().Err(err).Str("dir", destDir).
+			Msg("dvd ingest: failed to create VIDEO_TS destination")
+		return
+	}
+	for _, src := range opts.DiscScaffolding {
+		dest := filepath.Join(destDir, filepath.Base(src))
+		if _, statErr := os.Stat(dest); statErr == nil {
+			// Idempotent re-run: if the scaffolding file already
+			// exists at the destination (an interrupted ingest
+			// re-running) skip rather than fail. The IFO content is
+			// disc-spec deterministic so source and dest are by
+			// construction equivalent.
+			e.Logger.Debug().Str("dest", dest).
+				Msg("dvd ingest: scaffolding already present, skipping move")
+			continue
+		}
+		if _, mvErr := moveExtra(src, dest); mvErr != nil {
+			e.Logger.Warn().Err(mvErr).Str("source", src).Str("dest", dest).
+				Msg("dvd ingest: failed to move scaffolding file")
+		}
+	}
+	e.maybeRemoveEmptySourceForDVD(opts)
+}
+
+// maybeRemoveEmptySourceForDVD walks the directories the DVD
+// scaffolding came from and removes them when empty. Captures the
+// nested case (source has a VIDEO_TS/ subfolder that's empty after
+// every VOB + IFO + BUP moved out) — without it the watched-dir
+// would accumulate empty VIDEO_TS folders inside still-not-empty
+// parent folders (the parent might still hold ripper notes / info
+// files the user wants to keep).
+//
+// Best-effort: a non-empty directory or a permission glitch logs at
+// debug and moves on. The per-part cleanup in applyPlan handles the
+// flat layout the same way for the recording folder itself once the
+// content VOB moves out.
+func (e *Engine) maybeRemoveEmptySourceForDVD(opts Options) {
+	seen := make(map[string]struct{}, len(opts.DiscScaffolding))
+	for _, src := range opts.DiscScaffolding {
+		dir := filepath.Dir(src)
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		e.maybeRemoveEmptyDir(dir)
+	}
 }
 
 // mainsApplyOutcome carries the per-batch state the extras pass

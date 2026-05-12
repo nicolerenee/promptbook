@@ -14,12 +14,24 @@ import (
 // captures both the source (where the file currently lives) and the
 // target (where it should land), so a dry-run can show the full diff
 // without ever touching the disk.
+//
+// DestSubfolder + DestBasename are the disc-import overrides. When
+// empty (the legacy / single-file / multipart-MKV path) the
+// destination is the template-rendered name as before; when set, the
+// file lands at LibraryRoot/TargetFolder/DestSubfolder/DestBasename
+// verbatim — used by the DVD ingest path to preserve the original
+// DVD-spec VOB/IFO/BUP filenames inside a VIDEO_TS/ subfolder of the
+// recording folder. The IFO files reference the VOBs by their
+// original names; renaming them would break media-server DVD
+// playback.
 type Plan struct {
-	Source       string // current file path
-	TargetFolder string // canonical folder, relative to library root
-	TargetFile   string // canonical file name (no extension)
-	Extension    string // ".mp4" / ".mkv" / ...
-	LibraryRoot  string
+	Source        string // current file path
+	TargetFolder  string // canonical folder, relative to library root
+	TargetFile    string // canonical file name (no extension)
+	Extension     string // ".mp4" / ".mkv" / ...
+	LibraryRoot   string
+	DestSubfolder string // optional subfolder under AbsoluteFolder (DVD: "VIDEO_TS")
+	DestBasename  string // optional verbatim basename (DVD: "VTS_01_1.VOB")
 }
 
 // AbsoluteFolder returns the full destination folder for the recording,
@@ -29,7 +41,14 @@ func (p Plan) AbsoluteFolder() string {
 }
 
 // AbsoluteFile returns the full destination video path including extension.
+// When DestSubfolder / DestBasename are set (DVD imports), the file
+// path is LibraryRoot/TargetFolder/DestSubfolder/DestBasename verbatim;
+// otherwise it's the legacy template-rendered LibraryRoot/TargetFolder/
+// TargetFile+Extension shape.
 func (p Plan) AbsoluteFile() string {
+	if p.DestBasename != "" {
+		return filepath.Join(p.AbsoluteFolder(), p.DestSubfolder, p.DestBasename)
+	}
 	return filepath.Join(p.AbsoluteFolder(), p.TargetFile+p.Extension)
 }
 

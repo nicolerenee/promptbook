@@ -48,7 +48,10 @@ func (p Plan) Apply() (string, error) {
 		return "", fmt.Errorf("stat target: %w", destErr)
 	}
 
-	if err := os.MkdirAll(p.AbsoluteFolder(), libraryDirPerm); err != nil {
+	// Ensure the destination's parent exists. For DVD imports
+	// (DestSubfolder set) this is AbsoluteFolder/DestSubfolder;
+	// MkdirAll on the dest's directory covers both shapes uniformly.
+	if err := os.MkdirAll(filepath.Dir(dest), libraryDirPerm); err != nil {
 		return "", fmt.Errorf("mkdir target folder: %w", err)
 	}
 

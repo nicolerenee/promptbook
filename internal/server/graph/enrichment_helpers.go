@@ -1527,7 +1527,28 @@ func buildImportOptions(
 	opts.FileAssignments = importFileAssignmentsFromInput(input.FileAssignments)
 	opts.ExternallyManaged = optBool(input.ExternallyManaged)
 	opts.ExternalIDs = decodeClassificationExternalIDs(entry.ClassificationJSON)
+	opts.DiscFormat, opts.DiscScaffolding = decodeClassificationDisc(entry.ClassificationJSON)
 	return opts
+}
+
+// decodeClassificationDisc pulls the discFormat + discScaffolding
+// list out of the queue row's classification_json blob. Empty /
+// unparseable input yields the zero values so the importQueueEntry
+// path falls through to the non-DVD legacy behaviour. Mirrors
+// decodeClassificationExternalIDs in structure — local one-shot
+// struct to keep the decode self-contained.
+func decodeClassificationDisc(raw string) (string, []string) {
+	if raw == "" {
+		return "", nil
+	}
+	var decoded struct {
+		DiscFormat      string   `json:"discFormat"`
+		DiscScaffolding []string `json:"discScaffolding"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return "", nil
+	}
+	return decoded.DiscFormat, decoded.DiscScaffolding
 }
 
 // decodeClassificationExternalIDs pulls the external_ids list out of
@@ -1666,6 +1687,15 @@ func (r *Resolver) checkDestinationConflict(
 	if err != nil {
 		return destConflictResult{}, "", "",
 			fmt.Errorf("graphql: build plan: %w", err)
+	}
+	// DVD imports route the file into a VIDEO_TS/ subfolder with
+	// the source basename intact. Apply the override before
+	// computing the dest so the conflict check stat's the right
+	// path. Empty DiscFormat preserves the legacy AbsoluteFile().
+	discFormat, _ := decodeClassificationDisc(entry.ClassificationJSON)
+	if discFormat == ingest.DiscFormatDVD {
+		plan.DestSubfolder = ingest.DiscDestSubfolder
+		plan.DestBasename = filepath.Base(entry.FilePath)
 	}
 	dest := plan.AbsoluteFile()
 	conflict, _ := inspectDestinationConflict(ctx, entry.FilePath, dest)
@@ -1922,6 +1952,15 @@ func (r *Resolver) previewQueueImport(
 	if err != nil {
 		return nil, fmt.Errorf("graphql: build plan: %w", err)
 	}
+	// DVD imports preserve the source basename inside a VIDEO_TS/
+	// subfolder rather than running the file template. Override
+	// the plan's destination so the preview matches what the
+	// engine will actually do.
+	discFormat, _ := decodeClassificationDisc(entry.ClassificationJSON)
+	if discFormat == ingest.DiscFormatDVD {
+		plan.DestSubfolder = ingest.DiscDestSubfolder
+		plan.DestBasename = filepath.Base(entry.FilePath)
+	}
 	conflict, conflictErr := inspectDestinationConflict(
 		ctx, entry.FilePath, plan.AbsoluteFile())
 	if conflictErr != nil {
@@ -1930,9 +1969,18 @@ func (r *Resolver) previewQueueImport(
 		// returned for visibility but don't fail the preview.
 		_ = conflictErr
 	}
+	destFolder := plan.TargetFolder
+	destFile := plan.TargetFile + plan.Extension
+	if plan.DestBasename != "" {
+		// DVD overrides: surface the rendered location the engine
+		// will actually use so the preview's "destination" line
+		// reads as "{recordingFolder}/VIDEO_TS/VTS_01_1.VOB".
+		destFolder = filepath.Join(plan.TargetFolder, plan.DestSubfolder)
+		destFile = plan.DestBasename
+	}
 	return &ImportPreview{
-		DestFolder:   plan.TargetFolder,
-		DestFile:     plan.TargetFile + plan.Extension,
+		DestFolder:   destFolder,
+		DestFile:     destFile,
 		DestAbsolute: plan.AbsoluteFile(),
 		DestExists:   conflict.destExists,
 		IsSameFile:   conflict.isSameFile,
