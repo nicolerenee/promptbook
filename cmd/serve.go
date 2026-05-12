@@ -326,8 +326,8 @@ func buildJobRunner(
 	)
 	registered += refreshOneCount
 	registered += registerRefreshAllRecordings(runner, db, refreshOne)
-	registered += registerScanIncoming(runner, db)
-	registered += registerScanLibraryRoot(runner, db)
+	registered += registerScanIncoming(runner, db, sqlDB, encClient)
+	registered += registerScanLibraryRoot(runner, db, sqlDB, encClient)
 	registered += registerRegenerateAllNFO(runner, db, nfoRefresh)
 
 	if registered == 0 {
@@ -498,16 +498,26 @@ func registerRefreshAllRecordings(
 
 // registerScanIncoming wires the scan-incoming job when at least one
 // incoming directory is configured. Returns 1 on success, 0 otherwise.
-func registerScanIncoming(runner *jobs.Runner, db *ent.Client) int {
+func registerScanIncoming(
+	runner *jobs.Runner, db *ent.Client, sqlDB *sql.DB, encClient *encora.Client,
+) int {
 	if len(appConfig.Library.IncomingDirs) == 0 {
 		return 0
 	}
+	job := &builtin.ScanIncomingJob{
+		DB:           db,
+		SQLDB:        sqlDB,
+		IncomingDirs: appConfig.Library.IncomingDirs,
+		Logger:       log.Logger,
+	}
+	// Encora is an interface; a nil *encora.Client must arrive as a
+	// true nil so the scanner's auto-fetch nil-check fires. Same idiom
+	// used elsewhere when threading the client through interfaces.
+	if encClient != nil {
+		job.Encora = encClient
+	}
 	err := runner.Register(jobs.JobDef{
-		Job: &builtin.ScanIncomingJob{
-			DB:           db,
-			IncomingDirs: appConfig.Library.IncomingDirs,
-			Logger:       log.Logger,
-		},
+		Job:      job,
 		Interval: appConfig.Library.WatchInterval,
 	})
 	if err != nil {
@@ -550,17 +560,22 @@ func registerRegenerateAllNFO(
 // the queue page's "Scan library" button (POST
 // /api/v1/jobs/scheduled/scan-library-root/run) when they want to
 // backfill orphan recordings into the queue.
-func registerScanLibraryRoot(runner *jobs.Runner, db *ent.Client) int {
+func registerScanLibraryRoot(
+	runner *jobs.Runner, db *ent.Client, sqlDB *sql.DB, encClient *encora.Client,
+) int {
 	if appConfig.Library.Root == "" {
 		return 0
 	}
-	err := runner.Register(jobs.JobDef{
-		Job: &builtin.ScanLibraryRootJob{
-			DB:     db,
-			Root:   appConfig.Library.Root,
-			Logger: log.Logger,
-		},
-	})
+	job := &builtin.ScanLibraryRootJob{
+		DB:     db,
+		SQLDB:  sqlDB,
+		Root:   appConfig.Library.Root,
+		Logger: log.Logger,
+	}
+	if encClient != nil {
+		job.Encora = encClient
+	}
+	err := runner.Register(jobs.JobDef{Job: job})
 	if err != nil {
 		log.Error().Err(err).Msg("register scan-library-root job")
 		return 0

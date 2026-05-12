@@ -25,6 +25,7 @@ package scanner
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,12 +36,14 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/nicolerenee/promptbook/internal/encora"
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/rename"
 	"github.com/nicolerenee/promptbook/internal/storage"
+	pbsync "github.com/nicolerenee/promptbook/internal/sync"
 )
 
 // maxTrackedErrors caps how many errors a single Scan pass remembers. A
@@ -85,6 +88,33 @@ type Engine struct {
 	Interval  time.Duration
 	Logger    zerolog.Logger
 	IsTracked func(path string) bool
+	// Encora, when set, lets the scanner auto-fetch + persist a
+	// recording from Encora when the sidecar / folder-name encora id
+	// resolves but the recording isn't in the local DB. This is the
+	// "I'm importing something that isn't in my Encora wants /
+	// collection list yet" path — the scanner widens the local
+	// catalog by one row + the queue gets a high-confidence
+	// suggestion instead of low-confidence.
+	//
+	// Nil disables the auto-fetch: unknown encora ids stay as
+	// low-confidence suggestions and the user resolves via the modal.
+	// Defined as an interface (matching jobs/builtin's
+	// EncoraRecordingClient) so the construction doesn't pull
+	// internal/encora into every scanner test fixture.
+	Encora EncoraRecordingClient
+	// SQLDB is the raw *database/sql handle paired with DB. Threaded
+	// through PersistRecording so the auto-fetch can stamp the
+	// recording's encora id into external_ids. Optional: a nil SQLDB
+	// just skips the external_ids upsert, the recording still lands.
+	SQLDB *sql.DB
+}
+
+// EncoraRecordingClient is the slice of *encora.Client the scanner
+// needs for its auto-fetch path. Matches the same-named interface in
+// internal/jobs/builtin so the production *encora.Client satisfies
+// both call sites with no adapter glue.
+type EncoraRecordingClient interface {
+	Recording(ctx context.Context, id int64) (encora.Recording, encora.RateLimitInfo, error)
 }
 
 // Run loops Scan on a ticker until ctx is cancelled. Each pass logs
@@ -611,16 +641,66 @@ func bestMatch(
 // asking the local DB whether we know about that recording. A query
 // error is recorded on res and surfaced as the empty confidence so the
 // caller can still enqueue the file (just without a suggestion).
+//
+// When the recording isn't in the local DB AND the engine has an
+// Encora client wired, the scanner fans out a per-recording detail
+// fetch + persist so the queue row's suggestion is high-confidence.
+// Use case: a file lands in the watch dir with a .encora-id pointing
+// at a recording the user hasn't collected or wanted on Encora —
+// without the auto-fetch the queue row would be a low-confidence
+// orphan-with-suggestion that the user has to manually look up.
+// Fetch failures (rate limit, network blip, recording removed from
+// Encora) fall back to low confidence so the file still enqueues.
 func (e *Engine) confidenceFor(ctx context.Context, id int64, res *Result, path string) string {
 	_, err := storage.LoadRecording(ctx, e.DB, id)
 	if err == nil {
 		return storage.ConfidenceHigh
 	}
 	if errors.Is(err, storage.ErrRecordingNotFound) {
+		if e.fetchAndPersistRecording(ctx, id, path) {
+			return storage.ConfidenceHigh
+		}
 		return storage.ConfidenceLow
 	}
 	recordError(res, fmt.Errorf("load recording %d for %q: %w", id, path, err))
 	return ""
+}
+
+// fetchAndPersistRecording resolves an Encora recording id against
+// the upstream API + persists it locally so the next scanner pass +
+// the queue's suggestedRecording resolver find it. Returns true when
+// the recording landed in the local DB; false on any failure path
+// (no Encora client, fetch error, persist error). Failures log at
+// warn — the caller falls back to low-confidence enqueue so the
+// file still appears in the queue.
+func (e *Engine) fetchAndPersistRecording(ctx context.Context, id int64, path string) bool {
+	if e.Encora == nil {
+		e.Logger.Debug().
+			Int64("recording_id", id).
+			Str("path", path).
+			Msg("scanner: encora client not configured; cannot auto-fetch unknown id")
+		return false
+	}
+	rec, _, err := e.Encora.Recording(ctx, id)
+	if err != nil {
+		e.Logger.Warn().Err(err).
+			Int64("recording_id", id).
+			Str("path", path).
+			Msg("scanner: encora detail fetch failed; queue row stays low-confidence")
+		return false
+	}
+	if perr := pbsync.PersistRecording(ctx, e.DB, e.SQLDB, rec, time.Now); perr != nil {
+		e.Logger.Warn().Err(perr).
+			Int64("recording_id", id).
+			Str("path", path).
+			Msg("scanner: persist auto-fetched recording failed")
+		return false
+	}
+	e.Logger.Info().
+		Int64("recording_id", id).
+		Str("path", path).
+		Msg("scanner: auto-fetched recording from encora (not in user's wants / collection)")
+	return true
 }
 
 // alreadyTracked decides whether the scanner should skip path because

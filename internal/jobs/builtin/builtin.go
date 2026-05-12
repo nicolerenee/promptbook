@@ -193,6 +193,8 @@ func (j *RefreshEncoraJob) fanOutActors(
 // surfaces the run row in the UI.
 type ScanIncomingJob struct {
 	DB           *ent.Client
+	SQLDB        *sql.DB
+	Encora       scanner.EncoraRecordingClient
 	IncomingDirs []string
 	Logger       zerolog.Logger
 }
@@ -210,6 +212,8 @@ func (j *ScanIncomingJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 	}
 	engine := &scanner.Engine{
 		DB:        j.DB,
+		SQLDB:     j.SQLDB,
+		Encora:    j.Encora,
 		WatchDirs: j.IncomingDirs,
 		Logger:    j.Logger,
 	}
@@ -240,6 +244,8 @@ func (j *ScanIncomingJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 // ticker never auto-fires it.
 type ScanLibraryRootJob struct {
 	DB     *ent.Client
+	SQLDB  *sql.DB
+	Encora scanner.EncoraRecordingClient
 	Root   string
 	Logger zerolog.Logger
 }
@@ -259,6 +265,8 @@ func (j *ScanLibraryRootJob) Run(ctx context.Context, _ jobs.JobArgs) error {
 	}
 	engine := &scanner.Engine{
 		DB:        j.DB,
+		SQLDB:     j.SQLDB,
+		Encora:    j.Encora,
 		WatchDirs: []string{j.Root},
 		Logger:    j.Logger,
 		IsTracked: func(path string) bool {
