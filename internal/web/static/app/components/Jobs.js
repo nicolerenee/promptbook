@@ -125,7 +125,19 @@ function fetchAll() {
     api.get('/jobs/scheduled'),
     api.get('/jobs/queue'),
   ]).then(([sch, q]) => {
-    j.scheduled = (sch && sch.items) || [];
+    // Scheduled rows always sort by job name (locale-insensitive
+    // ascending) so the table reads as a stable alphabetical list
+    // regardless of registration order. Recent-runs queue stays in
+    // server order — that's chronological by design.
+    const scheduled = (sch && sch.items) || [];
+    scheduled.sort((a, b) => {
+      const an = String((a && a.name) || '').toLowerCase();
+      const bn = String((b && b.name) || '').toLowerCase();
+      if (an < bn) return -1;
+      if (an > bn) return 1;
+      return 0;
+    });
+    j.scheduled = scheduled;
     j.queue = (q && q.items) || [];
     j.error = null;
     j.loading = false;
