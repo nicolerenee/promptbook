@@ -151,9 +151,20 @@ func (j *RemuxDVDJob) Run(ctx context.Context, args jobs.JobArgs) error {
 		return fmt.Errorf("remux-dvd: preserve originals: %w", mvErr)
 	}
 
-	tempOut, err := os.MkdirTemp("", "promptbook-remux-")
+	// Use a sibling-of-recording temp dir so makemkvcon writes onto
+	// the SAME filesystem as the recording folder. Two reasons this
+	// matters more than /tmp:
+	//   - /tmp inside a k8s pod is often a small tmpfs (a few hundred
+	//     MB). A 4 GB DVD remux fills it partway through, makemkvcon
+	//     gets ENOENT/ENOSPC, exits 0, leaves no output, and the job
+	//     sees "produced no new .mkv file" with no obvious cause.
+	//   - Moving the produced .mkv into the recording folder becomes
+	//     an atomic os.Rename instead of a cross-mount copy.
+	// The dir lives at {recFolder}/.remux-tmp-<rand>/; cleaned up on
+	// success or failure.
+	tempOut, err := os.MkdirTemp(recFolder, ".remux-tmp-")
 	if err != nil {
-		return fmt.Errorf("remux-dvd: create temp output: %w", err)
+		return fmt.Errorf("remux-dvd: create temp output under %q: %w", recFolder, err)
 	}
 	defer func() { _ = os.RemoveAll(tempOut) }()
 
@@ -343,8 +354,11 @@ func (j *RemuxDVDJob) runMakeMKV(
 		j.Logger.Info().
 			Str("command", cmd).
 			Msg("remux-dvd: invoking makemkvcon")
-		if mkErr := j.MakeMKV.Mkv(ctx, originalDir, idx, tempOut); mkErr != nil {
-			return nil, nil, fmt.Errorf("makemkvcon title %d: %w", idx, mkErr)
+		messages, mkErr := j.MakeMKV.Mkv(ctx, originalDir, idx, tempOut)
+		if mkErr != nil {
+			return nil, nil, fmt.Errorf(
+				"makemkvcon title %d: %w (messages: %s)",
+				idx, mkErr, joinMessages(messages))
 		}
 		after, err := listMKVFiles(tempOut)
 		if err != nil {
@@ -352,12 +366,32 @@ func (j *RemuxDVDJob) runMakeMKV(
 		}
 		newFiles := diffMKVFiles(before, after)
 		if len(newFiles) == 0 {
-			return nil, nil, fmt.Errorf("title %d: makemkvcon produced no new .mkv file", idx)
+			// makemkvcon often exits 0 even when the conversion
+			// failed mid-stream (write errors, disc-read errors).
+			// Surface every MSG line so the user sees the actual
+			// cause — typical pattern is "Posix error - No such
+			// file or directory" / "No space left on device".
+			return nil, nil, fmt.Errorf(
+				"title %d: makemkvcon produced no new .mkv file (messages: %s)",
+				idx, joinMessages(messages))
 		}
 		produced = append(produced, newFiles...)
 		commands = append(commands, cmd)
 	}
 	return produced, commands, nil
+}
+
+// joinMessages collapses makemkvcon's MSG-display lines into a
+// single string suitable for an error wrapper. Empty input
+// returns "<none>" so error templates don't print empty
+// parens. Per-message text is comma-separated; the lines are
+// typically short and a flat list reads cleaner than a slice
+// dump.
+func joinMessages(msgs []string) string {
+	if len(msgs) == 0 {
+		return "<none>"
+	}
+	return strings.Join(msgs, " | ")
 }
 
 // listMKVFiles enumerates every *.mkv file at the top level of dir.

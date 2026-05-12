@@ -175,7 +175,7 @@ func (c *Client) Info(
 	}
 	args = append(args, "file:"+folder)
 
-	titles, err := c.runAndParse(ctx, args)
+	titles, _, err := c.runAndParse(ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("makemkv info %q: %w", folder, err)
 	}
@@ -186,15 +186,22 @@ func (c *Client) Info(
 }
 
 // Mkv runs `makemkvcon --robot mkv file:{folder} {titleIndex}
-// {outDir}` and returns the produced .mkv file path. outDir must
-// exist before the call. Multi-title runs: invoke once per title;
-// makemkvcon does support an `all` token but it's less ergonomic
-// for the "convert this specific selection" UX.
+// {outDir}` and returns the captured MSG-line display strings.
+// outDir must exist before the call. Multi-title runs: invoke
+// once per title; makemkvcon does support an `all` token but
+// it's less ergonomic for the "convert this specific selection"
+// UX.
+//
+// Returns the MSG lines makemkvcon emitted (info + progress +
+// error). makemkvcon often exits 0 even when the conversion
+// failed (e.g. write-to-output-dir failed mid-stream): the
+// caller is expected to verify the output landed AND inspect
+// the returned messages for context when something looks off.
 func (c *Client) Mkv(
 	ctx context.Context, folder string, titleIndex int, outDir string,
-) error {
+) ([]string, error) {
 	if titleIndex < 0 {
-		return fmt.Errorf("makemkv: titleIndex must be non-negative, got %d", titleIndex)
+		return nil, fmt.Errorf("makemkv: titleIndex must be non-negative, got %d", titleIndex)
 	}
 	args := []string{
 		"--robot", "--noscan", "mkv",
@@ -202,10 +209,11 @@ func (c *Client) Mkv(
 		strconv.Itoa(titleIndex),
 		outDir,
 	}
-	if _, err := c.runAndParse(ctx, args); err != nil {
-		return fmt.Errorf("makemkv mkv %q title %d: %w", folder, titleIndex, err)
+	_, messages, err := c.runAndParse(ctx, args)
+	if err != nil {
+		return messages, fmt.Errorf("makemkv mkv %q title %d: %w", folder, titleIndex, err)
 	}
-	return nil
+	return messages, nil
 }
 
 // runAndParse executes the binary with args, streams stdout through
@@ -217,7 +225,7 @@ func (c *Client) Mkv(
 // per recognised tag. Errors mid-stream get attached to the run's
 // error rather than aborting the parse (best-effort: a noisy
 // progress line shouldn't drop the title list).
-func (c *Client) runAndParse(ctx context.Context, args []string) ([]Title, error) {
+func (c *Client) runAndParse(ctx context.Context, args []string) ([]Title, []string, error) {
 	bin := c.Binary
 	if bin == "" {
 		bin = DefaultBinary
@@ -229,14 +237,15 @@ func (c *Client) runAndParse(ctx context.Context, args []string) ([]Title, error
 	cmd := runner(ctx, bin, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
+		return nil, nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 	if startErr := cmd.Start(); startErr != nil {
-		return nil, fmt.Errorf("start: %w", startErr)
+		return nil, nil, fmt.Errorf("start: %w", startErr)
 	}
 
 	titles := map[int]*Title{}
-	scanErr := scanRobot(stdout, titles)
+	var messages []string
+	scanErr := scanRobot(stdout, titles, &messages)
 
 	waitErr := cmd.Wait()
 	if waitErr != nil {
@@ -245,11 +254,11 @@ func (c *Client) runAndParse(ctx context.Context, args []string) ([]Title, error
 		// success with a wait error when titles came through —
 		// the caller can decide what to do.
 		if len(titles) == 0 {
-			return nil, fmt.Errorf("wait: %w", waitErr)
+			return nil, messages, fmt.Errorf("wait: %w", waitErr)
 		}
 	}
 	if scanErr != nil && len(titles) == 0 {
-		return nil, scanErr
+		return nil, messages, scanErr
 	}
 
 	out := make([]Title, 0, len(titles))
@@ -264,7 +273,7 @@ func (c *Client) runAndParse(ctx context.Context, args []string) ([]Title, error
 		})
 		out = append(out, *t)
 	}
-	return out, nil
+	return out, messages, nil
 }
 
 // defaultRunner wraps exec.CommandContext into the Runner shape.
@@ -281,18 +290,53 @@ func (e *execCmd) Wait() error                        { return e.cmd.Wait() }
 
 // scanRobot walks stdout line-by-line and feeds each robot-tagged
 // line into parseRobotLine. Non-tagged lines (info messages,
-// progress) are ignored.
-func scanRobot(r io.Reader, titles map[int]*Title) error {
+// progress) are ignored. MSG: lines (info + warning + error
+// strings makemkvcon emits during a run) are appended to messages
+// — the caller surfaces them when something looks off, since
+// makemkvcon often exits 0 even on write-failure paths.
+func scanRobot(r io.Reader, titles map[int]*Title, messages *[]string) error {
 	scanner := bufio.NewScanner(r)
 	// Some titles' details lines run long; bump the buffer ceiling.
 	scanner.Buffer(make([]byte, 0, scannerInitialBuffer), scannerBufferCap)
 	for scanner.Scan() {
-		parseRobotLine(scanner.Text(), titles)
+		line := scanner.Text()
+		parseRobotLine(line, titles)
+		if msg, ok := parseMSGDisplay(line); ok && messages != nil {
+			*messages = append(*messages, msg)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read robot output: %w", err)
 	}
 	return nil
+}
+
+// parseMSGDisplay pulls the first quoted field out of a MSG: line.
+// makemkvcon's MSG format is:
+//
+//	MSG:code,flags,paramCount,"Display text","Format string",…
+//
+// The first quoted field is the human-readable display text — what
+// the makemkv GUI would print to its log. Returns (text, true) on
+// match, (\"\", false) for non-MSG lines or malformed input.
+func parseMSGDisplay(line string) (string, bool) {
+	const tag = "MSG:"
+	if !strings.HasPrefix(line, tag) {
+		return "", false
+	}
+	body := strings.TrimPrefix(line, tag)
+	// First three CSV fields are numeric (code, flags, paramCount);
+	// the fourth is the first quoted string. Walk to the first
+	// double-quote.
+	start := strings.IndexByte(body, '"')
+	if start < 0 {
+		return "", false
+	}
+	end := strings.IndexByte(body[start+1:], '"')
+	if end < 0 {
+		return "", false
+	}
+	return body[start+1 : start+1+end], true
 }
 
 // parseRobotLine handles a single line. Tags we care about:
