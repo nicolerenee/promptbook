@@ -416,6 +416,8 @@ function loadRecording(id) {
         state.recording.overlayOverride != null
           ? state.recording.overlayOverride
           : autoOverlayText(shaped);
+      state.recording.overlayLineDrafts =
+        splitOverlayLines(state.recording.overlayDraft);
       state.recording.overlayDisabled = !!shaped.overlay_disabled;
       const bl = shaped.banner_layout || {};
       state.recording.bannerPosition = bl.position || 'bottom';
@@ -460,6 +462,37 @@ function joinSep(a, b, sep) {
   if (!a) return b;
   if (!b) return a;
   return a + sep + b;
+}
+
+// splitOverlayLines turns a '\n'-joined overlay string into the
+// three-slot array the Line 1 / Line 2 / Line 3 inputs are bound
+// to. Always returns length 3 — extra lines past the third are
+// dropped, missing trailing lines pad with ''. Mirrors the
+// strictly-positional split imagerender.splitOverlay does
+// server-side so what the user types in slot N renders on the
+// matching playbill row.
+function splitOverlayLines(text) {
+  const out = ['', '', ''];
+  if (!text) return out;
+  const parts = String(text).split('\n');
+  for (let i = 0; i < 3 && i < parts.length; i++) {
+    out[i] = parts[i];
+  }
+  return out;
+}
+
+// joinOverlayLines collapses the three-slot draft array back into
+// the single '\n'-joined string the API + renderer expect. Trailing
+// empty slots are stripped so a user who fills only Line 1 doesn't
+// store "Line 1\n\n"; leading and middle empties survive so an
+// intentional "blank tour" gap on slot 2 renders correctly. Returns
+// '' when every slot is empty.
+function joinOverlayLines(lines) {
+  const arr = Array.isArray(lines) ? lines.slice(0, 3) : [];
+  while (arr.length > 0 && arr[arr.length - 1] === '') {
+    arr.pop();
+  }
+  return arr.join('\n');
 }
 
 // postPickerChoice issues a POST against the supplied path with the
@@ -2443,6 +2476,7 @@ function renderPickerTab(loaded, kind) {
   let previewURL = null;
   const bannerPosition = state.recording.bannerPosition || 'bottom';
   const bannerRegion = state.recording.bannerImageRegion || 'middle';
+  const overlayDisabled = !!state.recording.overlayDisabled;
   if (kind === 'poster' && stagedURL) {
     previewURL = '/api/v1/recordings/' + encodeURIComponent(id)
       + '/poster-preview?url=' + encodeURIComponent(stagedURL)
@@ -2451,9 +2485,15 @@ function renderPickerTab(loaded, kind) {
   }
 
   // Banner-layout selectors live on the poster tab only; fanart has
-  // no overlay so position/region don't apply.
+  // no overlay so position/region don't apply. The "Skip burn-in"
+  // toggle rides along with the layout controls — all three are
+  // "how the playbill band gets composited onto the poster" knobs
+  // and read as a unit. When the toggle is on (overlay disabled)
+  // the position + region radios go visually disabled since they
+  // don't affect the no-band render.
   const layoutSelectors = kind === 'poster'
-    ? renderBannerLayoutSelectors(bannerPosition, bannerRegion)
+    ? renderBannerLayoutSelectors(
+        bannerPosition, bannerRegion, overlayDisabled, id)
     : null;
 
   return renderUpstreamPicker({
@@ -2478,17 +2518,26 @@ function renderPickerTab(loaded, kind) {
 }
 
 // renderBannerLayoutSelectors draws icon-button radio groups for the
-// banner position + image-region choices, above the Current/Preview
-// tile pair on the poster tab. Clicking an icon updates
-// state.recording.banner* and triggers a redraw so the Preview URL
-// re-builds with the new query params. Each group is a DaisyUI .join
-// (segmented control) so the buttons read as one unit.
-function renderBannerLayoutSelectors(position, region) {
-  return m('div', { class: 'flex flex-wrap gap-6 mb-2' }, [
+// banner position + image-region choices plus the "Skip burn-in"
+// toggle, above the Current/Preview tile pair on the poster tab.
+// Clicking an icon updates state.recording.banner* and triggers a
+// redraw so the Preview URL re-builds with the new query params.
+// Each group is a DaisyUI .join (segmented control) so the buttons
+// read as one unit.
+//
+// overlayDisabled = state.recording.overlayDisabled. When true the
+// position + region radios go visually disabled since they govern
+// how the playbill band gets composited and there is no band in
+// skip-burn-in mode; the toggle itself stays interactive so the
+// user can flip it back on.
+function renderBannerLayoutSelectors(position, region, overlayDisabled, id) {
+  const busy = !!state.recording.imageBusy;
+  return m('div', { class: 'flex flex-wrap gap-6 mb-2 items-start' }, [
     m('div', { class: 'flex flex-col gap-1' }, [
       m('span', { class: 'text-xs opacity-60' }, 'Banner position'),
       iconRadioGroup({
         value: position,
+        disabled: overlayDisabled,
         onChoose: (v) => { state.recording.bannerPosition = v; },
         options: [
           { value: 'top',    tip: 'Top',    icon: positionIcon('top') },
@@ -2501,6 +2550,7 @@ function renderBannerLayoutSelectors(position, region) {
         'Image area (which 80% to keep)'),
       iconRadioGroup({
         value: region,
+        disabled: overlayDisabled,
         onChoose: (v) => { state.recording.bannerImageRegion = v; },
         // Order matches the user's mental model: cut-top, cut-both,
         // cut-bottom. The kept-region enum names invert (the icon
@@ -2515,6 +2565,29 @@ function renderBannerLayoutSelectors(position, region) {
         ],
       }),
     ]),
+    m('div', { class: 'flex flex-col gap-1' }, [
+      m('span', { class: 'text-xs opacity-60' }, 'Burn-in'),
+      m('label', {
+        class: 'label cursor-pointer justify-start gap-2 py-1',
+      }, [
+        m('input', {
+          type: 'checkbox',
+          class: 'toggle toggle-sm',
+          checked: overlayDisabled,
+          disabled: busy,
+          onchange: (ev) => {
+            const next = !!ev.target.checked;
+            postPickerChoice(
+              '/recordings/' + id + '/overlay-disabled',
+              { disabled: next },
+              () => { state.recording.overlayDisabled = next; },
+            );
+          },
+        }),
+        m('span', { class: 'label-text text-sm' },
+          'Skip burn-in (use raw backdrop)'),
+      ]),
+    ]),
   ]);
 }
 
@@ -2522,8 +2595,12 @@ function renderBannerLayoutSelectors(position, region) {
 // option whose value matches `value` gets primary styling, the
 // others fall back to ghost. Each button has a tooltip surfacing
 // the human-readable label so the icon-only UI stays accessible.
+// When disabled=true every button renders with the native disabled
+// attribute so DaisyUI greys it out and clicks/keyboard activation
+// are no-ops.
 function iconRadioGroup(attrs) {
   const { value, onChoose, options } = attrs;
+  const disabled = !!attrs.disabled;
   return m('div', { role: 'radiogroup', class: 'join' },
     options.map((opt) => {
       const active = opt.value === value;
@@ -2535,7 +2612,8 @@ function iconRadioGroup(attrs) {
         'data-tip': opt.tip,
         'aria-pressed': active ? 'true' : 'false',
         'aria-label': opt.tip,
-        onclick: () => { if (!active) onChoose(opt.value); },
+        disabled,
+        onclick: () => { if (!disabled && !active) onChoose(opt.value); },
       }, opt.icon);
     }));
 }
@@ -2600,28 +2678,36 @@ function regionIcon(variant) {
   ]);
 }
 
-// renderOverlayEditor is the burned-in-text override subsection. The
-// input is always populated — with the override when set, otherwise
-// with the auto-derived fallback so the user can see what they're
-// changing from. Save persists the typed value (even if it matches
-// the fallback — explicit empty string allowed); Reset nulls the
-// override and the renderer falls back to its computed string.
+// renderOverlayEditor is the burned-in-text override subsection.
+// Three labeled inputs (Line 1 / Line 2 / Line 3) edit the three
+// playbill rows imagerender paints: line 1 = date, line 2 = tour,
+// line 3 = venue. The values are joined with '\n' (trailing
+// empties trimmed) on Save so the persisted override string still
+// round-trips through imagerender.splitOverlay unchanged. Inputs
+// are always populated — with the override when set, otherwise
+// with the auto-derived fallback split per-line so the user can
+// see what they're changing from. Save persists the typed values
+// (explicit empty string allowed); Reset nulls the override and
+// the renderer falls back to its computed rows.
 //
-// Above the text editor sits a "Skip burn-in" toggle. When checked
-// the renderer copies the raw selected backdrop verbatim to
-// rendered.jpg (no compositing) and the text editor / Save / Reset
-// affordances render disabled — they're irrelevant when no overlay
-// is being baked. The two surfaces are independent persisted fields
-// so flipping the toggle doesn't clobber the saved text override.
+// The "Skip burn-in" toggle now lives on the Poster tab alongside
+// the banner-layout controls. When the renderer is in skip-burn-in
+// mode this tab renders a disabled-state hint and greys out the
+// inputs — the persisted override text survives the toggle so
+// flipping it back on resurrects the user's saved label.
 function renderOverlayEditor(loaded) {
   const id = loaded.Recording.id;
   const fallback = autoOverlayText(loaded);
+  const fallbackLines = splitOverlayLines(fallback);
   const isOverride = state.recording.overlayOverride != null;
-  const draft = state.recording.overlayDraft != null
-    ? state.recording.overlayDraft : '';
+  const lineDrafts = Array.isArray(state.recording.overlayLineDrafts)
+    && state.recording.overlayLineDrafts.length === 3
+    ? state.recording.overlayLineDrafts
+    : ['', '', ''];
   const busy = state.recording.imageBusy;
   const disabled = !!state.recording.overlayDisabled;
   const editorDisabled = busy || disabled;
+  const slotLabels = ['Line 1', 'Line 2', 'Line 3'];
   return m('section', { class: 'space-y-2' }, [
     m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
       m('h3', { class: 'text-sm font-semibold' }, 'Overlay text'),
@@ -2631,36 +2717,35 @@ function renderOverlayEditor(loaded) {
             ? m('span', { class: 'badge badge-warning badge-sm' }, 'override')
             : m('span', { class: 'badge badge-ghost badge-sm' }, 'auto')),
     ]),
-    m('label', { class: 'label cursor-pointer justify-start gap-2 py-1' }, [
-      m('input', {
-        type: 'checkbox',
-        class: 'toggle toggle-sm',
-        checked: disabled,
-        disabled: busy,
-        onchange: (ev) => {
-          const next = !!ev.target.checked;
-          postPickerChoice(
-            '/recordings/' + id + '/overlay-disabled',
-            { disabled: next },
-            () => { state.recording.overlayDisabled = next; },
-          );
-        },
-      }),
-      m('span', { class: 'label-text text-sm' },
-        'Skip burn-in (use raw backdrop)'),
-    ]),
-    m('label', { class: 'input w-full' }, [
-      m('input', {
-        type: 'text',
-        class: 'grow',
-        value: draft,
-        placeholder: fallback || 'Tour - Date\nVenue, City',
-        oninput: (ev) => {
-          state.recording.overlayDraft = ev.target.value;
-        },
-        disabled: editorDisabled,
-      }),
-    ]),
+    disabled
+      ? m('div', { role: 'note', class: 'alert alert-info text-sm' },
+          m('span',
+            'Burn-in is disabled on the Poster tab — overlay text ' +
+            'isn’t composited onto rendered.jpg. Turn off ' +
+            '"Skip burn-in" to edit these lines.'))
+      : null,
+    m('div', { class: 'grid grid-cols-1 gap-2' },
+      slotLabels.map((label, i) => m('label', {
+        class: 'form-control w-full',
+      }, [
+        m('div', { class: 'label py-0' },
+          m('span', { class: 'label-text text-xs' }, label)),
+        m('input', {
+          type: 'text',
+          class: 'input input-bordered input-sm w-full',
+          value: lineDrafts[i] || '',
+          placeholder: fallbackLines[i] || '',
+          oninput: (ev) => {
+            const next = (state.recording.overlayLineDrafts || ['', '', ''])
+              .slice(0, 3);
+            while (next.length < 3) next.push('');
+            next[i] = ev.target.value;
+            state.recording.overlayLineDrafts = next;
+            state.recording.overlayDraft = joinOverlayLines(next);
+          },
+          disabled: editorDisabled,
+        }),
+      ]))),
     m('p', { class: 'text-xs opacity-60' },
       disabled
         ? 'Burn-in disabled · rendered.jpg is the raw backdrop, no label.'
@@ -2670,11 +2755,18 @@ function renderOverlayEditor(loaded) {
         type: 'button',
         class: 'btn btn-sm btn-primary',
         disabled: editorDisabled,
-        onclick: () => postPickerChoice(
-          '/recordings/' + id + '/overlay',
-          { text: draft, clear: false },
-          () => { state.recording.overlayOverride = draft; },
-        ),
+        onclick: () => {
+          const text = joinOverlayLines(state.recording.overlayLineDrafts);
+          postPickerChoice(
+            '/recordings/' + id + '/overlay',
+            { text, clear: false },
+            () => {
+              state.recording.overlayOverride = text;
+              state.recording.overlayDraft = text;
+              state.recording.overlayLineDrafts = splitOverlayLines(text);
+            },
+          );
+        },
       }, 'Save'),
       m('button', {
         type: 'button',
@@ -2685,7 +2777,9 @@ function renderOverlayEditor(loaded) {
           { clear: true },
           () => {
             state.recording.overlayOverride = null;
-            state.recording.overlayDraft = autoOverlayText(loaded);
+            const nextDraft = autoOverlayText(loaded);
+            state.recording.overlayDraft = nextDraft;
+            state.recording.overlayLineDrafts = splitOverlayLines(nextDraft);
           },
         ),
       }, 'Reset to default'),
@@ -2708,12 +2802,19 @@ function renderOverlayEditor(loaded) {
 // dialog or re-fetch.
 function renderImagePickerModal(loaded) {
   const id = loaded.Recording.id;
+  const overlayDisabled = !!state.recording.overlayDisabled;
+  // Surface the "burn-in off" state right on the Overlay text tab
+  // label so the user can see at a glance why the editor inside is
+  // greyed out — and that the toggle that controls it lives on the
+  // Poster tab. The tab stays clickable so the user can read the
+  // disabled-state hint banner the editor renders.
+  const overlayTabLabel = overlayDisabled ? 'Overlay text (off)' : 'Overlay text';
   const tabs = [
     { key: 'poster',   label: 'Poster',
       render: () => renderPickerTab(loaded, 'poster') },
     { key: 'fanart',   label: 'Fanart',
       render: () => renderPickerTab(loaded, 'fanart') },
-    { key: 'overlay',  label: 'Overlay text',
+    { key: 'overlay',  label: overlayTabLabel,
       render: () => renderOverlayEditor(loaded) },
   ];
   // Footer composition:

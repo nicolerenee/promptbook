@@ -90,6 +90,13 @@ export const state = {
     selectedBackdropIndex: null,
     overlayOverride: null,
     overlayDraft: '',
+    // overlayLineDrafts is the 3-slot mirror of overlayDraft the
+    // overlay-text tab edits through three labeled inputs (Line 1 /
+    // Line 2 / Line 3 → date / tour / venue). Always length 3; empty
+    // strings pad missing slots. Joined back with '\n' (trailing
+    // empties trimmed) on Save so the persisted override string still
+    // round-trips through imagerender.splitOverlay unchanged.
+    overlayLineDrafts: ['', '', ''],
     // overlayDisabled mirrors the API field of the same name. When
     // true the renderer skips the playbill-style band and writes the
     // raw selected backdrop verbatim to rendered.jpg; the overlay
