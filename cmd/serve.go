@@ -461,6 +461,22 @@ func registerRefreshRecordingFull(
 	if encClient != nil {
 		job.Encora = encClient
 	}
+	// SyncCollection runs a full /api/collection + /api/wants pass
+	// after the per-recording detail re-pull. Required because
+	// /api/recording/{id} doesn't carry per-user state — the user's
+	// "is this in my collection / what's its format" only refreshes
+	// via the paginated collection endpoints. Per-recording refresh
+	// runs are infrequent so the rate-limit cost is fine.
+	if encClient != nil {
+		job.SyncCollection = func(ctx context.Context) error {
+			_, syncErr := sync.Sync(ctx, encClient, db, sync.Options{
+				BurstReserve: appConfig.Encora.RateLimit.BurstReserve,
+				Logger:       log.Logger,
+				SQLDB:        sqlDB,
+			})
+			return syncErr
+		}
+	}
 	if err := runner.Register(jobs.JobDef{Job: job}); err != nil {
 		log.Error().Err(err).Msg("register refresh-recording-full job")
 		return nil, 0

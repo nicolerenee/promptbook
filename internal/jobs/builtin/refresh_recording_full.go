@@ -64,7 +64,18 @@ type RefreshRecordingFullJob struct {
 	// running it inline (rather than going through Enqueuer) keeps the
 	// aggregate job's failure surface visible in one run row.
 	ImageRefresh *RefreshRecordingImagesJob
-	Logger       zerolog.Logger
+	// SyncCollection, when non-nil, runs a full encora-side
+	// collection + wants sync after the per-recording detail
+	// re-pull. The job exists in /api/recording/{id} returns
+	// recording metadata but NOT per-user collection state — the
+	// user's relationship to a recording (in_collection,
+	// collection.format, in_wants) only updates via the paginated
+	// /api/collection + /api/wants endpoints. So a per-recording
+	// "refresh" can't surface a fresh collection state without
+	// triggering the full sync. Pass nil to disable (legacy
+	// callers / tests / setups where the cost is too high).
+	SyncCollection func(ctx context.Context) error
+	Logger         zerolog.Logger
 }
 
 // jobNameRefreshRecordingFull is the registry key. Stable string —
@@ -90,12 +101,41 @@ func (j *RefreshRecordingFullJob) Run(ctx context.Context, args jobs.JobArgs) er
 	}
 
 	j.refreshFromEncora(ctx, recID)
+	j.syncCollectionState(ctx, recID)
 	j.reconcileFiles(ctx, recID)
 	j.reprobeVersions(ctx, recID)
 	j.rewriteNFO(ctx, recID)
 	j.runImageRefresh(ctx, recID)
 
 	return nil
+}
+
+// syncCollectionState fires the full collection + wants sync so the
+// recording's per-user state (in_collection, collection.format,
+// in_wants) reflects current Encora reality. Encora's
+// /api/recording/{id} doesn't carry per-user state — the only way
+// to refresh it is the paginated /api/collection + /api/wants
+// endpoints. A nil SyncCollection callback disables this step
+// (legacy wiring + tests / setups that don't want the rate-limit
+// cost). Per-recording refresh runs are infrequent so the
+// budget cost is negligible.
+func (j *RefreshRecordingFullJob) syncCollectionState(ctx context.Context, recID int64) {
+	if j.SyncCollection == nil {
+		j.Logger.Debug().
+			Int64("recording_id", recID).
+			Msg("refresh-recording-full: sync-collection not wired; skipping")
+		return
+	}
+	if err := j.SyncCollection(ctx); err != nil {
+		j.Logger.Warn().
+			Err(err).
+			Int64("recording_id", recID).
+			Msg("refresh-recording-full: collection sync failed; continuing with stale state")
+		return
+	}
+	j.Logger.Debug().
+		Int64("recording_id", recID).
+		Msg("refresh-recording-full: collection + wants synced")
 }
 
 // reconcileFiles pairs version rows whose file_path is now ENOENT

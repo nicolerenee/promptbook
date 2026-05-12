@@ -1499,7 +1499,7 @@ function renderHeader(loaded) {
       ]),
       plot
         ? m('p', {
-            class: 'text-base sm:text-lg max-w-3xl whitespace-pre-line opacity-80',
+            class: 'text-base sm:text-base max-w-4xl whitespace-pre-line opacity-80',
           }, plot)
         : null,
       m('div', {
