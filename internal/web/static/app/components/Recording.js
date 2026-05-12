@@ -629,6 +629,170 @@ const REGENERATE_NFO_MUTATION = `
   }
 `;
 
+// SCAN_DVD_TITLES_QUERY drives the DVD remux picker modal. Server
+// invokes makemkvcon info against the recording's VIDEO_TS folder
+// (fast — only IFO files are read) and returns the discovered titles
+// so the user can pick which ones to convert.
+const SCAN_DVD_TITLES_QUERY = `
+  query ScanDVDTitles($id: ID!) {
+    scanDVDTitles(recordingID: $id) {
+      index
+      duration
+      sizeBytes
+      chapters
+      sourceFilename
+      videoCodec
+      videoResolution
+      audioTracks { index codec language channels }
+      subtitleTracks { index language }
+    }
+  }
+`;
+
+// REMUX_DVD_TITLES_MUTATION enqueues the remux-dvd job for the
+// selected title indexes. Returns the job_runs.id so the SPA can
+// point the user at the Jobs page to watch progress; the remux is
+// async + long-running (5–15 min per typical DVD).
+const REMUX_DVD_TITLES_MUTATION = `
+  mutation RemuxDVDTitles($id: ID!, $indexes: [Int!]!) {
+    remuxDVDTitles(recordingID: $id, titleIndexes: $indexes) {
+      jobRunID
+    }
+  }
+`;
+
+// isDVDLayout reports whether the loaded recording is a DVD-shape
+// — any version's FilePath contains "/VIDEO_TS/". Computed once
+// per render in renderActionsCluster so the "Remux to MKV" menu
+// item only shows when there's actually something to remux.
+function isDVDLayout(loaded) {
+  if (!loaded || !Array.isArray(loaded.Versions)) return false;
+  return loaded.Versions.some((v) =>
+    typeof v.FilePath === 'string' && v.FilePath.includes('/VIDEO_TS/'));
+}
+
+// runScanDVDTitles fires scanDVDTitles and pops the picker modal
+// when the response lands. Stores the discovered titles on
+// state.recording.remuxTitles; pre-selects the longest title as a
+// sensible default (the "main feature" pattern on most DVDs).
+function runScanDVDTitles(id) {
+  if (state.recording.remuxTitlesLoading) return;
+  state.recording.remuxTitlesLoading = true;
+  state.recording.remuxTitlesError = null;
+  state.recording.remuxTitles = null;
+  state.recording.remuxOpen = true;
+  state.recording.remuxSelected = {};
+  state.recording.remuxError = null;
+  m.redraw();
+
+  graphql.query(SCAN_DVD_TITLES_QUERY, { id: 'recording-' + id })
+    .then((data) => {
+      const titles = (data && data.scanDVDTitles) || [];
+      state.recording.remuxTitles = titles;
+      state.recording.remuxTitlesLoading = false;
+      // Auto-select the longest title — typical "main feature"
+      // pattern on a single-disc release. If multiple titles tie
+      // for max duration (rare; concert DVDs do it occasionally)
+      // we just pick the first one.
+      const longest = titles.reduce((best, t) =>
+        (!best || (t.duration || 0) > (best.duration || 0)) ? t : best, null);
+      if (longest) {
+        state.recording.remuxSelected[longest.index] = true;
+      }
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.remuxTitlesLoading = false;
+      state.recording.remuxTitlesError =
+        (err && err.message) || 'DVD scan failed.';
+      m.redraw();
+    });
+}
+
+// runRemuxDVDTitles fires the remuxDVDTitles mutation with the
+// user-checked indexes, then closes the modal + raises a transient
+// info toast pointing at the Jobs page so the user knows the long-
+// running work has started.
+function runRemuxDVDTitles(id) {
+  if (state.recording.remuxBusy) return;
+  const indexes = Object.keys(state.recording.remuxSelected || {})
+    .filter((k) => state.recording.remuxSelected[k])
+    .map((k) => Number(k))
+    .filter((n) => !Number.isNaN(n));
+  if (indexes.length === 0) {
+    state.recording.remuxError = 'Select at least one title to remux.';
+    m.redraw();
+    return;
+  }
+  state.recording.remuxBusy = true;
+  state.recording.remuxError = null;
+  m.redraw();
+
+  graphql.query(REMUX_DVD_TITLES_MUTATION, {
+    id:      'recording-' + id,
+    indexes,
+  })
+    .then(() => {
+      state.recording.remuxBusy = false;
+      state.recording.remuxOpen = false;
+      state.recording.remuxTitles = null;
+      state.recording.remuxSelected = {};
+      state.recording.imageInfo =
+        'Remux job started — check the Jobs page for progress.';
+      // Auto-dismiss the info toast after a few seconds. The user
+      // can hit the Jobs page directly from the navbar to track it.
+      setTimeout(() => {
+        if (state.recording.imageInfo ===
+          'Remux job started — check the Jobs page for progress.') {
+          state.recording.imageInfo = null;
+          m.redraw();
+        }
+      }, 6000);
+      m.redraw();
+    })
+    .catch((err) => {
+      state.recording.remuxBusy = false;
+      state.recording.remuxError =
+        (err && err.message) || 'Remux failed.';
+      m.redraw();
+    });
+}
+
+// formatDurationHMS renders a seconds count as H:MM:SS for the
+// DVD remux title picker. Zero / missing renders as "—" so the
+// table reads cleanly when makemkvcon didn't report a duration.
+function formatDurationHMS(seconds) {
+  const n = Number(seconds || 0);
+  if (!n) return '—';
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = n % 60;
+  const pad = (x) => (x < 10 ? '0' + x : String(x));
+  return h + ':' + pad(m) + ':' + pad(s);
+}
+
+// formatAudioTracksLine joins the title's audio tracks into a
+// human-readable single line for the picker row: "AC3 eng 5.1, AC3
+// fra 2.0". Empty when the title has no audio tracks (shouldn't
+// happen for a real DVD but the picker tolerates it).
+function formatAudioTracksLine(tracks) {
+  if (!Array.isArray(tracks) || tracks.length === 0) return '';
+  return tracks.map((a) => {
+    const parts = [];
+    if (a.codec) parts.push(a.codec);
+    if (a.language) parts.push(a.language);
+    if (a.channels) parts.push(a.channels);
+    return parts.join(' ');
+  }).join(', ');
+}
+
+// formatSubtitleLanguages joins the per-title subtitle languages
+// into a comma-separated list. Empty when no subtitle tracks.
+function formatSubtitleLanguages(tracks) {
+  if (!Array.isArray(tracks) || tracks.length === 0) return '';
+  return tracks.map((s) => s.language || '').filter(Boolean).join(', ');
+}
+
 // SET_EXTERNALLY_MANAGED_MUTATION flips the recording's
 // externally_managed flag on the server. The resolver writes / removes
 // the .promptbook-externally-managed sentinel + deletes any existing
@@ -1026,6 +1190,20 @@ function fileIcon() {
   ]);
 }
 
+// filmIcon is the affordance for the "Remux to MKV (lossless)" More-
+// menu entry on DVD recordings. Pictures a film strip — visually
+// distinct from the existing icons so the DVD-only action reads as
+// its own thing rather than yet another rename / refresh affordance.
+function filmIcon() {
+  return svgIcon([
+    m('path', {
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+      d: 'M3.75 3v18m16.5-18v18M3.75 7.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5M5.625 3h12.75c1.036 0 1.875.84 1.875 1.875v14.25c0 1.035-.84 1.875-1.875 1.875H5.625A1.875 1.875 0 0 1 3.75 19.125V4.875C3.75 3.84 4.59 3 5.625 3Z',
+    }),
+  ]);
+}
+
 // infoIcon is the per-version Media Info expander affordance in the
 // Versions table. Stays small (size-4 via svgIcon) so it sits inline
 // with the row data without dominating it.
@@ -1282,6 +1460,26 @@ function renderActionsCluster(loaded) {
           ? 'Mark as managed by promptbook'
           : 'Mark as externally managed')),
     ])));
+  // Remux to MKV — only visible when the recording has a VIDEO_TS
+  // folder among its versions (i.e. a DVD layout) AND a remux isn't
+  // already in flight. Gated on isDVDLayout so non-DVD recordings
+  // don't see an irrelevant action; the modal does the rest.
+  const remuxBusy = !!state.recording.remuxBusy
+    || !!state.recording.remuxTitlesLoading;
+  if (isDVDLayout(loaded)) {
+    menuItems.push(m('li', { class: remuxBusy ? 'disabled' : '' }, m('a', {
+      onclick: (ev) => {
+        ev.preventDefault();
+        if (remuxBusy) return;
+        runScanDVDTitles(id);
+      },
+    }, [
+      remuxBusy
+        ? m('span', { class: 'loading loading-spinner loading-xs' })
+        : filmIcon(),
+      m('span', remuxBusy ? 'Scanning…' : 'Remux to MKV (lossless)'),
+    ])));
+  }
   menuItems.push(m('li', m('a', {
     onclick: (ev) => {
       ev.preventDefault();
@@ -2791,6 +2989,153 @@ function renderOverlayEditor(loaded) {
   ]);
 }
 
+// RemuxDVDModal is the <dialog>-based picker the More-menu's
+// "Remux to MKV (lossless)" entry pops on a DVD recording. Same
+// onupdate-driven showModal()/close() lifecycle as RecordingRenameModal
+// so the dialog stays in sync with state.recording.remuxOpen.
+const RemuxDVDModal = {
+  oncreate(vnode) {
+    const dom = vnode.dom;
+    dom.addEventListener('close', () => {
+      if (typeof vnode.attrs.onClose === 'function') {
+        vnode.attrs.onClose();
+        m.redraw();
+      }
+    });
+    if (vnode.attrs.open && !dom.open) dom.showModal();
+  },
+  onupdate(vnode) {
+    const dom = vnode.dom;
+    if (vnode.attrs.open && !dom.open) dom.showModal();
+    else if (!vnode.attrs.open && dom.open) dom.close();
+  },
+  view(vnode) {
+    const a = vnode.attrs;
+    if (!a.open) {
+      // Empty stub when closed so the browser's open-state and the
+      // SPA's open flag don't fight on next redraw.
+      return m('dialog', { class: 'modal' },
+        m('div', { class: 'modal-box max-w-4xl' }, ' '));
+    }
+    const r = state.recording;
+    const loading = !!r.remuxTitlesLoading;
+    const error = r.remuxTitlesError;
+    const titles = Array.isArray(r.remuxTitles) ? r.remuxTitles : [];
+
+    return m('dialog', { class: 'modal' }, [
+      m('div', { class: 'modal-box max-w-4xl' }, [
+        m('form', { method: 'dialog' },
+          m('button', {
+            type: 'submit',
+            class: 'btn btn-sm btn-circle btn-ghost absolute right-2 top-2',
+            'aria-label': 'Close',
+          }, '✕')),
+        m('h3', { class: 'font-bold text-lg mb-2 pr-8' },
+          'Remux DVD to MKV (lossless)'),
+        m('p', { class: 'text-sm opacity-70 mb-4' },
+          'Pick the title(s) you want converted. makemkvcon copies the ' +
+          'video, audio, and subtitle streams bit-for-bit into MKV ' +
+          'containers — no re-encoding. The original VIDEO_TS folder ' +
+          'is moved into ./original/ and preserved for trading.'),
+        renderRemuxModalBody({ loading, error, titles }),
+        r.remuxError
+          ? m('div', { role: 'alert', class: 'alert alert-error text-sm mb-2' },
+              m('span', r.remuxError))
+          : null,
+        m('div', { class: 'modal-action' }, [
+          m('button', {
+            type: 'button',
+            class: 'btn btn-sm',
+            onclick: () => {
+              if (typeof a.onClose === 'function') a.onClose();
+            },
+          }, 'Cancel'),
+          m('button', {
+            type: 'button',
+            class: 'btn btn-primary btn-sm',
+            disabled: loading || !!error || titles.length === 0
+              || !!r.remuxBusy
+              || Object.keys(r.remuxSelected || {})
+                .filter((k) => r.remuxSelected[k]).length === 0,
+            onclick: () => runRemuxDVDTitles(a.recordingID),
+          }, [
+            r.remuxBusy
+              ? m('span', { class: 'loading loading-spinner loading-xs mr-1' })
+              : null,
+            r.remuxBusy ? 'Starting…' : 'Remux Selected',
+          ]),
+        ]),
+      ]),
+    ]);
+  },
+};
+
+// renderRemuxModalBody picks between the loading / error / empty /
+// title-table states and renders the right one. Pulled out of the
+// modal view so the file's longest renderer stays under the eye-
+// strain limit.
+function renderRemuxModalBody({ loading, error, titles }) {
+  if (loading) {
+    return m('div', { class: 'flex items-center justify-center py-8' },
+      m('span', { class: 'loading loading-spinner loading-md' }));
+  }
+  if (error) {
+    return m('div', { role: 'alert', class: 'alert alert-error text-sm' },
+      m('span', 'Scan failed: ' + error));
+  }
+  if (titles.length === 0) {
+    return m('div', { class: 'text-sm opacity-70 py-4' },
+      'makemkvcon found no titles on this disc.');
+  }
+  return m('div', { class: 'overflow-x-auto' },
+    m('table', { class: 'table table-sm' }, [
+      m('thead', m('tr', [
+        m('th', { class: 'w-10' }, ''),
+        m('th', '#'),
+        m('th', 'Duration'),
+        m('th', 'Size'),
+        m('th', 'Ch'),
+        m('th', 'Video'),
+        m('th', 'Audio'),
+        m('th', 'Subs'),
+      ])),
+      m('tbody', titles.map(renderRemuxTitleRow)),
+    ]));
+}
+
+// renderRemuxTitleRow renders one row of the picker table. The
+// checkbox writes through to state.recording.remuxSelected.
+function renderRemuxTitleRow(t) {
+  const idx = t.index;
+  const checked = !!(state.recording.remuxSelected || {})[idx];
+  const video = [t.videoCodec, t.videoResolution].filter(Boolean).join(' ');
+  const audio = formatAudioTracksLine(t.audioTracks);
+  const subs = formatSubtitleLanguages(t.subtitleTracks);
+  return m('tr', { key: idx }, [
+    m('td',
+      m('input', {
+        type:    'checkbox',
+        class:   'checkbox checkbox-sm',
+        checked,
+        onchange: (ev) => {
+          if (!state.recording.remuxSelected) {
+            state.recording.remuxSelected = {};
+          }
+          state.recording.remuxSelected[idx] = !!ev.target.checked;
+          state.recording.remuxError = null;
+        },
+      })),
+    m('td', { class: 'font-mono' }, String(idx)),
+    m('td', { class: 'font-mono' }, formatDurationHMS(t.duration)),
+    m('td', { class: 'font-mono' }, humanSize(t.sizeBytes || 0)),
+    m('td', { class: 'font-mono' },
+      t.chapters ? String(t.chapters) : '—'),
+    m('td', { class: 'text-sm' }, video || '—'),
+    m('td', { class: 'text-sm' }, audio || '—'),
+    m('td', { class: 'text-sm' }, subs || '—'),
+  ]);
+}
+
 // renderImagePickerModal mounts the <dialog>-based modal that hosts
 // the three picker subsections. The "Edit images" button in the page
 // header toggles state.recording.pickerOpen; this component's
@@ -2991,6 +3336,15 @@ const Recording = {
     // a previously-open expansion doesn't bleed onto a new row.
     state.recording.expandedVersions = {};
     state.recording.nfoExpanded = false;
+    // DVD remux picker state. Reset on every recording switch so a
+    // stale title list / selection doesn't leak across navigations.
+    state.recording.remuxTitlesLoading = false;
+    state.recording.remuxTitles = null;
+    state.recording.remuxTitlesError = null;
+    state.recording.remuxOpen = false;
+    state.recording.remuxSelected = {};
+    state.recording.remuxBusy = false;
+    state.recording.remuxError = null;
     const id = vnode.attrs && vnode.attrs.id;
     if (!id) {
       state.recording.loading = false;
@@ -3070,6 +3424,18 @@ const Recording = {
           // the Local versions card reflects the new file paths and
           // the NFO card picks up the post-rename rewrite.
           loadRecording(loaded.Recording.id);
+        },
+      }),
+      m(RemuxDVDModal, {
+        open: !!state.recording.remuxOpen,
+        recordingID: loaded.Recording.id,
+        onClose: () => {
+          state.recording.remuxOpen = false;
+          // Drop the picker's transient state so reopening the modal
+          // refetches fresh title info rather than showing stale
+          // selections from the prior session.
+          state.recording.remuxSelected = {};
+          state.recording.remuxError = null;
         },
       }),
       renderImageErrorToast({

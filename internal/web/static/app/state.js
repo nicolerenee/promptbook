@@ -171,6 +171,24 @@ export const state = {
     // nfoExpanded toggles the bottom-of-Files-section NFO disclosure.
     // Collapsed by default — the user opts in to read the XML.
     nfoExpanded: false,
+    // DVD remux picker state. The Recording.js detail page kicks
+    // scanDVDTitles when the user clicks "Remux to MKV (lossless)"
+    // in the More menu; the response lands on remuxTitles and the
+    // modal opens. remuxSelected is a {titleIndex: true} map of the
+    // user's per-title checkboxes; remuxBusy + remuxError gate the
+    // mutation fire while it's in flight.
+    //
+    // remuxTitles starts null (not loaded); becomes [] after a
+    // loaded-empty response; becomes an array of DVDTitle vnodes
+    // after a successful scan. remuxOpen drives the <dialog>'s
+    // showModal()/close() lifecycle on the picker modal.
+    remuxTitlesLoading: false,
+    remuxTitles:        null,
+    remuxTitlesError:   null,
+    remuxOpen:          false,
+    remuxSelected:      {},
+    remuxBusy:          false,
+    remuxError:         null,
   },
   // show is the /shows/:id detail page view-model. detail holds the
   // ShowDetailResponse payload (lower-case JSON keys per the
