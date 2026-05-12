@@ -2008,10 +2008,21 @@ function extraDirSection(name, children) {
 // monospace line under the heading rather than a labeled key:value
 // pair, so the heading + path together read as one "where these
 // files live" header.
+//
+// When at least one version row lives inside a VIDEO_TS/ subfolder
+// (DVD import — the disc-aware mover preserved the canonical DVD
+// layout) we surface a single-line "DVD (VIDEO_TS structure
+// preserved for media-server playback)" hint under the folder path
+// so the user understands why the files aren't following the normal
+// canonical naming convention.
 function renderFilesSection(loaded) {
   const versions = loaded.Versions || [];
   const extras = loaded.extras || [];
   const folder = versions.length > 0 ? dirname(versions[0].FilePath || '') : '';
+  const isDVDLayout = versions.some((v) => {
+    const path = String(v.FilePath || '');
+    return path.indexOf('/VIDEO_TS/') !== -1;
+  });
   return m('div', { class: 'card bg-base-100 shadow-sm' },
     m('div', { class: 'card-body space-y-4' }, [
       m('div', { class: 'space-y-1' }, [
@@ -2019,6 +2030,10 @@ function renderFilesSection(loaded) {
           'Files · ' + versions.length),
         folder
           ? m('div', { class: 'text-xs font-mono opacity-60 break-all' }, folder)
+          : null,
+        isDVDLayout
+          ? m('div', { class: 'text-xs opacity-60' },
+              'DVD (VIDEO_TS structure preserved for media-server playback)')
           : null,
       ]),
       renderVersionsTable(loaded),

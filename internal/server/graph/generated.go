@@ -229,6 +229,7 @@ type ComplexityRoot struct {
 
 	QueueClassification struct {
 		Ambiguous   func(childComplexity int) int
+		DiscFormat  func(childComplexity int) int
 		ExternalIDs func(childComplexity int) int
 		Extras      func(childComplexity int) int
 		Parts       func(childComplexity int) int
@@ -1494,6 +1495,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.QueueClassification.Ambiguous(childComplexity), true
+	case "QueueClassification.discFormat":
+		if e.ComplexityRoot.QueueClassification.DiscFormat == nil {
+			break
+		}
+
+		return e.ComplexityRoot.QueueClassification.DiscFormat(childComplexity), true
 	case "QueueClassification.externalIDs":
 		if e.ComplexityRoot.QueueClassification.ExternalIDs == nil {
 			break
@@ -3242,6 +3249,8 @@ func (ec *executionContext) childFields_QueueClassification(ctx context.Context,
 		return ec.fieldContext_QueueClassification_ambiguous(ctx, field)
 	case "externalIDs":
 		return ec.fieldContext_QueueClassification_externalIDs(ctx, field)
+	case "discFormat":
+		return ec.fieldContext_QueueClassification_discFormat(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type QueueClassification", field.Name)
 }
@@ -8536,6 +8545,29 @@ func (ec *executionContext) fieldContext_QueueClassification_externalIDs(_ conte
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _QueueClassification_discFormat(ctx context.Context, field graphql.CollectedField, obj *QueueClassification) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_QueueClassification_discFormat(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DiscFormat, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_QueueClassification_discFormat(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("QueueClassification", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _QueueClassifiedFile_path(ctx context.Context, field graphql.CollectedField, obj *QueueClassifiedFile) (ret graphql.Marshaler) {
@@ -23425,6 +23457,11 @@ func (ec *executionContext) _QueueClassification(ctx context.Context, sel ast.Se
 			}
 		case "externalIDs":
 			out.Values[i] = ec._QueueClassification_externalIDs(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "discFormat":
+			out.Values[i] = ec._QueueClassification_discFormat(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

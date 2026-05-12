@@ -116,6 +116,22 @@ func TestComposeSingleVersion(t *testing.T) {
 			}},
 			want: "MKV - av1 + OPUS - 2160p - 8.57 GB",
 		},
+		{
+			// DVD-era ffprobe reports "mpeg2video" as the codec_name
+			// for VOB content. We map onto "mpeg2" so the rendered
+			// release-format string reads cleanly for DVD imports —
+			// e.g. "VOB - mpeg2 + AC3 - 480p - 4.40 GB" rather than
+			// the verbose ffprobe label.
+			name: "dvd_mpeg2_vob",
+			versions: []releaseformat.VersionInfo{{
+				Container:  "VOB",
+				VideoCodec: "mpeg2video",
+				AudioCodec: "ac3",
+				Height:     480,
+				SizeBytes:  bytes4_20GB,
+			}},
+			want: "VOB - mpeg2 + AC3 - 480p - 4.20 GB",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

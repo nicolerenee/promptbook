@@ -389,6 +389,48 @@ func TestComputeFormatString(t *testing.T) {
 			want: "MP4 - x264 + AAC - 1080p - 8.00 GB - 2 files",
 		},
 		{
+			// DVD import: five content VOBs from a single disc rip
+			// all share the same VOB / mpeg2 / ac3 / 480p format,
+			// so the multipart-merge collapses them into one line
+			// with the sizes summed + " - 5 files" appended. The
+			// rendered codec is the mpeg2video → mpeg2 mapping
+			// added for DVD support.
+			name: "dvd_five_vobs_merge_as_single_grouped_row",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_1.VOB",
+					FileSizeBytes: 1073741824, // 1.00 GB
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     1,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_2.VOB",
+					FileSizeBytes: 1073741824,
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     2,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_3.VOB",
+					FileSizeBytes: 1073741824,
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     3,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_4.VOB",
+					FileSizeBytes: 1073741824,
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     4,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_5.VOB",
+					FileSizeBytes: 376438587, // ~359 MB
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     5,
+				},
+			},
+			want: "VOB - mpeg2 + AC3 - 480p - 4.35 GB - 5 files",
+		},
+		{
 			// Different formats DON'T merge — two distinct masters
 			// of the same recording stay bracketed best-first even
 			// when one of them happens to be multipart.

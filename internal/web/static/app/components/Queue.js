@@ -81,6 +81,7 @@ const QUEUE_QUERY = `
       }
       classification {
         ambiguous
+        discFormat
         parts {
           path
           sizeBytes
@@ -144,12 +145,19 @@ function mapClassifiedFile(node) {
 // non-null arrays (server-side guarantee); ambiguous defaults to
 // false. Returns null when the input is null so legacy rows that
 // pre-date the classifier project no classification.
+//
+// discFormat carries the scanner's disc-shape marker — empty string
+// for normal folders, "dvd" when a VIDEO_TS layout was detected.
+// The modal's FilesSection reads this to render a small DVD badge
+// so the user knows the importer will preserve the VIDEO_TS
+// structure rather than running the file template.
 function mapClassification(node) {
   if (!node) return null;
   const parts  = ((node.parts  || []).map(mapClassifiedFile).filter(Boolean));
   const extras = ((node.extras || []).map(mapClassifiedFile).filter(Boolean));
   return {
-    ambiguous: !!node.ambiguous,
+    ambiguous:   !!node.ambiguous,
+    discFormat:  node.discFormat || '',
     parts,
     extras,
   };

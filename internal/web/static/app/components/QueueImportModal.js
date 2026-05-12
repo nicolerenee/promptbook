@@ -699,15 +699,32 @@ function onKindChange(local, queueID, rowIndex, newValue) {
 // (`click to override`) so single-file folders don't gain UX friction.
 // The section is hidden entirely when there are no extras to assign
 // (empty rows[]).
+//
+// When the scanner classified the folder as a DVD (classification
+// .discFormat === 'dvd'), the section header carries a small
+// 'DVD' badge so the user knows the importer will preserve the
+// VIDEO_TS structure verbatim rather than running the file
+// template. The disc-aware mover in the ingest engine reads the
+// same discFormat marker and routes the content VOBs +
+// scaffolding into {recordingFolder}/VIDEO_TS/.
 function FilesSection(local, item) {
   const rows = (local.files && local.files.rows) || [];
   if (rows.length === 0) return null;
   const expanded = local.files.expanded;
+  const isDVD = item && item.classification &&
+    item.classification.discFormat === 'dvd';
+  const dvdBadge = isDVD
+    ? m('span', {
+        class: 'badge badge-sm badge-info',
+        title: 'VIDEO_TS structure preserved for DVD playback',
+      }, 'DVD')
+    : null;
   const summary = m('summary', {
     class: 'cursor-pointer text-xs uppercase opacity-60 tracking-wide ' +
            'list-none flex items-center gap-2 select-none',
   }, [
     m('span', 'Files in this folder · ' + rows.length),
+    dvdBadge,
     m('span', { class: 'opacity-60 normal-case font-normal lowercase' },
       '· click to override'),
   ]);
@@ -717,8 +734,11 @@ function FilesSection(local, item) {
     : null;
   if (expanded) {
     return m('div', { class: 'space-y-2' }, [
-      m('h4', { class: 'text-xs uppercase opacity-60 tracking-wide' },
-        'Files in this folder · ' + rows.length),
+      m('h4', { class: 'text-xs uppercase opacity-60 tracking-wide ' +
+                       'flex items-center gap-2' }, [
+        m('span', 'Files in this folder · ' + rows.length),
+        dvdBadge,
+      ]),
       table,
       errorLine,
     ]);

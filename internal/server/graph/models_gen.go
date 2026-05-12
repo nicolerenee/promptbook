@@ -108,6 +108,7 @@ type QueueClassification struct {
 	Extras      []*QueueClassifiedFile `json:"extras"`
 	Ambiguous   bool                   `json:"ambiguous"`
 	ExternalIDs []*QueueExternalID     `json:"externalIDs"`
+	DiscFormat  string                 `json:"discFormat"`
 }
 
 type QueueClassifiedFile struct {

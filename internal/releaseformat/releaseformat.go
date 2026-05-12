@@ -171,9 +171,11 @@ func renderVersion(v VersionInfo) string {
 }
 
 // formatVideoCodec maps the raw ffprobe codec_name onto the
-// Sonarr-style display label. h264 → x264, hevc → x265, anything else
-// passes through unchanged. Empty input stays empty so the caller can
-// distinguish "no value" from "unrecognized value".
+// Sonarr-style display label. h264 → x264, hevc → x265,
+// mpeg2video → mpeg2 (the DVD-era display name; Plex/Emby labels
+// follow suit), anything else passes through unchanged. Empty input
+// stays empty so the caller can distinguish "no value" from
+// "unrecognized value".
 func formatVideoCodec(codec string) string {
 	switch strings.ToLower(strings.TrimSpace(codec)) {
 	case "":
@@ -182,6 +184,8 @@ func formatVideoCodec(codec string) string {
 		return "x264"
 	case "hevc", "h265":
 		return "x265"
+	case "mpeg2video", "mpeg2":
+		return "mpeg2"
 	default:
 		return codec
 	}

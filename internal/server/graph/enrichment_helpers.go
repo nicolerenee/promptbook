@@ -1314,6 +1314,10 @@ func decodeQueueClassification(raw string) *QueueClassification {
 			Provider   string `json:"provider"`
 			ExternalID string `json:"externalID"`
 		} `json:"externalIDs"`
+		// DiscFormat is the scanner's disc-shape marker: empty for
+		// non-disc folders, "dvd" when a VIDEO_TS layout was
+		// detected. The SPA renders a small badge off this value.
+		DiscFormat string `json:"discFormat"`
 	}
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		// Defensive: a row with a corrupt blob still surfaces as an
@@ -1321,6 +1325,7 @@ func decodeQueueClassification(raw string) *QueueClassification {
 		return out
 	}
 	out.Ambiguous = decoded.Ambiguous
+	out.DiscFormat = decoded.DiscFormat
 	for _, p := range decoded.Parts {
 		out.Parts = append(out.Parts, &QueueClassifiedFile{
 			Path:          p.Path,

@@ -409,11 +409,19 @@ type QueueEntry {
 # drops carry [tmdbid-N] / {imdb-ttN} markers that map straight onto
 # this list. Empty for plain folders with no tags. The ingest engine
 # persists these into the external_ids table once the recording lands.
+#
+# discFormat marks folders the ingest engine routes through a
+# disc-preserving mover instead of the regular file-template path.
+# Empty for normal folders; "dvd" when the scanner detects a
+# VIDEO_TS layout (DVD rip). The SPA's queue import modal surfaces
+# the value as a small badge next to the "Files in this folder"
+# header so the user sees the layout will be preserved.
 type QueueClassification {
   parts: [QueueClassifiedFile!]!
   extras: [QueueClassifiedFile!]!
   ambiguous: Boolean!
   externalIDs: [QueueExternalID!]!
+  discFormat: String!
 }
 
 # QueueClassifiedFile is one media file inside a QueueClassification.
