@@ -2816,7 +2816,7 @@ function renderPrivateNotesSection(loaded) {
         }, 'local only'),
       ]),
       m('textarea', {
-        class: 'textarea textarea-bordered w-full min-h-24 font-mono text-sm',
+        class: 'textarea textarea-bordered w-full max-w-4xl min-h-24 font-mono text-sm',
         placeholder: 'Trade notes, "I owe Alex a copy", subtitle quality, ' +
                      'anything you want to track about this recording…',
         value:    value,
