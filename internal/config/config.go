@@ -40,7 +40,13 @@ const (
 	// (e.g. a vendored static build); the extractor surfaces a clear
 	// "not available" error if ffmpeg isn't reachable at extraction
 	// time.
-	DefaultFFmpegPath        = "ffmpeg"
+	DefaultFFmpegPath = "ffmpeg"
+	// DefaultMakeMKVPath is the empty-string default for the makemkvcon
+	// binary path. Empty means "DVD remux feature disabled" — the SPA
+	// hides the Remux button and the GraphQL surface returns a typed
+	// error. Set via library.makemkvPath / PROMPTBOOK_LIBRARY_MAKEMKVPATH
+	// to an absolute path or to "makemkvcon" to resolve through PATH.
+	DefaultMakeMKVPath       = ""
 	DefaultWatchInterval     = 1 * time.Minute
 	DefaultStagemediaBaseURL = "https://stagemedia.me"
 	// DefaultTMDBBaseURL is TMDB's v3 API root. Override via
@@ -103,6 +109,12 @@ type LibraryConfig struct {
 	// empty options array (with a logged reason) when ffmpeg is
 	// unavailable, so the rest of the modal stays usable.
 	FFmpegPath string `mapstructure:"ffmpegPath"`
+	// MakeMKVPath is the makemkvcon binary used by the DVD remux
+	// feature. Empty disables the feature entirely — the SPA hides
+	// the "Remux to MKV" menu item on DVD recordings and the GraphQL
+	// surface returns a typed error if the mutation/query is invoked
+	// anyway. Set to an absolute path or "makemkvcon" to enable.
+	MakeMKVPath string `mapstructure:"makemkvPath"`
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).

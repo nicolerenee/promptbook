@@ -17,6 +17,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
 	"github.com/nicolerenee/promptbook/internal/jobs/builtin"
+	"github.com/nicolerenee/promptbook/internal/makemkv"
 	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server"
@@ -329,6 +330,7 @@ func buildJobRunner(
 	registered += registerScanIncoming(runner, db, sqlDB, encClient)
 	registered += registerScanLibraryRoot(runner, db, sqlDB, encClient)
 	registered += registerRegenerateAllNFO(runner, db, nfoRefresh)
+	registered += registerRemuxDVD(runner, db, nfoRefresh)
 
 	if registered == 0 {
 		log.Info().Msg("jobs runner has no registered jobs (encora + incomingDirs both unconfigured)")
@@ -565,6 +567,44 @@ func registerRegenerateAllNFO(
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("register regenerate-all-nfo job")
+		return 0
+	}
+	return 1
+}
+
+// registerRemuxDVD wires the remux-dvd job when both library config
+// and library.makemkvPath are populated. Manual-only by design:
+// makemkvcon takes 5–15 minutes per DVD so the job is never
+// auto-fired by the ticker. The SPA's "Remux to MKV" affordance
+// (recording detail page) enqueues a parameterized run via
+// remuxDVDTitles mutation when the user picks one or more titles.
+//
+// Skips registration cleanly when makemkvPath is empty so the rest
+// of the runner stays alive. The GraphQL resolvers handle the
+// "configured but no path" case with a typed error so the SPA can
+// hide the menu item.
+func registerRemuxDVD(
+	runner *jobs.Runner, db *ent.Client, nfoRefresh *nforefresh.Service,
+) int {
+	if appConfig.Library.MakeMKVPath == "" {
+		return 0
+	}
+	if appConfig.Library.Root == "" {
+		return 0
+	}
+	client := &makemkv.Client{Binary: appConfig.Library.MakeMKVPath}
+	job := &builtin.RemuxDVDJob{
+		DB:             db,
+		MakeMKV:        client,
+		Prober:         probe.FFProbe{Path: appConfig.Library.FFProbePath},
+		NFORefresh:     nfoRefresh,
+		LibraryRoot:    appConfig.Library.Root,
+		FolderTemplate: appConfig.Library.FolderTemplate,
+		FileTemplate:   appConfig.Library.FileTemplate,
+		Logger:         log.Logger,
+	}
+	if err := runner.Register(jobs.JobDef{Job: job}); err != nil {
+		log.Error().Err(err).Msg("register remux-dvd job")
 		return 0
 	}
 	return 1
