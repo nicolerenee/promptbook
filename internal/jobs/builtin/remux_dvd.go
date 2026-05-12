@@ -587,8 +587,8 @@ func audioCodecFromMediaInfo(info probe.MediaInfo) string {
 
 // writeConversionNotes drops CONVERSION_NOTES.txt into the
 // preserved-originals folder. The contents capture EXACTLY what
-// makemkvcon was invoked with so the user (and anyone they trade
-// with later) can verify the lossless round-trip claim.
+// makemkvcon was invoked with so the user can verify the lossless
+// round-trip claim later.
 func (j *RemuxDVDJob) writeConversionNotes(
 	originalDir string, recordingID int64, commands []string, moved []movedRemux,
 ) error {
@@ -606,8 +606,7 @@ func (j *RemuxDVDJob) writeConversionNotes(
 	b.WriteString("source DVD into Matroska (.mkv) containers using\n")
 	b.WriteString("makemkvcon's --robot mode. The bit-for-bit DVD\n")
 	b.WriteString("originals are preserved verbatim in this directory's\n")
-	b.WriteString("VIDEO_TS/ subfolder so the recording can still be\n")
-	b.WriteString("traded in its original DVD form.\n\n")
+	b.WriteString("VIDEO_TS/ subfolder.\n\n")
 	fmt.Fprintf(&b, "Recording ID:  %d\n", recordingID)
 	fmt.Fprintf(&b, "Conversion at: %s\n\n", now().UTC().Format(time.RFC3339))
 

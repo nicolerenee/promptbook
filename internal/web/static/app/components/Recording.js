@@ -3036,7 +3036,7 @@ const RemuxDVDModal = {
           'Pick the title(s) you want converted. makemkvcon copies the ' +
           'video, audio, and subtitle streams bit-for-bit into MKV ' +
           'containers — no re-encoding. The original VIDEO_TS folder ' +
-          'is moved into ./original/ and preserved for trading.'),
+          'is moved into ./original/ and preserved.'),
         renderRemuxModalBody({ loading, error, titles }),
         r.remuxError
           ? m('div', { role: 'alert', class: 'alert alert-error text-sm mb-2' },
