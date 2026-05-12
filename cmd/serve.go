@@ -586,23 +586,21 @@ func registerRegenerateAllNFO(
 	return 1
 }
 
-// registerRemuxDVD wires the remux-dvd job when both library config
-// and library.makemkvPath are populated. Manual-only by design:
+// registerRemuxDVD wires the remux-dvd job. Manual-only by design:
 // makemkvcon takes 5–15 minutes per DVD so the job is never
 // auto-fired by the ticker. The SPA's "Remux to MKV" affordance
 // (recording detail page) enqueues a parameterized run via
 // remuxDVDTitles mutation when the user picks one or more titles.
 //
-// Skips registration cleanly when makemkvPath is empty so the rest
-// of the runner stays alive. The GraphQL resolvers handle the
-// "configured but no path" case with a typed error so the SPA can
-// hide the menu item.
+// Registration only requires library.root to be configured (the
+// canonical destination path needs a root). library.makemkvPath
+// defaults to looking up `makemkvcon` on PATH at command-run time
+// — same pattern ffprobe + ffmpeg use — so a missing config knob
+// doesn't gate the feature off. When the binary isn't installed,
+// the job surfaces a plain exec error at runtime instead.
 func registerRemuxDVD(
 	runner *jobs.Runner, db *ent.Client, nfoRefresh *nforefresh.Service,
 ) int {
-	if appConfig.Library.MakeMKVPath == "" {
-		return 0
-	}
 	if appConfig.Library.Root == "" {
 		return 0
 	}
