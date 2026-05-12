@@ -2807,7 +2807,7 @@ function renderPrivateNotesSection(loaded) {
   const busy = !!state.recording.notesBusy;
   const error = state.recording.notesError;
   return m('div', { class: 'card bg-base-100 shadow-sm' },
-    m('div', { class: 'card-body space-y-2' }, [
+    m('div', { class: 'card-body space-y-4 py-6' }, [
       m('div', { class: 'flex items-center justify-between gap-2' }, [
         m('h2', { class: 'card-title text-base' }, 'Private notes'),
         m('span', {
