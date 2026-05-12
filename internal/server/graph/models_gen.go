@@ -18,6 +18,30 @@ type BannerLayout struct {
 	ImageRegion string `json:"imageRegion"`
 }
 
+type DVDAudioTrack struct {
+	Index    int    `json:"index"`
+	Codec    string `json:"codec"`
+	Language string `json:"language"`
+	Channels string `json:"channels"`
+}
+
+type DVDSubtitleTrack struct {
+	Index    int    `json:"index"`
+	Language string `json:"language"`
+}
+
+type DVDTitle struct {
+	Index           int                 `json:"index"`
+	Duration        int                 `json:"duration"`
+	SizeBytes       int                 `json:"sizeBytes"`
+	Chapters        int                 `json:"chapters"`
+	SourceFilename  string              `json:"sourceFilename"`
+	VideoCodec      string              `json:"videoCodec"`
+	VideoResolution string              `json:"videoResolution"`
+	AudioTracks     []*DVDAudioTrack    `json:"audioTracks"`
+	SubtitleTracks  []*DVDSubtitleTrack `json:"subtitleTracks"`
+}
+
 type FileAssignmentInput struct {
 	SourcePath string  `json:"sourcePath"`
 	Kind       string  `json:"kind"`
@@ -184,6 +208,10 @@ type RecordingsListPage struct {
 type RegenerateNFOResult struct {
 	Ok    bool   `json:"ok"`
 	Error string `json:"error"`
+}
+
+type RemuxDVDPayload struct {
+	JobRunID int `json:"jobRunID"`
 }
 
 type RenamePreviewItem struct {

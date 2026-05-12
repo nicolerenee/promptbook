@@ -25,6 +25,8 @@ import (
 	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/makemkv"
 	"github.com/nicolerenee/promptbook/internal/match"
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/rename"
@@ -2351,3 +2353,197 @@ const externallyManagedFilePerm = 0o644
 // the encora package directly. Pulled into a named type so the
 // signatures stay short.
 type encoraRecordingValue = encora.Recording
+
+// errMakeMKVNotConfigured is the typed error the DVD remux surfaces
+// return when library.makemkvPath is unset. The SPA hides the remux
+// affordance entirely in that mode (it never calls the query); this
+// guard is defense-in-depth for direct API consumers.
+var errMakeMKVNotConfigured = errors.New(
+	"graphql: makemkv not configured — set library.makemkvPath to enable DVD remux")
+
+// errJobRunnerNotConfigured is the typed error the remuxDVDTitles
+// mutation returns when no jobs.Runner was wired into the schema.
+// Production wiring always wires one when any job exists; this case
+// shows up in tests that exercise the schema without a runner.
+var errJobRunnerNotConfigured = errors.New(
+	"graphql: job runner not configured — cannot enqueue remux job")
+
+// dvdScanMinLength is the makemkvcon --minlength flag the
+// scanDVDTitles resolver passes. 0 means "every title, including the
+// short ones" — DVD bonuses are often 30–90 seconds and the picker
+// modal shows them all so the user can pick. The default makemkvcon
+// behaviour without --minlength is the same; we pass 0 explicitly
+// for clarity.
+const dvdScanMinLength = 0
+
+// scanDVDTitles is the resolver body for Query.scanDVDTitles. Pulls
+// the recording's version rows to discover the VIDEO_TS folder path
+// (any one of them works — every version of a DVD recording sits
+// under VIDEO_TS), then invokes makemkvcon's info pass against the
+// parent of that folder. Returns the typed GraphQL shape so the SPA
+// can render the picker modal.
+func (r *Resolver) scanDVDTitles(
+	ctx context.Context, recordingID int64,
+) ([]*DVDTitle, error) {
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	if r.makemkv == nil {
+		return nil, errMakeMKVNotConfigured
+	}
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	folder, err := dvdParentFolder(versions)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: recording %d is not a DVD layout: %w", recordingID, err)
+	}
+	titles, err := r.makemkv.Info(ctx, folder, dvdScanMinLength)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: scan dvd titles: %w", err)
+	}
+	out := make([]*DVDTitle, 0, len(titles))
+	for _, t := range titles {
+		out = append(out, dvdTitleToGraphQL(t))
+	}
+	return out, nil
+}
+
+// dvdParentFolder walks the recording's version rows for any path
+// containing "/VIDEO_TS/" or "/original/VIDEO_TS/" and returns the
+// folder makemkvcon should read (the parent of VIDEO_TS — usually
+// the recording folder, or originalDir if a prior remux already
+// preserved the originals).
+//
+// Both layouts must work: a never-remuxed recording sits at
+// recFolder/VIDEO_TS/, and a partially-remuxed one (recovery from
+// a failed prior run) sits at recFolder/original/VIDEO_TS/. The
+// makemkvcon Info call only cares that VIDEO_TS lives at the
+// returned path's first level.
+func dvdParentFolder(versions []storage.RecordingVersion) (string, error) {
+	const marker = "/VIDEO_TS/"
+	for _, v := range versions {
+		idx := strings.Index(v.FilePath, marker)
+		if idx < 0 {
+			continue
+		}
+		folder := v.FilePath[:idx]
+		if folder == "" {
+			continue
+		}
+		return folder, nil
+	}
+	// Fallback: a recording that's already been remuxed lives at
+	// recFolder/some.mkv with no live VIDEO_TS reference. Look for
+	// recFolder/original/VIDEO_TS on disk via the version row's
+	// parent directory.
+	for _, v := range versions {
+		parent := filepath.Dir(v.FilePath)
+		candidate := filepath.Join(parent, originalSubfolderGraph)
+		if _, statErr := os.Stat(filepath.Join(candidate, "VIDEO_TS")); statErr == nil {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("no version row references a VIDEO_TS layout and no preserved originals found")
+}
+
+// originalSubfolderGraph mirrors builtin.originalSubfolder but
+// duplicated here so the graph package doesn't import jobs/builtin
+// (which would close a cycle via the resolver -> job -> storage ->
+// ent dependency tree). The string is part of the user-facing layout
+// contract so the duplication is intentional + stable.
+const originalSubfolderGraph = "original"
+
+// dvdTitleToGraphQL projects a makemkv.Title onto the GraphQL
+// DVDTitle shape. Audio + subtitle track slices are populated in
+// makemkvcon's natural stream order (sorted by stream index in the
+// makemkv package).
+func dvdTitleToGraphQL(t makemkv.Title) *DVDTitle {
+	out := &DVDTitle{
+		Index:           t.Index,
+		Duration:        t.Duration,
+		SizeBytes:       int(t.SizeBytes),
+		Chapters:        t.Chapters,
+		SourceFilename:  t.SourceFilename,
+		VideoCodec:      t.VideoCodec,
+		VideoResolution: t.VideoResolution,
+		AudioTracks:     make([]*DVDAudioTrack, 0, len(t.AudioTracks)),
+		SubtitleTracks:  make([]*DVDSubtitleTrack, 0, len(t.SubtitleTracks)),
+	}
+	for _, a := range t.AudioTracks {
+		out.AudioTracks = append(out.AudioTracks, &DVDAudioTrack{
+			Index:    a.Index,
+			Codec:    a.Codec,
+			Language: a.Language,
+			Channels: a.Channels,
+		})
+	}
+	for _, s := range t.SubtitleTracks {
+		out.SubtitleTracks = append(out.SubtitleTracks, &DVDSubtitleTrack{
+			Index:    s.Index,
+			Language: s.Language,
+		})
+	}
+	return out
+}
+
+// remuxDVDTitles is the resolver body for Mutation.remuxDVDTitles.
+// Validates inputs, enqueues a remux-dvd job_runs row via the wired
+// jobs.Enqueuer, and returns the run id so the SPA can poll progress.
+//
+// The mutation does NOT wait for the job to finish — makemkvcon runs
+// 5–15 minutes for a typical 4 GB DVD and that's too long for a
+// GraphQL request. Synchronous validation (recording exists, is a
+// DVD layout, makemkv configured) happens here; the rest is the
+// job's responsibility.
+func (r *Resolver) remuxDVDTitles(
+	ctx context.Context, recordingID int64, titleIndexes []int,
+) (*RemuxDVDPayload, error) {
+	if recordingID <= 0 {
+		return nil, errors.New("graphql: recordingID must be positive")
+	}
+	if len(titleIndexes) == 0 {
+		return nil, errors.New("graphql: titleIndexes must be non-empty")
+	}
+	if r.makemkv == nil {
+		return nil, errMakeMKVNotConfigured
+	}
+	if r.jobEnqueuer == nil {
+		return nil, errJobRunnerNotConfigured
+	}
+	// Quick existence + DVD-layout check so the user gets an
+	// immediate error rather than a failed job they have to discover
+	// on the Jobs page. The job re-validates this server-side too.
+	versions, err := storage.ListVersions(ctx, r.client, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"graphql: list versions for recording %d: %w", recordingID, err)
+	}
+	if _, dvdErr := dvdParentFolder(versions); dvdErr != nil {
+		return nil, fmt.Errorf(
+			"graphql: recording %d is not a DVD layout: %w", recordingID, dvdErr)
+	}
+	// Convert to []any so the JSON-serialized JobArgs blob can be
+	// round-tripped cleanly: encoding/json reads numbers back as
+	// float64, and the job's parseTitleIndexes tolerates either
+	// shape.
+	idxAny := make([]any, 0, len(titleIndexes))
+	for _, n := range titleIndexes {
+		if n < 0 {
+			return nil, fmt.Errorf("graphql: title index %d must be non-negative", n)
+		}
+		idxAny = append(idxAny, n)
+	}
+	args := jobs.JobArgs{
+		"recording_id":  recordingID,
+		"title_indexes": idxAny,
+	}
+	run, err := r.jobEnqueuer.EnqueueFromJob(ctx, "remux-dvd", args)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: enqueue remux-dvd: %w", err)
+	}
+	return &RemuxDVDPayload{JobRunID: int(run.ID)}, nil
+}

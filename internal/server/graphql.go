@@ -16,6 +16,8 @@ import (
 
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/makemkv"
 	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
 )
@@ -55,9 +57,14 @@ func newGraphQLHandler(
 	ingestEngine graph.IngestRunner,
 	libraryPlan graph.LibraryPlan,
 	nfoRefresh *nforefresh.Service,
+	makemkvClient *makemkv.Client,
+	enqueuer jobs.Enqueuer,
 	logger zerolog.Logger,
 ) *handler.Server {
-	srv := handler.New(graph.NewSchema(client, sqlDB, cache, ingestEngine, libraryPlan, nfoRefresh, logger))
+	srv := handler.New(graph.NewSchema(
+		client, sqlDB, cache, ingestEngine, libraryPlan, nfoRefresh,
+		makemkvClient, enqueuer, logger,
+	))
 	srv.AddTransport(transport.Websocket{KeepAlivePingInterval: websocketKeepAlive})
 	srv.AddTransport(transport.Options{})
 	srv.AddTransport(transport.GET{})
@@ -87,7 +94,7 @@ func newGraphQLHandler(
 func (s *Server) registerGraphQL() {
 	gql := newGraphQLHandler(
 		s.db, s.sqlDB, s.imageCache, s.ingestEngine, s.libraryPlan(),
-		s.nfoRefresh, s.logger,
+		s.nfoRefresh, s.makemkv, s.jobRunner, s.logger,
 	)
 	s.echo.POST("/graphql", echo.WrapHandler(gql))
 	s.echo.GET("/graphql", echo.WrapHandler(gql))

@@ -16,6 +16,8 @@ import (
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/imagecache"
 	"github.com/nicolerenee/promptbook/internal/ingest"
+	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/makemkv"
 	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/probe"
 )
@@ -86,20 +88,38 @@ type Resolver struct {
 	ingestEngine IngestRunner
 	libraryPlan  LibraryPlan
 	nfoRefresh   *nforefresh.Service
-	logger       zerolog.Logger
+	// makemkv is the optional DVD remux client. nil when
+	// library.makemkvPath is unset; the scanDVDTitles + remuxDVDTitles
+	// resolvers return a typed error in that mode so the SPA can hide
+	// the remux affordance entirely.
+	makemkv *makemkv.Client
+	// jobEnqueuer is the optional jobs.Runner the remuxDVDTitles
+	// mutation calls into. nil when the runner isn't wired (no jobs
+	// configured); the mutation returns a typed error in that mode.
+	// Typed as jobs.Enqueuer so tests can pass a stub without
+	// constructing a full Runner.
+	jobEnqueuer jobs.Enqueuer
+	logger      zerolog.Logger
 }
 
 // NewSchema builds an executable GraphQL schema rooted at the supplied
 // ent client + image cache + ingest runner + library plan + nfo
-// refresh service + logger. The image cache, ingest runner, and nfo
-// refresh service are all optional; pass nil when the surface is not
-// configured at the server layer. libraryPlan may be the zero value
-// when no library.root / templates are configured.
+// refresh service + logger. The image cache, ingest runner, nfo
+// refresh service, makemkv client, and job enqueuer are all optional;
+// pass nil when the surface is not configured at the server layer.
+// libraryPlan may be the zero value when no library.root / templates
+// are configured.
 //
 // sqlDB shares the ent client's connection pool. The
 // Recording.externalIDs resolver reads through it (the external_ids
 // table doesn't have an ent type); nil is tolerated and the resolver
 // returns an empty slice in that mode.
+//
+// makemkvClient is the DVD remux helper. nil disables the
+// scanDVDTitles query + remuxDVDTitles mutation cleanly (both return
+// a typed error). enqueuer is the jobs.Runner-shaped surface the
+// remux mutation uses to enqueue a parameterized job_runs row; nil
+// has the same effect.
 func NewSchema(
 	client *ent.Client,
 	sqlDB *sql.DB,
@@ -107,6 +127,8 @@ func NewSchema(
 	ingestEngine IngestRunner,
 	libraryPlan LibraryPlan,
 	nfoRefresh *nforefresh.Service,
+	makemkvClient *makemkv.Client,
+	enqueuer jobs.Enqueuer,
 	logger zerolog.Logger,
 ) graphql.ExecutableSchema {
 	return NewExecutableSchema(Config{
@@ -117,6 +139,8 @@ func NewSchema(
 			ingestEngine: ingestEngine,
 			libraryPlan:  libraryPlan,
 			nfoRefresh:   nfoRefresh,
+			makemkv:      makemkvClient,
+			jobEnqueuer:  enqueuer,
 			logger:       logger,
 		},
 	})

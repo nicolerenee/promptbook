@@ -25,6 +25,7 @@ import (
 	"github.com/nicolerenee/promptbook/internal/imagerender"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/jobs"
+	"github.com/nicolerenee/promptbook/internal/makemkv"
 	"github.com/nicolerenee/promptbook/internal/nforefresh"
 	"github.com/nicolerenee/promptbook/internal/probe"
 	"github.com/nicolerenee/promptbook/internal/server/graph"
@@ -149,6 +150,11 @@ type Server struct {
 	// constructed without one (tests or jobs disabled); each handler
 	// returns 503 in that case so the rest of the API stays alive.
 	jobRunner *jobs.Runner
+	// makemkv is the DVD remux client the scanDVDTitles +
+	// remuxDVDTitles GraphQL surfaces consume. nil when
+	// library.makemkvPath is unset; the resolvers nil-check and
+	// surface a typed error so the SPA can hide the remux affordance.
+	makemkv *makemkv.Client
 	// nfoRefresh rewrites movie.nfo files on disk after an image
 	// changes (upload, set-from-URL, refresh job) so the writer's
 	// `?v={mtime}` cache-buster reaches the file media servers scan.
@@ -232,6 +238,12 @@ type Options struct {
 	// Production wiring passes a *jobs.Runner the cmd layer started
 	// alongside the HTTP server.
 	JobRunner *jobs.Runner
+	// MakeMKV is optional. When nil, the scanDVDTitles +
+	// remuxDVDTitles GraphQL surfaces return a typed "not configured"
+	// error so the SPA can hide the remux affordance. Production
+	// wiring constructs a *makemkv.Client when library.makemkvPath
+	// is set.
+	MakeMKV *makemkv.Client
 	// Sleeper is optional. When nil, time.Sleep is used. Tests inject a
 	// recorder that captures the requested duration without sleeping
 	// for real, so the Retry-After honor logic stays exercisable under
@@ -328,6 +340,7 @@ func New(opts Options) (*Server, error) {
 		imageCache:        opts.ImageCache,
 		imageRenderer:     opts.ImageRenderer,
 		jobRunner:         opts.JobRunner,
+		makemkv:           opts.MakeMKV,
 		prober:            opts.Prober,
 		frameExtractor:    opts.FrameExtractor,
 		sleeper:           sleeper,

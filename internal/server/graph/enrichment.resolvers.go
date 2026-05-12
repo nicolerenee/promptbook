@@ -56,12 +56,28 @@ func (r *mutationResolver) SetRecordingPrivateNotes(ctx context.Context, recordi
 	return r.Resolver.setRecordingPrivateNotes(ctx, recordingID, notes)
 }
 
+// RemuxDVDTitles is the resolver for the remuxDVDTitles field.
+// Pass-through to the resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *mutationResolver) RemuxDVDTitles(ctx context.Context, recordingID int64, titleIndexes []int) (*RemuxDVDPayload, error) {
+	return r.Resolver.remuxDVDTitles(ctx, recordingID, titleIndexes)
+}
+
 // LocalHeadshotURL is the resolver for the localHeadshotURL field.
 func (r *performerResolver) LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error) {
 	if r.imageCache == nil || r.imageCache.Disabled() {
 		return "", nil
 	}
 	return r.imageCache.HeadshotURL(obj.ID), nil
+}
+
+// ScanDVDTitles is the resolver for the scanDVDTitles field.
+// Pass-through to the resolver-package helper so the body lives in
+// enrichment_helpers.go (gqlgen otherwise sweeps long bodies into
+// "may delete" comment blocks on regeneration).
+func (r *queryResolver) ScanDVDTitles(ctx context.Context, recordingID int64) ([]*DVDTitle, error) {
+	return r.Resolver.scanDVDTitles(ctx, recordingID)
 }
 
 // RecordingsList is the resolver for the recordingsList field. Pass-

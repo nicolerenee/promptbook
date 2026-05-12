@@ -103,6 +103,30 @@ type ComplexityRoot struct {
 		Node   func(childComplexity int) int
 	}
 
+	DVDAudioTrack struct {
+		Channels func(childComplexity int) int
+		Codec    func(childComplexity int) int
+		Index    func(childComplexity int) int
+		Language func(childComplexity int) int
+	}
+
+	DVDSubtitleTrack struct {
+		Index    func(childComplexity int) int
+		Language func(childComplexity int) int
+	}
+
+	DVDTitle struct {
+		AudioTracks     func(childComplexity int) int
+		Chapters        func(childComplexity int) int
+		Duration        func(childComplexity int) int
+		Index           func(childComplexity int) int
+		SizeBytes       func(childComplexity int) int
+		SourceFilename  func(childComplexity int) int
+		SubtitleTracks  func(childComplexity int) int
+		VideoCodec      func(childComplexity int) int
+		VideoResolution func(childComplexity int) int
+	}
+
 	ImportPreview struct {
 		DestAbsolute func(childComplexity int) int
 		DestExists   func(childComplexity int) int
@@ -136,6 +160,7 @@ type ComplexityRoot struct {
 		ApplyRecordingRename          func(childComplexity int, recordingID int64) int
 		ImportQueueEntry              func(childComplexity int, input ImportQueueEntryInput) int
 		RegenerateRecordingNfo        func(childComplexity int, recordingID int64) int
+		RemuxDVDTitles                func(childComplexity int, recordingID int64, titleIndexes []int) int
 		SetRecordingExternallyManaged func(childComplexity int, recordingID int64, externallyManaged bool) int
 		SetRecordingPrivateNotes      func(childComplexity int, recordingID int64, notes string) int
 	}
@@ -218,6 +243,7 @@ type ComplexityRoot struct {
 		Recording              func(childComplexity int, id int64) int
 		Recordings             func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.RecordingOrder, where *ent.RecordingWhereInput) int
 		RecordingsList         func(childComplexity int, status *string, sort *string, dir *string, limit *int, offset *int) int
+		ScanDVDTitles          func(childComplexity int, recordingID int64) int
 		SearchRecordings       func(childComplexity int, query string, limit *int) int
 		Show                   func(childComplexity int, id int64) int
 		Shows                  func(childComplexity int, after *entgql.Cursor[int64], first *int, before *entgql.Cursor[int64], last *int, orderBy *ent.ShowOrder, where *ent.ShowWhereInput) int
@@ -411,6 +437,10 @@ type ComplexityRoot struct {
 		Ok    func(childComplexity int) int
 	}
 
+	RemuxDVDPayload struct {
+		JobRunID func(childComplexity int) int
+	}
+
 	RenamePreviewItem struct {
 		Destination func(childComplexity int) int
 		Error       func(childComplexity int) int
@@ -540,6 +570,7 @@ type MutationResolver interface {
 	RegenerateRecordingNfo(ctx context.Context, recordingID int64) (*RegenerateNFOResult, error)
 	SetRecordingExternallyManaged(ctx context.Context, recordingID int64, externallyManaged bool) (*ent.Recording, error)
 	SetRecordingPrivateNotes(ctx context.Context, recordingID int64, notes string) (*ent.Recording, error)
+	RemuxDVDTitles(ctx context.Context, recordingID int64, titleIndexes []int) (*RemuxDVDPayload, error)
 }
 type PerformerResolver interface {
 	LocalHeadshotURL(ctx context.Context, obj *ent.Performer) (string, error)
@@ -558,6 +589,7 @@ type QueryResolver interface {
 	Performer(ctx context.Context, id int64) (*ent.Performer, error)
 	CollectionEntry(ctx context.Context, id int64) (*ent.CollectionEntry, error)
 	WantsEntry(ctx context.Context, id int64) (*ent.WantsEntry, error)
+	ScanDVDTitles(ctx context.Context, recordingID int64) ([]*DVDTitle, error)
 	RecordingsList(ctx context.Context, status *string, sort *string, dir *string, limit *int, offset *int) (*RecordingsListPage, error)
 	ShowsList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*ShowsListPage, error)
 	PeopleList(ctx context.Context, sort *string, dir *string, limit *int, offset *int) (*PersonListPage, error)
@@ -840,6 +872,99 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.CollectionEntryEdge.Node(childComplexity), true
 
+	case "DVDAudioTrack.channels":
+		if e.ComplexityRoot.DVDAudioTrack.Channels == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDAudioTrack.Channels(childComplexity), true
+	case "DVDAudioTrack.codec":
+		if e.ComplexityRoot.DVDAudioTrack.Codec == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDAudioTrack.Codec(childComplexity), true
+	case "DVDAudioTrack.index":
+		if e.ComplexityRoot.DVDAudioTrack.Index == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDAudioTrack.Index(childComplexity), true
+	case "DVDAudioTrack.language":
+		if e.ComplexityRoot.DVDAudioTrack.Language == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDAudioTrack.Language(childComplexity), true
+
+	case "DVDSubtitleTrack.index":
+		if e.ComplexityRoot.DVDSubtitleTrack.Index == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDSubtitleTrack.Index(childComplexity), true
+	case "DVDSubtitleTrack.language":
+		if e.ComplexityRoot.DVDSubtitleTrack.Language == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDSubtitleTrack.Language(childComplexity), true
+
+	case "DVDTitle.audioTracks":
+		if e.ComplexityRoot.DVDTitle.AudioTracks == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.AudioTracks(childComplexity), true
+	case "DVDTitle.chapters":
+		if e.ComplexityRoot.DVDTitle.Chapters == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.Chapters(childComplexity), true
+	case "DVDTitle.duration":
+		if e.ComplexityRoot.DVDTitle.Duration == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.Duration(childComplexity), true
+	case "DVDTitle.index":
+		if e.ComplexityRoot.DVDTitle.Index == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.Index(childComplexity), true
+	case "DVDTitle.sizeBytes":
+		if e.ComplexityRoot.DVDTitle.SizeBytes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.SizeBytes(childComplexity), true
+	case "DVDTitle.sourceFilename":
+		if e.ComplexityRoot.DVDTitle.SourceFilename == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.SourceFilename(childComplexity), true
+	case "DVDTitle.subtitleTracks":
+		if e.ComplexityRoot.DVDTitle.SubtitleTracks == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.SubtitleTracks(childComplexity), true
+	case "DVDTitle.videoCodec":
+		if e.ComplexityRoot.DVDTitle.VideoCodec == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.VideoCodec(childComplexity), true
+	case "DVDTitle.videoResolution":
+		if e.ComplexityRoot.DVDTitle.VideoResolution == nil {
+			break
+		}
+
+		return e.ComplexityRoot.DVDTitle.VideoResolution(childComplexity), true
+
 	case "ImportPreview.destAbsolute":
 		if e.ComplexityRoot.ImportPreview.DestAbsolute == nil {
 			break
@@ -996,6 +1121,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RegenerateRecordingNfo(childComplexity, args["recordingID"].(int64)), true
+	case "Mutation.remuxDVDTitles":
+		if e.ComplexityRoot.Mutation.RemuxDVDTitles == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_remuxDVDTitles_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RemuxDVDTitles(childComplexity, args["recordingID"].(int64), args["titleIndexes"].([]int)), true
 	case "Mutation.setRecordingExternallyManaged":
 		if e.ComplexityRoot.Mutation.SetRecordingExternallyManaged == nil {
 			break
@@ -1411,6 +1547,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.RecordingsList(childComplexity, args["status"].(*string), args["sort"].(*string), args["dir"].(*string), args["limit"].(*int), args["offset"].(*int)), true
+	case "Query.scanDVDTitles":
+		if e.ComplexityRoot.Query.ScanDVDTitles == nil {
+			break
+		}
+
+		args, err := ec.field_Query_scanDVDTitles_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.ScanDVDTitles(childComplexity, args["recordingID"].(int64)), true
 	case "Query.searchRecordings":
 		if e.ComplexityRoot.Query.SearchRecordings == nil {
 			break
@@ -2348,6 +2495,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.RegenerateNFOResult.Ok(childComplexity), true
 
+	case "RemuxDVDPayload.jobRunID":
+		if e.ComplexityRoot.RemuxDVDPayload.JobRunID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RemuxDVDPayload.JobRunID(childComplexity), true
+
 	case "RenamePreviewItem.destination":
 		if e.ComplexityRoot.RenamePreviewItem.Destination == nil {
 			break
@@ -3055,6 +3209,54 @@ func (ec *executionContext) childFields_CollectionEntryEdge(ctx context.Context,
 	return nil, fmt.Errorf("no field named %q was found under type CollectionEntryEdge", field.Name)
 }
 
+func (ec *executionContext) childFields_DVDAudioTrack(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "index":
+		return ec.fieldContext_DVDAudioTrack_index(ctx, field)
+	case "codec":
+		return ec.fieldContext_DVDAudioTrack_codec(ctx, field)
+	case "language":
+		return ec.fieldContext_DVDAudioTrack_language(ctx, field)
+	case "channels":
+		return ec.fieldContext_DVDAudioTrack_channels(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type DVDAudioTrack", field.Name)
+}
+
+func (ec *executionContext) childFields_DVDSubtitleTrack(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "index":
+		return ec.fieldContext_DVDSubtitleTrack_index(ctx, field)
+	case "language":
+		return ec.fieldContext_DVDSubtitleTrack_language(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type DVDSubtitleTrack", field.Name)
+}
+
+func (ec *executionContext) childFields_DVDTitle(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "index":
+		return ec.fieldContext_DVDTitle_index(ctx, field)
+	case "duration":
+		return ec.fieldContext_DVDTitle_duration(ctx, field)
+	case "sizeBytes":
+		return ec.fieldContext_DVDTitle_sizeBytes(ctx, field)
+	case "chapters":
+		return ec.fieldContext_DVDTitle_chapters(ctx, field)
+	case "sourceFilename":
+		return ec.fieldContext_DVDTitle_sourceFilename(ctx, field)
+	case "videoCodec":
+		return ec.fieldContext_DVDTitle_videoCodec(ctx, field)
+	case "videoResolution":
+		return ec.fieldContext_DVDTitle_videoResolution(ctx, field)
+	case "audioTracks":
+		return ec.fieldContext_DVDTitle_audioTracks(ctx, field)
+	case "subtitleTracks":
+		return ec.fieldContext_DVDTitle_subtitleTracks(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type DVDTitle", field.Name)
+}
+
 func (ec *executionContext) childFields_ImportPreview(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "destFolder":
@@ -3607,6 +3809,14 @@ func (ec *executionContext) childFields_RegenerateNFOResult(ctx context.Context,
 	return nil, fmt.Errorf("no field named %q was found under type RegenerateNFOResult", field.Name)
 }
 
+func (ec *executionContext) childFields_RemuxDVDPayload(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "jobRunID":
+		return ec.fieldContext_RemuxDVDPayload_jobRunID(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RemuxDVDPayload", field.Name)
+}
+
 func (ec *executionContext) childFields_RenamePreviewItem(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "versionID":
@@ -4006,6 +4216,28 @@ func (ec *executionContext) field_Mutation_regenerateRecordingNFO_args(ctx conte
 		return nil, err
 	}
 	args["recordingID"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_remuxDVDTitles_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "titleIndexes",
+		func(ctx context.Context, v any) ([]int, error) {
+			return ec.unmarshalNInt2ᚕintᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["titleIndexes"] = arg1
 	return args, nil
 }
 
@@ -4414,6 +4646,20 @@ func (ec *executionContext) field_Query_recordings_args(ctx context.Context, raw
 		return nil, err
 	}
 	args["where"] = arg5
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_scanDVDTitles_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "recordingID",
+		func(ctx context.Context, v any) (int64, error) {
+			return ec.unmarshalNID2int64(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["recordingID"] = arg0
 	return args, nil
 }
 
@@ -5791,6 +6037,369 @@ func (ec *executionContext) fieldContext_CollectionEntryEdge_cursor(_ context.Co
 	return graphql.NewScalarFieldContext("CollectionEntryEdge", field, false, false, errors.New("field of type Cursor does not have child fields"))
 }
 
+func (ec *executionContext) _DVDAudioTrack_index(ctx context.Context, field graphql.CollectedField, obj *DVDAudioTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDAudioTrack_index(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Index, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDAudioTrack_index(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDAudioTrack", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _DVDAudioTrack_codec(ctx context.Context, field graphql.CollectedField, obj *DVDAudioTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDAudioTrack_codec(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Codec, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDAudioTrack_codec(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDAudioTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDAudioTrack_language(ctx context.Context, field graphql.CollectedField, obj *DVDAudioTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDAudioTrack_language(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Language, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDAudioTrack_language(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDAudioTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDAudioTrack_channels(ctx context.Context, field graphql.CollectedField, obj *DVDAudioTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDAudioTrack_channels(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Channels, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDAudioTrack_channels(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDAudioTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDSubtitleTrack_index(ctx context.Context, field graphql.CollectedField, obj *DVDSubtitleTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDSubtitleTrack_index(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Index, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDSubtitleTrack_index(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDSubtitleTrack", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _DVDSubtitleTrack_language(ctx context.Context, field graphql.CollectedField, obj *DVDSubtitleTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDSubtitleTrack_language(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Language, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDSubtitleTrack_language(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDSubtitleTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_index(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_index(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Index, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_index(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_duration(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_duration(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Duration, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_duration(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_sizeBytes(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_sizeBytes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SizeBytes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_sizeBytes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_chapters(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_chapters(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Chapters, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_chapters(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_sourceFilename(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_sourceFilename(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SourceFilename, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_sourceFilename(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_videoCodec(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_videoCodec(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VideoCodec, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_videoCodec(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_videoResolution(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_videoResolution(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.VideoResolution, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_videoResolution(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("DVDTitle", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _DVDTitle_audioTracks(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_audioTracks(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AudioTracks, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*DVDAudioTrack) graphql.Marshaler {
+			return ec.marshalNDVDAudioTrack2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDAudioTrackᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_audioTracks(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DVDTitle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_DVDAudioTrack(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _DVDTitle_subtitleTracks(ctx context.Context, field graphql.CollectedField, obj *DVDTitle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_DVDTitle_subtitleTracks(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SubtitleTracks, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*DVDSubtitleTrack) graphql.Marshaler {
+			return ec.marshalNDVDSubtitleTrack2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDSubtitleTrackᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_DVDTitle_subtitleTracks(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "DVDTitle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_DVDSubtitleTrack(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _ImportPreview_destFolder(ctx context.Context, field graphql.CollectedField, obj *ImportPreview) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6483,6 +7092,50 @@ func (ec *executionContext) fieldContext_Mutation_setRecordingPrivateNotes(ctx c
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_setRecordingPrivateNotes_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_remuxDVDTitles(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_remuxDVDTitles(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RemuxDVDTitles(ctx, fc.Args["recordingID"].(int64), fc.Args["titleIndexes"].([]int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *RemuxDVDPayload) graphql.Marshaler {
+			return ec.marshalNRemuxDVDPayload2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRemuxDVDPayload(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_remuxDVDTitles(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RemuxDVDPayload(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_remuxDVDTitles_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -8006,6 +8659,50 @@ func (ec *executionContext) fieldContext_Query_wantsEntry(ctx context.Context, f
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_wantsEntry_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_scanDVDTitles(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_scanDVDTitles(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().ScanDVDTitles(ctx, fc.Args["recordingID"].(int64))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*DVDTitle) graphql.Marshaler {
+			return ec.marshalNDVDTitle2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDTitleᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_scanDVDTitles(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_DVDTitle(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_scanDVDTitles_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -11836,6 +12533,29 @@ func (ec *executionContext) _RegenerateNFOResult_error(ctx context.Context, fiel
 }
 func (ec *executionContext) fieldContext_RegenerateNFOResult_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("RegenerateNFOResult", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RemuxDVDPayload_jobRunID(ctx context.Context, field graphql.CollectedField, obj *RemuxDVDPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RemuxDVDPayload_jobRunID(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.JobRunID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RemuxDVDPayload_jobRunID(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RemuxDVDPayload", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _RenamePreviewItem_versionID(ctx context.Context, field graphql.CollectedField, obj *RenamePreviewItem) (ret graphql.Marshaler) {
@@ -22176,6 +22896,183 @@ func (ec *executionContext) _CollectionEntryEdge(ctx context.Context, sel ast.Se
 	return out
 }
 
+var dVDAudioTrackImplementors = []string{"DVDAudioTrack"}
+
+func (ec *executionContext) _DVDAudioTrack(ctx context.Context, sel ast.SelectionSet, obj *DVDAudioTrack) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, dVDAudioTrackImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DVDAudioTrack")
+		case "index":
+			out.Values[i] = ec._DVDAudioTrack_index(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "codec":
+			out.Values[i] = ec._DVDAudioTrack_codec(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "language":
+			out.Values[i] = ec._DVDAudioTrack_language(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "channels":
+			out.Values[i] = ec._DVDAudioTrack_channels(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var dVDSubtitleTrackImplementors = []string{"DVDSubtitleTrack"}
+
+func (ec *executionContext) _DVDSubtitleTrack(ctx context.Context, sel ast.SelectionSet, obj *DVDSubtitleTrack) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, dVDSubtitleTrackImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DVDSubtitleTrack")
+		case "index":
+			out.Values[i] = ec._DVDSubtitleTrack_index(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "language":
+			out.Values[i] = ec._DVDSubtitleTrack_language(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var dVDTitleImplementors = []string{"DVDTitle"}
+
+func (ec *executionContext) _DVDTitle(ctx context.Context, sel ast.SelectionSet, obj *DVDTitle) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, dVDTitleImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("DVDTitle")
+		case "index":
+			out.Values[i] = ec._DVDTitle_index(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "duration":
+			out.Values[i] = ec._DVDTitle_duration(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sizeBytes":
+			out.Values[i] = ec._DVDTitle_sizeBytes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "chapters":
+			out.Values[i] = ec._DVDTitle_chapters(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sourceFilename":
+			out.Values[i] = ec._DVDTitle_sourceFilename(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "videoCodec":
+			out.Values[i] = ec._DVDTitle_videoCodec(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "videoResolution":
+			out.Values[i] = ec._DVDTitle_videoResolution(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "audioTracks":
+			out.Values[i] = ec._DVDTitle_audioTracks(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "subtitleTracks":
+			out.Values[i] = ec._DVDTitle_subtitleTracks(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var importPreviewImplementors = []string{"ImportPreview"}
 
 func (ec *executionContext) _ImportPreview(ctx context.Context, sel ast.SelectionSet, obj *ImportPreview) graphql.Marshaler {
@@ -22428,6 +23325,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "setRecordingPrivateNotes":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setRecordingPrivateNotes(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "remuxDVDTitles":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_remuxDVDTitles(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -23216,6 +24120,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_wantsEntry(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "scanDVDTitles":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_scanDVDTitles(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
 				return res
 			}
 
@@ -25268,6 +26194,45 @@ func (ec *executionContext) _RegenerateNFOResult(ctx context.Context, sel ast.Se
 	return out
 }
 
+var remuxDVDPayloadImplementors = []string{"RemuxDVDPayload"}
+
+func (ec *executionContext) _RemuxDVDPayload(ctx context.Context, sel ast.SelectionSet, obj *RemuxDVDPayload) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, remuxDVDPayloadImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RemuxDVDPayload")
+		case "jobRunID":
+			out.Values[i] = ec._RemuxDVDPayload_jobRunID(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var renamePreviewItemImplementors = []string{"RenamePreviewItem"}
 
 func (ec *executionContext) _RenamePreviewItem(ctx context.Context, sel ast.SelectionSet, obj *RenamePreviewItem) graphql.Marshaler {
@@ -26789,6 +27754,84 @@ func (ec *executionContext) marshalNCursor2entgoᚗioᚋcontribᚋentgqlᚐCurso
 	return v
 }
 
+func (ec *executionContext) marshalNDVDAudioTrack2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDAudioTrackᚄ(ctx context.Context, sel ast.SelectionSet, v []*DVDAudioTrack) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNDVDAudioTrack2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDAudioTrack(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNDVDAudioTrack2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDAudioTrack(ctx context.Context, sel ast.SelectionSet, v *DVDAudioTrack) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DVDAudioTrack(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNDVDSubtitleTrack2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDSubtitleTrackᚄ(ctx context.Context, sel ast.SelectionSet, v []*DVDSubtitleTrack) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNDVDSubtitleTrack2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDSubtitleTrack(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNDVDSubtitleTrack2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDSubtitleTrack(ctx context.Context, sel ast.SelectionSet, v *DVDSubtitleTrack) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DVDSubtitleTrack(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNDVDTitle2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDTitleᚄ(ctx context.Context, sel ast.SelectionSet, v []*DVDTitle) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNDVDTitle2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDTitle(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNDVDTitle2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐDVDTitle(ctx context.Context, sel ast.SelectionSet, v *DVDTitle) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._DVDTitle(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNFileAssignmentInput2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐFileAssignmentInput(ctx context.Context, v any) (*FileAssignmentInput, error) {
 	res, err := ec.unmarshalInputFileAssignmentInput(ctx, v)
 	return &res, graphql.ErrorOnPath(ctx, err)
@@ -26919,6 +27962,36 @@ func (ec *executionContext) marshalNInt2int64(ctx context.Context, sel ast.Selec
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalNInt2ᚕintᚄ(ctx context.Context, v any) ([]int, error) {
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]int, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNInt2int(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) marshalNInt2ᚕintᚄ(ctx context.Context, sel ast.SelectionSet, v []int) graphql.Marshaler {
+	ret := make(graphql.Array, len(v))
+	for i := range v {
+		ret[i] = ec.marshalNInt2int(ctx, sel, v[i])
+	}
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
 }
 
 func (ec *executionContext) marshalNNode2ᚕgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋentᚐNoder(ctx context.Context, sel ast.SelectionSet, v []ent.Noder) graphql.Marshaler {
@@ -27307,6 +28380,20 @@ func (ec *executionContext) marshalNRegenerateNFOResult2ᚖgithubᚗcomᚋnicole
 		return graphql.Null
 	}
 	return ec._RegenerateNFOResult(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRemuxDVDPayload2githubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRemuxDVDPayload(ctx context.Context, sel ast.SelectionSet, v RemuxDVDPayload) graphql.Marshaler {
+	return ec._RemuxDVDPayload(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNRemuxDVDPayload2ᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRemuxDVDPayload(ctx context.Context, sel ast.SelectionSet, v *RemuxDVDPayload) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RemuxDVDPayload(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNRenamePreviewItem2ᚕᚖgithubᚗcomᚋnicolereneeᚋpromptbookᚋinternalᚋserverᚋgraphᚐRenamePreviewItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*RenamePreviewItem) graphql.Marshaler {

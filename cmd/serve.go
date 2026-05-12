@@ -168,6 +168,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	nfoRefresh := buildNFORefresh(db, sqlDB, imgCache)
 
 	runner := buildJobRunner(ctx, db, sqlDB, encClient, smClient, imgCache, imgRenderer, nfoRefresh)
+	makemkvOpt := buildServeMakeMKVClient()
 
 	srv, err := server.New(server.Options{
 		DB:                db,
@@ -182,6 +183,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		ImageCache:        imgCache,
 		ImageRenderer:     imgRenderer,
 		JobRunner:         runner,
+		MakeMKV:           makemkvOpt,
 		Version:           version.Version,
 		Config:            appConfig,
 		// ConfigSource intentionally left empty — viper.ConfigFileUsed
@@ -244,6 +246,19 @@ func buildServeTMDBClient() (server.TMDBClient, error) {
 		return nil, fmt.Errorf("build tmdb client: %w", err)
 	}
 	return client, nil
+}
+
+// buildServeMakeMKVClient constructs the *makemkv.Client wired into
+// server.Options.MakeMKV when library.makemkvPath is configured.
+// Returns nil when unset so the GraphQL DVD remux surfaces nil-check
+// cleanly and the SPA hides the affordance. Same "build or no-op"
+// shape as the other build helpers.
+func buildServeMakeMKVClient() *makemkv.Client {
+	if appConfig.Library.MakeMKVPath == "" {
+		log.Info().Msg("makemkv disabled (library.makemkvPath not configured)")
+		return nil
+	}
+	return &makemkv.Client{Binary: appConfig.Library.MakeMKVPath}
 }
 
 // buildServeEncoraClient constructs the *encora.Client the serve

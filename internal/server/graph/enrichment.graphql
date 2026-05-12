@@ -277,7 +277,52 @@ type ShowsListPage {
   offset: Int!
 }
 
+# DVDTitle is one entry in a DVD's title set as seen by makemkvcon.
+# Surfaced to the SPA's remux picker so the user can decide which
+# titles to convert (typically just the main feature, but bonus
+# featurettes and chaptered tracks live alongside).
+type DVDTitle {
+  index:           Int!
+  duration:        Int!         # seconds
+  sizeBytes:       Int!
+  chapters:        Int!
+  sourceFilename:  String!
+  videoCodec:      String!
+  videoResolution: String!
+  audioTracks:     [DVDAudioTrack!]!
+  subtitleTracks:  [DVDSubtitleTrack!]!
+}
+
+# DVDAudioTrack is one audio stream of a DVDTitle. Codec / language /
+# channels come verbatim from the makemkvcon SINFO lines.
+type DVDAudioTrack {
+  index:    Int!
+  codec:    String!
+  language: String!
+  channels: String!
+}
+
+# DVDSubtitleTrack is one subtitle stream of a DVDTitle.
+type DVDSubtitleTrack {
+  index:    Int!
+  language: String!
+}
+
+# RemuxDVDPayload is returned by the remuxDVDTitles mutation. jobRunID
+# is the just-enqueued job_runs.id the SPA can poll on the Jobs page
+# to watch progress.
+type RemuxDVDPayload {
+  jobRunID: Int!
+}
+
 extend type Query {
+  # scanDVDTitles runs makemkvcon's info pass against the recording's
+  # VIDEO_TS folder and returns every title makemkvcon enumerated.
+  # Fast (a few seconds even on a big disc — only the IFO files are
+  # read, not the VOBs themselves). Errors when the recording isn't
+  # a DVD layout, isn't found, or makemkvcon isn't configured.
+  scanDVDTitles(recordingID: ID!): [DVDTitle!]!
+
   # recordingsList is the offset-paginated, status-aware list query
   # the SPA's recordings page hits. status is a comma-separated set of
   # storage.Status tokens (synced / out_of_sync / missing /
@@ -656,4 +701,16 @@ type Mutation {
     recordingID: ID!
     notes: String!
   ): Recording!
+
+  # remuxDVDTitles enqueues the remux-dvd job for the selected
+  # makemkvcon title indexes (0-based). The job is async + long-
+  # running — 5–15 min for a typical 4 GB DVD — so the mutation
+  # returns immediately with the job_runs.id the SPA can poll on
+  # the Jobs page to watch progress. Errors when the recording
+  # isn't a DVD layout, makemkvcon isn't configured, or
+  # titleIndexes is empty.
+  remuxDVDTitles(
+    recordingID:  ID!
+    titleIndexes: [Int!]!
+  ): RemuxDVDPayload!
 }
