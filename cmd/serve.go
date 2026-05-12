@@ -249,15 +249,14 @@ func buildServeTMDBClient() (server.TMDBClient, error) {
 }
 
 // buildServeMakeMKVClient constructs the *makemkv.Client wired into
-// server.Options.MakeMKV when library.makemkvPath is configured.
-// Returns nil when unset so the GraphQL DVD remux surfaces nil-check
-// cleanly and the SPA hides the affordance. Same "build or no-op"
-// shape as the other build helpers.
+// server.Options.MakeMKV. Always returns a non-nil client: when
+// library.makemkvPath is empty the client falls back to looking up
+// `makemkvcon` on PATH (same pattern ffprobe + ffmpeg use). The
+// resolution happens at command-run time; if the binary isn't
+// available the DVD remux surfaces a clear "exec failed" error
+// then. This keeps the feature on-by-default for users who have
+// makemkv installed without forcing a config tweak.
 func buildServeMakeMKVClient() *makemkv.Client {
-	if appConfig.Library.MakeMKVPath == "" {
-		log.Info().Msg("makemkv disabled (library.makemkvPath not configured)")
-		return nil
-	}
 	return &makemkv.Client{Binary: appConfig.Library.MakeMKVPath}
 }
 

@@ -2354,12 +2354,15 @@ const externallyManagedFilePerm = 0o644
 // signatures stay short.
 type encoraRecordingValue = encora.Recording
 
-// errMakeMKVNotConfigured is the typed error the DVD remux surfaces
-// return when library.makemkvPath is unset. The SPA hides the remux
-// affordance entirely in that mode (it never calls the query); this
-// guard is defense-in-depth for direct API consumers.
+// errMakeMKVNotConfigured surfaces when the DVD remux resolver runs
+// without a wired makemkv client. Production wiring constructs one
+// unconditionally (the client itself falls back to `makemkvcon` on
+// PATH when library.makemkvPath is empty), so this branch is
+// defense-in-depth for tests / API consumers that wire nil. The
+// "makemkvcon not on PATH" failure surfaces at command-run time via
+// makemkv.ErrBinaryMissing / a plain exec error instead.
 var errMakeMKVNotConfigured = errors.New(
-	"graphql: makemkv not configured — set library.makemkvPath to enable DVD remux")
+	"graphql: makemkv client not wired")
 
 // errJobRunnerNotConfigured is the typed error the remuxDVDTitles
 // mutation returns when no jobs.Runner was wired into the schema.
