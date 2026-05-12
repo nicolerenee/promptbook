@@ -443,3 +443,59 @@ func TestClassifyDVDDoubleDigitChunkOrder(t *testing.T) {
 		"VTS_01_9.VOB must sort before VTS_01_10.VOB by chunk integer")
 	assert.Equal(t, v10, cls.Parts[3].Path)
 }
+
+// TestClassifyDVDMultiScaffold covers a multi-act DVD layout where
+// the show is split into two VIDEO_TS scaffolds at different
+// directory roots (Act 1's VOBs at the folder root + Act 2's VOBs
+// in a sibling subfolder). Each scaffold's VOBs use the same
+// VTS_01_M chunk numbering, so a naive M-as-PartIndex assignment
+// produces duplicate part indices and the multipart validator
+// rejects the import. The classifier must renumber consecutively
+// across scaffolds — Act 1's chunks stay parts 1..N, Act 2's
+// chunks become parts (N+1)..(N+M).
+func TestClassifyDVDMultiScaffold(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Waitress - 14 Jun 2016 - SJ Bernly")
+
+	// Act 1 lives at the folder root.
+	writeFile(t, filepath.Join(folder, "VIDEO_TS.IFO"), 8*1024)
+	writeFile(t, filepath.Join(folder, "VTS_01_0.IFO"), 8*1024)
+	a1v1 := filepath.Join(folder, "VTS_01_1.VOB")
+	a1v2 := filepath.Join(folder, "VTS_01_2.VOB")
+	writeFile(t, a1v1, 1024*1024)
+	writeFile(t, a1v2, 1024*1024)
+
+	// Act 2 lives in a sibling subfolder with its own scaffolding.
+	act2 := filepath.Join(folder, "Act 2")
+	writeFile(t, filepath.Join(act2, "VIDEO_TS.IFO"), 8*1024)
+	writeFile(t, filepath.Join(act2, "VTS_01_0.IFO"), 8*1024)
+	a2v1 := filepath.Join(act2, "VTS_01_1.VOB")
+	a2v2 := filepath.Join(act2, "VTS_01_2.VOB")
+	writeFile(t, a2v1, 1024*1024)
+	writeFile(t, a2v2, 1024*1024)
+
+	cls, _ := f.loadClassification(t)
+
+	assert.Equal(t, "dvd", cls.DiscFormat,
+		"multi-scaffold DVD must still classify as DVD")
+	require.Len(t, cls.Parts, 4,
+		"two acts × two content VOBs each = four parts total")
+	// Act 1 (root scaffold, dir ".") comes first lexically before
+	// the "Act 2" subfolder; within each scaffold, chunks ascend.
+	assert.Equal(t, a1v1, cls.Parts[0].Path)
+	assert.Equal(t, 1, cls.Parts[0].PartIndex,
+		"Act 1 chunk 1 must be Part 1")
+	assert.Equal(t, "part-1", cls.Parts[0].SuggestedKind)
+	assert.Equal(t, a1v2, cls.Parts[1].Path)
+	assert.Equal(t, 2, cls.Parts[1].PartIndex)
+	assert.Equal(t, "part-2", cls.Parts[1].SuggestedKind)
+	assert.Equal(t, a2v1, cls.Parts[2].Path)
+	assert.Equal(t, 3, cls.Parts[2].PartIndex,
+		"Act 2 chunk 1 must renumber to Part 3, not duplicate Part 1")
+	assert.Equal(t, "part-3", cls.Parts[2].SuggestedKind)
+	assert.Equal(t, a2v2, cls.Parts[3].Path)
+	assert.Equal(t, 4, cls.Parts[3].PartIndex)
+	assert.Equal(t, "part-4", cls.Parts[3].SuggestedKind)
+}

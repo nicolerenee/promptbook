@@ -1519,23 +1519,120 @@ func (r *Resolver) preflightConflictCheck(
 // resolver stays under the gocognit threshold; the call site reads
 // the helper's name as a single decision step.
 //
-// Folder-as-unit drops (ExtrasCount > 0) stamp the parent dir on
-// SourceFolder so the recording detail page can enumerate sibling
-// files later. FileAssignments, when supplied, switches the engine
-// into multi-file mode. ExternallyManaged threads onto every per-
-// item ingest in a batch.
+// Folder-as-unit drops (ExtrasCount > 0) stamp the actual scanned
+// folder on SourceFolder so the recording detail page can enumerate
+// sibling files later AND so the DVD per-file destination resolver
+// gets a real ancestor of every classified path. Using
+// filepath.Dir(entry.FilePath) alone breaks when the classification
+// spans nested subfolders (Act 1/ + Act 2/ both holding VOBs) — the
+// lead file's parent dir is one level too deep, and filepath.Rel
+// then returns "../foo" paths that escape the recording folder when
+// joined. The common parent of every classified path is the real
+// answer.
+//
+// FileAssignments, when supplied, switches the engine into
+// multi-file mode. ExternallyManaged threads onto every per-item
+// ingest in a batch.
 func buildImportOptions(
 	entry *storage.QueueEntry, recordingID int64, input ImportQueueEntryInput,
 ) ingest.Options {
 	opts := ingest.Options{FlagEncoraID: int(recordingID)}
 	if entry.ExtrasCount > 0 {
-		opts.SourceFolder = filepath.Dir(entry.FilePath)
+		opts.SourceFolder = sourceFolderForQueueEntry(entry)
 	}
 	opts.FileAssignments = importFileAssignmentsFromInput(input.FileAssignments)
 	opts.ExternallyManaged = optBool(input.ExternallyManaged)
 	opts.ExternalIDs = decodeClassificationExternalIDs(entry.ClassificationJSON)
 	opts.DiscFormat, opts.DiscScaffolding = decodeClassificationDisc(entry.ClassificationJSON)
 	return opts
+}
+
+// sourceFolderForQueueEntry returns the source folder to stamp on
+// ingest.Options.SourceFolder for a folder-as-unit queue row. Uses
+// the common parent directory of every path in the row's
+// classification (parts + extras), so nested-subfolder layouts
+// (Act 1/ + Act 2/ each with their own VOBs) resolve to the actual
+// scanned parent rather than the lead file's immediate parent.
+// Falls back to filepath.Dir(entry.FilePath) for legacy rows
+// without a classification blob.
+func sourceFolderForQueueEntry(entry *storage.QueueEntry) string {
+	paths := classificationPaths(entry.ClassificationJSON)
+	if len(paths) == 0 {
+		return filepath.Dir(entry.FilePath)
+	}
+	return commonParentDir(paths)
+}
+
+// classificationPaths returns every absolute path (parts + extras)
+// the queue row's classification_json carries. Empty / unparseable
+// input yields nil so the caller falls through to the legacy
+// filepath.Dir(FilePath) source folder.
+func classificationPaths(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var decoded struct {
+		Parts []struct {
+			Path string `json:"path"`
+		} `json:"parts"`
+		Extras []struct {
+			Path string `json:"path"`
+		} `json:"extras"`
+	}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(decoded.Parts)+len(decoded.Extras))
+	for _, p := range decoded.Parts {
+		if p.Path != "" {
+			out = append(out, p.Path)
+		}
+	}
+	for _, x := range decoded.Extras {
+		if x.Path != "" {
+			out = append(out, x.Path)
+		}
+	}
+	return out
+}
+
+// commonParentDir returns the deepest directory that's an ancestor
+// of every path in paths. Each path is treated as a file path —
+// the function starts from filepath.Dir(paths[0]) and walks up
+// until every other path is contained beneath it. Returns "" for
+// an empty input.
+func commonParentDir(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	common := filepath.Dir(paths[0])
+	for _, p := range paths[1:] {
+		for !isAncestorOrEqual(common, p) {
+			parent := filepath.Dir(common)
+			if parent == common {
+				// Reached the filesystem root — can't walk further.
+				return common
+			}
+			common = parent
+		}
+	}
+	return common
+}
+
+// isAncestorOrEqual reports whether ancestor is a directory
+// containing path (or equals path). Uses filepath.Rel + a
+// "..-doesn't-start-the-relative-path" test rather than string
+// prefix matching so paths like "/foo/bar" and "/foo/bar2" don't
+// falsely match.
+func isAncestorOrEqual(ancestor, path string) bool {
+	if ancestor == path {
+		return true
+	}
+	rel, err := filepath.Rel(ancestor, path)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(rel, "..")
 }
 
 // decodeClassificationDisc pulls the discFormat + discScaffolding

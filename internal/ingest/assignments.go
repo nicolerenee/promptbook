@@ -288,13 +288,19 @@ func (e *Engine) applyDiscScaffolding(
 	if len(opts.DiscScaffolding) == 0 {
 		return
 	}
-	destDir := filepath.Join(mains.firstPlanFolder, DiscDestSubfolder)
-	if err := os.MkdirAll(destDir, libraryDirPerm); err != nil {
-		e.Logger.Warn().Err(err).Str("dir", destDir).
-			Msg("dvd ingest: failed to create VIDEO_TS destination")
-		return
-	}
+	// Per-file destination subfolder so multi-scaffold DVDs put each
+	// scaffold's .IFO / .BUP / menu VOBs in the same per-scaffold
+	// subfolder the content VOBs land in. Without this, both
+	// scaffolds' VIDEO_TS.IFO files would target the same path and
+	// the second move would overwrite the first.
 	for _, src := range opts.DiscScaffolding {
+		subfolder := dvdDestSubfolderFor(opts.SourceFolder, src)
+		destDir := filepath.Join(mains.firstPlanFolder, subfolder)
+		if err := os.MkdirAll(destDir, libraryDirPerm); err != nil {
+			e.Logger.Warn().Err(err).Str("dir", destDir).
+				Msg("dvd ingest: failed to create VIDEO_TS destination")
+			continue
+		}
 		dest := filepath.Join(destDir, filepath.Base(src))
 		if _, statErr := os.Stat(dest); statErr == nil {
 			// Idempotent re-run: if the scaffolding file already

@@ -557,11 +557,17 @@ func kindFromFilename(name string) string {
 // regardless of source layout.
 //
 // Output shape when DVD is detected:
-//   - Parts: every VTS_NN_M.VOB where M>=1, ordered by integer M
-//     (so VTS_01_10.VOB sorts after VTS_01_9.VOB rather than
-//     lexically before it). Each carries SuggestedKind
-//     "part-{M}" + PartIndex M so the ingest engine's existing
-//     multipart path handles them without special casing.
+//   - Parts: every VTS_NN_M.VOB where M>=1, ordered first by parent
+//     directory (lexically — so multi-scaffold DVDs like Act 1/ +
+//     Act 2/ keep each disc's chunks contiguous with Act 1 ahead of
+//     Act 2) and then by integer chunk M within each scaffold (so
+//     VTS_01_10.VOB sorts after VTS_01_9.VOB rather than lexically
+//     before it). PartIndex is the 1-based ordinal across the full
+//     ordered set, and SuggestedKind is "part-{N}". For
+//     single-scaffold DVDs N == M (legacy behaviour preserved); for
+//     multi-scaffold DVDs the second scaffold's VOBs continue
+//     numbering from where the first scaffold left off rather than
+//     duplicating M-based indices.
 //   - DiscScaffolding: absolute paths of every .IFO, .BUP, and the
 //     menu VOB siblings (VIDEO_TS.VOB + VTS_NN_0.VOB). These are
 //     invisible to the queue modal's extras picker but the mover
@@ -582,6 +588,7 @@ func classifyDVD(folder string, media []mediaFile) (Classification, bool) {
 	}
 	type partWithIndex struct {
 		file  ClassifiedFile
+		dir   string
 		chunk int
 	}
 	var parts []partWithIndex
@@ -602,13 +609,22 @@ func classifyDVD(folder string, media []mediaFile) (Classification, bool) {
 				scaffolding = append(scaffolding, m.path)
 				continue
 			}
+			// Capture the relative parent directory so multi-scaffold
+			// DVDs (Act 1/VTS_01_1.VOB + Act 2/VTS_01_1.VOB, each its
+			// own VIDEO_TS scaffold) get renumbered consecutively
+			// across scaffolds instead of colliding on per-scaffold
+			// chunk index M. Single-scaffold discs share one dir and
+			// reduce to legacy 1..N ordering.
+			var dir string
+			if rel, err := filepath.Rel(folder, m.path); err == nil {
+				dir = filepath.Dir(rel)
+			}
 			parts = append(parts, partWithIndex{
 				file: ClassifiedFile{
-					Path:          m.path,
-					SizeBytes:     m.size,
-					SuggestedKind: ingest.AssignmentKindPart(chunk),
-					PartIndex:     chunk,
+					Path:      m.path,
+					SizeBytes: m.size,
 				},
+				dir:   dir,
 				chunk: chunk,
 			})
 			continue
@@ -630,10 +646,24 @@ func classifyDVD(folder string, media []mediaFile) (Classification, bool) {
 		}
 		cls.Extras = append(cls.Extras, classifyExtra(folder, m))
 	}
+	// Sort by (parent directory, chunk M) so each scaffold's VOBs
+	// stay contiguous and chunk-ordered, with scaffolds ordered
+	// lexically (root "." before any subfolder; Act 1 before Act 2).
 	sort.SliceStable(parts, func(i, j int) bool {
+		if parts[i].dir != parts[j].dir {
+			return parts[i].dir < parts[j].dir
+		}
 		return parts[i].chunk < parts[j].chunk
 	})
-	for _, p := range parts {
+	// Assign consecutive 1-based PartIndex across the full ordered
+	// set. The chunk M is no longer used as the PartIndex directly —
+	// for single-scaffold DVDs the two still coincide, but
+	// multi-scaffold discs need monotonic ordinals to satisfy the
+	// multipart validator (no gaps, no duplicates).
+	for i, p := range parts {
+		idx := i + 1
+		p.file.PartIndex = idx
+		p.file.SuggestedKind = ingest.AssignmentKindPart(idx)
 		cls.Parts = append(cls.Parts, p.file)
 	}
 	// Sort scaffolding by path so the destination order is stable

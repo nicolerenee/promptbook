@@ -250,6 +250,56 @@ const DiscFormatDVD = "dvd"
 // rip was laid out on disk.
 const DiscDestSubfolder = "VIDEO_TS"
 
+// dvdDestSubfolderFor picks the destination subfolder for one DVD
+// source file. Single-scaffold layouts collapse to DiscDestSubfolder
+// ("VIDEO_TS") so the legacy contract is preserved; multi-scaffold
+// layouts (Act 1/ + Act 2/, each its own VIDEO_TS scaffold) keep
+// the source-relative parent directory ahead of the VIDEO_TS/ leaf
+// so each scaffold lands in a distinct destination — otherwise the
+// shared VTS_NN_M.VOB filenames collide and the second move
+// overwrites the first.
+//
+// Behaviour by source layout:
+//   - flat:                          SourceFolder/VTS_01_1.VOB              → "VIDEO_TS"
+//   - nested:                        SourceFolder/VIDEO_TS/VTS_01_1.VOB     → "VIDEO_TS"
+//   - multi-scaffold flat:           SourceFolder/Act 2/VTS_01_1.VOB        → "Act 2/VIDEO_TS"
+//   - multi-scaffold nested:         SourceFolder/Act 2/VIDEO_TS/VTS_01_1.VOB → "Act 2/VIDEO_TS"
+//
+// sourceFolder may be empty (loose-file ingest); in that case the
+// helper returns DiscDestSubfolder unconditionally so behaviour
+// matches the single-scaffold contract.
+func dvdDestSubfolderFor(sourceFolder, src string) string {
+	if sourceFolder == "" {
+		return DiscDestSubfolder
+	}
+	rel, err := filepath.Rel(sourceFolder, src)
+	if err != nil {
+		return DiscDestSubfolder
+	}
+	parent := filepath.Dir(rel)
+	// Defensive: when filepath.Rel produces a path that starts with
+	// ".." then sourceFolder isn't actually an ancestor of src (e.g.
+	// the scanner stamped SourceFolder = "…/Act 1" but the assignment
+	// also covers "…/Act 2/…" files — the common parent is one level
+	// up). Joining a "../foo" subfolder with the recording folder
+	// causes filepath.Clean to escape the recording folder
+	// entirely. Substitute the immediate parent basename of src
+	// instead so the destination still lives inside the recording.
+	if strings.HasPrefix(rel, "..") {
+		parent = filepath.Base(filepath.Dir(src))
+	}
+	// Source already lives inside a "VIDEO_TS/" leaf (nested
+	// layout). Strip that leaf so we don't build doubled
+	// "VIDEO_TS/VIDEO_TS" destinations.
+	if strings.EqualFold(filepath.Base(parent), DiscDestSubfolder) {
+		parent = filepath.Dir(parent)
+	}
+	if parent == "." || parent == "" {
+		return DiscDestSubfolder
+	}
+	return filepath.Join(parent, DiscDestSubfolder)
+}
+
 // ItemResult records what happened (or would happen) for one video.
 type ItemResult struct {
 	Source        string
@@ -577,8 +627,11 @@ func (e *Engine) buildPlan(ctx context.Context, src string, item *ItemResult) bo
 		// (which reference the VOBs by their original names) keep
 		// working. The recording folder name is still
 		// template-rendered (plan.TargetFolder); only the file's
-		// landing location changes.
-		plan.DestSubfolder = DiscDestSubfolder
+		// landing location changes. For multi-scaffold DVDs the
+		// helper prepends the source-relative parent directory so
+		// each scaffold lands in its own subfolder and shared
+		// VTS_NN_M.VOB filenames don't collide.
+		plan.DestSubfolder = dvdDestSubfolderFor(item.SourceFolder, src)
 		plan.DestBasename = filepath.Base(src)
 	}
 	item.Plan = plan

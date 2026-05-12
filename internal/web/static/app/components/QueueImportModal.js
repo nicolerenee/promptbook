@@ -133,10 +133,12 @@ const SEARCH_DEBOUNCE_MS = 300;
 const SEARCH_LIMIT = 25;
 
 // PART_KIND_LIMIT caps how many Part-N options the kind dropdown
-// surfaces. Real-world multipart drops are 2 acts (musical theatre),
-// occasionally 3 for 3-act plays; offering 5 leaves headroom without
-// turning the dropdown into a phonebook.
-const PART_KIND_LIMIT = 5;
+// surfaces. Single-disc multipart drops are 2-3 acts; multi-scaffold
+// DVDs (Act 1 + Act 2 each shipping 5+ content VOBs) easily push into
+// double digits. 20 covers a 4-disc DVD set with 5 VOBs each — well
+// past anything realistic — while keeping the dropdown scrollable
+// rather than turning into a phonebook.
+const PART_KIND_LIMIT = 20;
 
 // FILE_KIND_OPTIONS is the canonical list of dropdown values shown in
 // the modal's "Files in this folder" picker. Each entry pairs a stable
