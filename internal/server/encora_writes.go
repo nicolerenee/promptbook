@@ -26,6 +26,7 @@ type EncoraDestructiveClient interface {
 	RemoveFromCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
 	RemoveFromWants(ctx context.Context, id int64) (encora.RateLimitInfo, error)
 	AddToWants(ctx context.Context, id int64) (encora.RateLimitInfo, error)
+	AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
 }
 
 // recordingIDDetail is the detail-map key the destructive endpoints (and
@@ -192,6 +193,45 @@ func (s *Server) handleRemoveFromWants(c echo.Context) error {
 		fmt.Sprintf("Removed recording %d from Encora wants", id),
 		func(ctx context.Context) (encora.RateLimitInfo, error) {
 			return client.RemoveFromWants(ctx, id)
+		},
+	)
+}
+
+// handleAddToCollection handles POST /api/v1/encora/collection/:id/add.
+// Rejects (409) when the recording is already in the collection. When
+// the recording was on the wants list, Encora's `collection/{id}/collect`
+// endpoint moves it (server-side) to the collection — promptbook
+// doesn't need to issue a separate wants-remove.
+//
+// Use case: a recording was on the user's wants list, they traded for
+// it offline, ingested the files locally, and now want to officially
+// move it into their Encora collection. The recording detail page
+// surfaces this action when InWants && !InCollection && hasFile.
+func (s *Server) handleAddToCollection(c echo.Context) error {
+	id, err := parseRecordingIDParam(c)
+	if err != nil {
+		return err
+	}
+	client, err := s.requireDestructiveClient()
+	if err != nil {
+		return err
+	}
+
+	m, err := loadRecordingMembership(c.Request().Context(), s.db, id)
+	if err != nil {
+		return err
+	}
+	if m.inCollection {
+		return c.JSON(http.StatusConflict, encoraWriteResponse{
+			Error: "recording is already in your collection",
+		})
+	}
+
+	return s.callDestructive(c, id,
+		"add_to_collection",
+		fmt.Sprintf("Added recording %d to Encora collection", id),
+		func(ctx context.Context) (encora.RateLimitInfo, error) {
+			return client.AddToCollection(ctx, id)
 		},
 	)
 }

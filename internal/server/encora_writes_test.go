@@ -30,14 +30,17 @@ type stubDestructiveClient struct {
 	removeCollectionCalls []int64
 	removeWantsCalls      []int64
 	addWantsCalls         []int64
+	addCollectionCalls    []int64
 
 	removeCollectionErr error
 	removeWantsErr      error
 	addWantsErr         error
+	addCollectionErr    error
 
 	removeCollectionRL encora.RateLimitInfo
 	removeWantsRL      encora.RateLimitInfo
 	addWantsRL         encora.RateLimitInfo
+	addCollectionRL    encora.RateLimitInfo
 }
 
 func (s *stubDestructiveClient) RemoveFromCollection(
@@ -65,6 +68,15 @@ func (s *stubDestructiveClient) AddToWants(
 	defer s.mu.Unlock()
 	s.addWantsCalls = append(s.addWantsCalls, id)
 	return s.addWantsRL, s.addWantsErr
+}
+
+func (s *stubDestructiveClient) AddToCollection(
+	_ context.Context, id int64,
+) (encora.RateLimitInfo, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addCollectionCalls = append(s.addCollectionCalls, id)
+	return s.addCollectionRL, s.addCollectionErr
 }
 
 // destructiveTestServer wires a fresh DB + stub destructive client into

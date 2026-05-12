@@ -68,10 +68,13 @@ type RecordingState struct {
 //  1. file present + in collection + formats match → Synced
 //  2. file present + in collection + formats differ → FormatMismatch
 //  3. file present + not in collection + not in wants → Orphan
-//  4. file present + not in collection + in wants → Synced
+//  4. in wants + not in collection → Wanted (file presence is
+//     orthogonal: the wants list itself can't carry a release format,
+//     so a file-on-disk-but-only-in-wants recording is NOT "Synced"
+//     in any meaningful sense. The user needs to promote it to the
+//     collection before Synced applies.)
 //  5. no file + in collection → Missing
-//  6. no file + in wants → Wanted
-//  7. fallback (no file, neither in collection nor wants) → Orphan
+//  6. fallback (no file, neither in collection nor wants) → Orphan
 func ComputeStatus(s RecordingState) Status {
 	hasFile := s.FileCount > 0
 	switch {
@@ -79,14 +82,12 @@ func ComputeStatus(s RecordingState) Status {
 		return StatusSynced
 	case hasFile && s.InCollection:
 		return StatusFormatMismatch
-	case hasFile && !s.InCollection && !s.InWants:
+	case s.InWants && !s.InCollection:
+		return StatusWanted
+	case hasFile && !s.InCollection:
 		return StatusOrphan
-	case hasFile && !s.InCollection && s.InWants:
-		return StatusSynced
 	case !hasFile && s.InCollection:
 		return StatusMissing
-	case !hasFile && s.InWants:
-		return StatusWanted
 	default:
 		// Defensive fallback: no file, no collection, no wants. Shouldn't
 		// happen in practice — there'd be no row to inspect — but treat

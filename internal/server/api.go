@@ -85,6 +85,7 @@ func (s *Server) routes() {
 	// can never trigger a remove. UI exposure lands in Wave 12 behind
 	// an explicit confirmation gate.
 	api.POST("/encora/collection/:id/remove", s.handleRemoveFromCollection)
+	api.POST("/encora/collection/:id/add", s.handleAddToCollection)
 	api.POST("/encora/wants/:id/remove", s.handleRemoveFromWants)
 	api.POST("/encora/wants/:id/add", s.handleAddToWants)
 

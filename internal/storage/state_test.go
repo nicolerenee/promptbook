@@ -87,12 +87,19 @@ func TestComputeStatus(t *testing.T) {
 			want: storage.StatusOrphan,
 		},
 		{
-			name: "synced: file + not in collection + in wants",
+			// In-wants always reads as Wanted regardless of file
+			// presence — the wants list can't carry a release format,
+			// so a file-on-disk-but-only-in-wants recording isn't
+			// "Synced" in any meaningful sense. The user promotes
+			// the recording to the collection (via the recording
+			// detail page's Add to Collection action) before Synced
+			// applies.
+			name: "wanted: file + not in collection + in wants",
 			state: storage.RecordingState{
 				FileCount: 1,
 				InWants:   true,
 			},
-			want: storage.StatusSynced,
+			want: storage.StatusWanted,
 		},
 		{
 			name: "missing: no file + in collection",

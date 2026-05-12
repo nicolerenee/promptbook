@@ -99,6 +99,27 @@ function dangerActionFor(loaded) {
   };
 }
 
+// promoteActionFor surfaces the constructive "promote this recording
+// to your Encora collection" action when applicable. Returns null
+// when not — usually only fires when the recording is on the wants
+// list but not yet in the collection (the common "I traded for this
+// offline, now move it to the collection" flow). The recording can
+// be promoted even without local files on disk — promptbook just
+// pushes the membership change upstream; the user can ingest files
+// separately.
+function promoteActionFor(loaded) {
+  if (!loaded || loaded.InCollection || !loaded.InWants) return null;
+  const id = loaded.Recording.id;
+  return {
+    kind:        'add_collection',
+    label:       'Add to collection',
+    path:        '/encora/collection/' + id + '/add',
+    description: 'This moves the recording from your Encora wants ' +
+                 'list into your collection.',
+    destructive: false,
+  };
+}
+
 // errorMessage extracts a human-readable string from a thrown api
 // error. Mithril's m.request rejects with the parsed JSON body
 // already deserialized (api.js stashes it on err.body as an object
@@ -1135,6 +1156,7 @@ function renderLinkBadge(label, href, id) {
 function renderActionsCluster(loaded) {
   const id = loaded.Recording.id;
   const action = dangerActionFor(loaded);
+  const promote = promoteActionFor(loaded);
   const refreshBusy = !!state.recording.imageBusy;
   const regenBusy = !!state.recording.regeneratingNFO;
   const dangerBusy = !!state.recording.dangerBusy;
@@ -1233,6 +1255,26 @@ function renderActionsCluster(loaded) {
       m.route.set('/history', { recording_id: String(id) });
     },
   }, [clockIcon(), m('span', 'History')])));
+  // Constructive "promote to collection" sits between History and the
+  // bottom danger action so it reads as the primary call-to-action for
+  // wants-with-file recordings without crowding the destructive zone.
+  if (promote) {
+    menuItems.push(m('li',
+      { class: 'border-t border-base-200 mt-1 pt-1' + (dangerBusy ? ' disabled' : '') },
+      m('a', {
+        class: 'text-primary',
+        onclick: (ev) => {
+          ev.preventDefault();
+          if (dangerBusy) return;
+          runDangerAction(promote, id);
+        },
+      }, [
+        dangerBusy
+          ? m('span', { class: 'loading loading-spinner loading-xs' })
+          : bookmarkIcon(),
+        m('span', dangerBusy ? 'Working…' : promote.label),
+      ])));
+  }
   if (action) {
     const isDestructive = !!action.destructive;
     menuItems.push(m('li',
