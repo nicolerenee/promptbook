@@ -2,13 +2,52 @@ package scanner
 
 import (
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nicolerenee/promptbook/internal/externalids"
 	"github.com/nicolerenee/promptbook/internal/ingest"
 	"github.com/nicolerenee/promptbook/internal/match"
 )
+
+// DiscFormatDVD is the DiscFormat token the classifier emits when a
+// folder carries a VIDEO_TS DVD layout. Consumers (the ingest engine,
+// the SPA's queue modal) check Classification.DiscFormat against this
+// constant before applying the disc-aware mover branch. Empty
+// DiscFormat preserves all legacy behaviour for non-disc folders.
+const DiscFormatDVD = "dvd"
+
+// dvdVideoTSDirName is the canonical DVD title-set folder name. Some
+// rips put the .IFO / .VOB scaffolding at the folder root; others nest
+// it inside a VIDEO_TS/ subfolder. The classifier accepts either shape
+// — match is case-insensitive so VIDEO_TS / Video_TS / video_ts all
+// resolve.
+const dvdVideoTSDirName = "VIDEO_TS"
+
+// dvdContentVOBRE matches the standard DVD-spec content VOB filename
+// shape: VTS_NN_M.VOB where NN is the title-set index (almost always
+// 01) and M is the per-title-set chunk index. M == 0 is the title-set
+// menu VOB (always small, never the recording itself); M >= 1 carries
+// the actual content. Case-insensitive so real-world rips with mixed
+// casing (vts_01_1.vob, Vts_01_1.VOB) all match.
+//
+// We compile once at package init so every folder scan reuses the same
+// regexp instance — important for the polling scanner which can chew
+// through hundreds of folders per pass on a watched-root scan.
+var dvdContentVOBRE = regexp.MustCompile(`(?i)^VTS_(\d+)_(\d+)\.VOB$`)
+
+// dvdScaffoldingExtSet is the lowercase-extension set the classifier
+// recognizes as DVD scaffolding the ingest engine must move alongside
+// the content VOBs (not as extras, not as part rows — verbatim
+// pass-through into the canonical VIDEO_TS subfolder).
+//
+//nolint:gochecknoglobals // immutable lookup table.
+var dvdScaffoldingExtSet = map[string]struct{}{
+	".ifo": {},
+	".bup": {},
+}
 
 // Classification is the per-folder role assignment the scanner emits
 // for each folder-as-unit drop. Parts is the ordered list of files
@@ -24,11 +63,29 @@ import (
 // RecordingID field on each entry is 0 — the ingest engine stamps it
 // once the recording is upserted. Empty slice for folders with no
 // recognizable tag.
+//
+// DiscFormat is empty for the typical folder-as-unit drop. When the
+// classifier detects a DVD layout (a VIDEO_TS.IFO at the folder root
+// or inside a single nested VIDEO_TS/ subfolder), DiscFormat is set
+// to DiscFormatDVD ("dvd") and the ingest engine takes the disc-
+// preserving branch: content VOBs land inside a canonical VIDEO_TS/
+// subfolder of the recording folder with their original DVD-spec
+// names intact, and the .IFO / .BUP / menu VOB scaffolding follows
+// verbatim so the media-server DVD playback engines (Plex / Emby /
+// Jellyfin) can still parse the disc TOC.
+//
+// DiscScaffolding lists the absolute source paths of the DVD support
+// files the engine must move alongside the content VOBs but should
+// NOT track as version rows or surface as extras. Empty for non-disc
+// folders; populated with every .IFO / .BUP / menu VOB inside the
+// disc tree when DiscFormat == DiscFormatDVD.
 type Classification struct {
-	Parts       []ClassifiedFile         `json:"parts"`
-	Extras      []ClassifiedFile         `json:"extras"`
-	Ambiguous   bool                     `json:"ambiguous"`
-	ExternalIDs []externalids.ExternalID `json:"externalIDs,omitempty"`
+	Parts           []ClassifiedFile         `json:"parts"`
+	Extras          []ClassifiedFile         `json:"extras"`
+	Ambiguous       bool                     `json:"ambiguous"`
+	ExternalIDs     []externalids.ExternalID `json:"externalIDs,omitempty"`
+	DiscFormat      string                   `json:"discFormat,omitempty"`
+	DiscScaffolding []string                 `json:"discScaffolding,omitempty"`
 }
 
 // ClassifiedFile is one media file within a Classification. Path is
@@ -101,6 +158,12 @@ var topLevelKindKeywords = []struct {
 // classifyFolder produces a Classification for a folder-as-unit. The
 // rules (in the order applied):
 //
+//  0. If the folder carries a DVD layout (VIDEO_TS.IFO at the root or
+//     in a single nested VIDEO_TS/ subfolder), take the DVD branch:
+//     content VOBs become Parts (one per VTS_NN_M.VOB where M>=1,
+//     ordered by integer M); .IFO / .BUP / menu VOBs go onto
+//     DiscScaffolding; non-DVD files (info .txt, etc.) flow through
+//     the regular extras pipeline.
 //  1. If any file's basename carries a part marker (act 1 / pt-2 /
 //     part 3) per match.Parse, those files become Parts ordered by
 //     index; everything else is an Extra.
@@ -120,6 +183,10 @@ func classifyFolder(folder string, media []mediaFile) Classification {
 	cls := Classification{Parts: []ClassifiedFile{}, Extras: []ClassifiedFile{}}
 	if len(media) == 0 {
 		return cls
+	}
+
+	if dvd, ok := classifyDVD(folder, media); ok {
+		return dvd
 	}
 
 	// Split into eligible-main candidates (video + audio) and always-
@@ -468,4 +535,141 @@ func kindFromFilename(name string) string {
 		}
 	}
 	return ingest.ExtraKindOther
+}
+
+// classifyDVD inspects media for a DVD layout. Returns (cls, true)
+// when the folder carries VIDEO_TS scaffolding the engine must
+// preserve verbatim; (zero, false) otherwise so the caller falls
+// through to the regular classification heuristics.
+//
+// Detection rule: at least one VIDEO_TS.IFO somewhere in the folder
+// tree. Real-world rips put the .IFO scaffolding either at the
+// folder root (the "flat" shape — the user's 9 to 5 example) or
+// inside a single nested VIDEO_TS/ subfolder. Both shapes produce
+// the same Classification — the ingest engine's mover handles the
+// flattening into the canonical VIDEO_TS/ destination subfolder
+// regardless of source layout.
+//
+// Output shape when DVD is detected:
+//   - Parts: every VTS_NN_M.VOB where M>=1, ordered by integer M
+//     (so VTS_01_10.VOB sorts after VTS_01_9.VOB rather than
+//     lexically before it). Each carries SuggestedKind
+//     "part-{M}" + PartIndex M so the ingest engine's existing
+//     multipart path handles them without special casing.
+//   - DiscScaffolding: absolute paths of every .IFO, .BUP, and the
+//     menu VOB siblings (VIDEO_TS.VOB + VTS_NN_0.VOB). These are
+//     invisible to the queue modal's extras picker but the mover
+//     carries them into the destination so DVD playback works.
+//   - Extras: every non-DVD-related file the folder contains
+//     (info .txt, the ripper's notes, any user-added bonus
+//     material). Run through the regular classifyExtra pipeline
+//     so the kind/subfolder mapping still applies.
+//   - DiscFormat: DiscFormatDVD.
+func classifyDVD(folder string, media []mediaFile) (Classification, bool) {
+	if !looksLikeDVD(media) {
+		return Classification{}, false
+	}
+	cls := Classification{
+		Parts:      []ClassifiedFile{},
+		Extras:     []ClassifiedFile{},
+		DiscFormat: DiscFormatDVD,
+	}
+	type partWithIndex struct {
+		file  ClassifiedFile
+		chunk int
+	}
+	var parts []partWithIndex
+	var scaffolding []string
+	for _, m := range media {
+		base := filepath.Base(m.path)
+		ext := strings.ToLower(filepath.Ext(base))
+		if _, isScaffoldExt := dvdScaffoldingExtSet[ext]; isScaffoldExt {
+			scaffolding = append(scaffolding, m.path)
+			continue
+		}
+		if matches := dvdContentVOBRE.FindStringSubmatch(base); matches != nil {
+			// Group 2 is the chunk index M; the regexp already
+			// constrained both groups to digits, so Atoi cannot fail.
+			chunk, _ := strconv.Atoi(matches[2])
+			if chunk == 0 {
+				// Menu VOB — scaffolding, not content.
+				scaffolding = append(scaffolding, m.path)
+				continue
+			}
+			parts = append(parts, partWithIndex{
+				file: ClassifiedFile{
+					Path:          m.path,
+					SizeBytes:     m.size,
+					SuggestedKind: ingest.AssignmentKindPart(chunk),
+					PartIndex:     chunk,
+				},
+				chunk: chunk,
+			})
+			continue
+		}
+		if strings.EqualFold(base, "VIDEO_TS.VOB") {
+			// VIDEO_TS.VOB is the disc-menu VOB — scaffolding even
+			// though it doesn't match the VTS_NN_M shape.
+			scaffolding = append(scaffolding, m.path)
+			continue
+		}
+		// Non-DVD file inside the disc tree (info .txt, etc.). Flow
+		// through the regular extras pipeline so the kind heuristic
+		// still applies. Skipping files that live inside the nested
+		// VIDEO_TS/ subfolder is intentional — those should never be
+		// surfaced as extras (the user didn't put them there).
+		if insideVideoTSSubfolder(folder, m.path) {
+			scaffolding = append(scaffolding, m.path)
+			continue
+		}
+		cls.Extras = append(cls.Extras, classifyExtra(folder, m))
+	}
+	sort.SliceStable(parts, func(i, j int) bool {
+		return parts[i].chunk < parts[j].chunk
+	})
+	for _, p := range parts {
+		cls.Parts = append(cls.Parts, p.file)
+	}
+	// Sort scaffolding by path so the destination order is stable
+	// across scans. The ingest engine doesn't care about order — it
+	// moves every entry verbatim — but tests + diffs read better with
+	// a deterministic shape.
+	sort.Strings(scaffolding)
+	cls.DiscScaffolding = scaffolding
+	return cls, true
+}
+
+// looksLikeDVD reports whether media contains at least one
+// VIDEO_TS.IFO file. Case-insensitive so real-world rips with mixed
+// casing (Video_TS.ifo, VIDEO_ts.IFO) all match. Nested layouts
+// (VIDEO_TS/VIDEO_TS.IFO) and flat layouts (VIDEO_TS.IFO at the
+// folder root) both qualify because we only care that the disc-TOC
+// file is present somewhere — the mover handles the source-vs-dest
+// layout difference.
+func looksLikeDVD(media []mediaFile) bool {
+	for _, m := range media {
+		if strings.EqualFold(filepath.Base(m.path), "VIDEO_TS.IFO") {
+			return true
+		}
+	}
+	return false
+}
+
+// insideVideoTSSubfolder reports whether path lives under a nested
+// VIDEO_TS/ subfolder of folder. Used by classifyDVD to keep any
+// stray file inside that subtree out of the extras list — every
+// non-DVD file under VIDEO_TS/ moves to the destination's
+// VIDEO_TS/ verbatim alongside the scaffolding so the source layout
+// rebuilds cleanly. Case-insensitive on the path components.
+func insideVideoTSSubfolder(folder, path string) bool {
+	rel, err := filepath.Rel(folder, path)
+	if err != nil {
+		return false
+	}
+	for segment := range strings.SplitSeq(filepath.Dir(rel), string(filepath.Separator)) {
+		if strings.EqualFold(segment, dvdVideoTSDirName) {
+			return true
+		}
+	}
+	return false
 }

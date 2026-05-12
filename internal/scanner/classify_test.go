@@ -15,10 +15,12 @@ import (
 // tests can decode the queue row's classification_json blob without
 // reaching for unexported types in the scanner package.
 type classification struct {
-	Parts       []classifiedFile     `json:"parts"`
-	Extras      []classifiedFile     `json:"extras"`
-	Ambiguous   bool                 `json:"ambiguous"`
-	ExternalIDs []classifiedExternal `json:"externalIDs,omitempty"`
+	Parts           []classifiedFile     `json:"parts"`
+	Extras          []classifiedFile     `json:"extras"`
+	Ambiguous       bool                 `json:"ambiguous"`
+	ExternalIDs     []classifiedExternal `json:"externalIDs,omitempty"`
+	DiscFormat      string               `json:"discFormat,omitempty"`
+	DiscScaffolding []string             `json:"discScaffolding,omitempty"`
 }
 
 // classifiedExternal mirrors externalids.ExternalID's wire shape for
@@ -254,4 +256,190 @@ func TestClassifyEmptyFolder(t *testing.T) {
 	got, err := storage.ListQueue(f.ctx, f.db)
 	require.NoError(t, err)
 	assert.Empty(t, got, "no media → no queue row, no classification")
+}
+
+// TestClassifyDVDFlatLayout covers the user's canonical case: a
+// folder with VIDEO_TS.IFO + VTS_01_M.VOB chunks at the root (no
+// nested VIDEO_TS/ subfolder). Content VOBs become Parts ordered by
+// chunk M, ascending; scaffolding (.IFO / .BUP / menu VOBs) lives on
+// DiscScaffolding; non-DVD extras flow through the regular
+// classifyExtra pipeline. DiscFormat == "dvd".
+func TestClassifyDVDFlatLayout(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "9 to 5 (Closing Night)")
+	// DVD scaffolding at the root.
+	videoTSIFO := filepath.Join(folder, "VIDEO_TS.IFO")
+	videoTSBUP := filepath.Join(folder, "VIDEO_TS.BUP")
+	videoTSVOB := filepath.Join(folder, "VIDEO_TS.VOB")
+	vts01IFO := filepath.Join(folder, "VTS_01_0.IFO")
+	vts01BUP := filepath.Join(folder, "VTS_01_0.BUP")
+	vts01MenuVOB := filepath.Join(folder, "VTS_01_0.VOB")
+	writeFile(t, videoTSIFO, 8*1024)
+	writeFile(t, videoTSBUP, 8*1024)
+	writeFile(t, videoTSVOB, 16*1024)
+	writeFile(t, vts01IFO, 8*1024)
+	writeFile(t, vts01BUP, 8*1024)
+	writeFile(t, vts01MenuVOB, 16*1024)
+	// Five content chunks of ~1 GB each (we use small sizes for the
+	// test — the scanner doesn't care about absolute size, only the
+	// VTS_NN_M shape).
+	vts1 := filepath.Join(folder, "VTS_01_1.VOB")
+	vts2 := filepath.Join(folder, "VTS_01_2.VOB")
+	vts3 := filepath.Join(folder, "VTS_01_3.VOB")
+	vts4 := filepath.Join(folder, "VTS_01_4.VOB")
+	vts5 := filepath.Join(folder, "VTS_01_5.VOB")
+	writeFile(t, vts1, 1024*1024)
+	writeFile(t, vts2, 1024*1024)
+	writeFile(t, vts3, 1024*1024)
+	writeFile(t, vts4, 1024*1024)
+	writeFile(t, vts5, 512*1024)
+	// Non-DVD extras: the original ripper's notes.
+	rippersNotes := filepath.Join(folder, "info .txt")
+	writeFile(t, rippersNotes, 256)
+
+	cls, entry := f.loadClassification(t)
+
+	assert.Equal(t, "dvd", cls.DiscFormat,
+		"flat VIDEO_TS layout must classify as DVD")
+	assert.False(t, cls.Ambiguous)
+	require.Len(t, cls.Parts, 5,
+		"five content VOBs (M >= 1) become Parts")
+	// Parts ordered by integer chunk index ascending.
+	assert.Equal(t, vts1, cls.Parts[0].Path)
+	assert.Equal(t, 1, cls.Parts[0].PartIndex)
+	assert.Equal(t, "part-1", cls.Parts[0].SuggestedKind)
+	assert.Equal(t, vts2, cls.Parts[1].Path)
+	assert.Equal(t, 2, cls.Parts[1].PartIndex)
+	assert.Equal(t, vts3, cls.Parts[2].Path)
+	assert.Equal(t, vts4, cls.Parts[3].Path)
+	assert.Equal(t, vts5, cls.Parts[4].Path)
+	assert.Equal(t, "part-5", cls.Parts[4].SuggestedKind)
+
+	// Scaffolding: every .IFO / .BUP + menu VOBs (VIDEO_TS.VOB and
+	// VTS_01_0.VOB). Sorted lexically for determinism.
+	require.Len(t, cls.DiscScaffolding, 6,
+		"two IFOs + two BUPs + two menu VOBs are scaffolding")
+	scaffSet := map[string]bool{}
+	for _, p := range cls.DiscScaffolding {
+		scaffSet[p] = true
+	}
+	assert.True(t, scaffSet[videoTSIFO], "VIDEO_TS.IFO must be scaffolding")
+	assert.True(t, scaffSet[videoTSBUP], "VIDEO_TS.BUP must be scaffolding")
+	assert.True(t, scaffSet[videoTSVOB], "VIDEO_TS.VOB (disc menu) must be scaffolding")
+	assert.True(t, scaffSet[vts01IFO], "VTS_01_0.IFO must be scaffolding")
+	assert.True(t, scaffSet[vts01BUP], "VTS_01_0.BUP must be scaffolding")
+	assert.True(t, scaffSet[vts01MenuVOB], "VTS_01_0.VOB (menu VOB) must be scaffolding")
+
+	// Non-DVD extras: the ripper's notes file flows through the
+	// regular extras pipeline.
+	require.Len(t, cls.Extras, 1,
+		"only the non-DVD info .txt lands in Extras")
+	assert.Equal(t, rippersNotes, cls.Extras[0].Path,
+		"info .txt is the only real extra")
+
+	// Queue row points at the first content VOB; ExtrasCount counts
+	// non-main media files (the other four content VOBs + the
+	// non-DVD extra).
+	assert.Equal(t, vts1, entry.FilePath,
+		"FilePath = first content VOB")
+}
+
+// TestClassifyDVDNestedLayout covers the alternate disc layout where
+// the rip preserves the original VIDEO_TS/ subfolder shape. Content
+// VOBs still become Parts; scaffolding still rides on
+// DiscScaffolding; the only difference is the source paths nest one
+// level deeper. The mover (commit 2) flattens both layouts into the
+// same canonical destination shape.
+func TestClassifyDVDNestedLayout(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Nested DVD Rip")
+	videoTS := filepath.Join(folder, "VIDEO_TS")
+	videoTSIFO := filepath.Join(videoTS, "VIDEO_TS.IFO")
+	videoTSBUP := filepath.Join(videoTS, "VIDEO_TS.BUP")
+	vts01IFO := filepath.Join(videoTS, "VTS_01_0.IFO")
+	vts1 := filepath.Join(videoTS, "VTS_01_1.VOB")
+	vts2 := filepath.Join(videoTS, "VTS_01_2.VOB")
+	writeFile(t, videoTSIFO, 8*1024)
+	writeFile(t, videoTSBUP, 8*1024)
+	writeFile(t, vts01IFO, 8*1024)
+	writeFile(t, vts1, 1024*1024)
+	writeFile(t, vts2, 1024*1024)
+
+	cls, _ := f.loadClassification(t)
+
+	assert.Equal(t, "dvd", cls.DiscFormat,
+		"nested VIDEO_TS/ layout must also classify as DVD")
+	require.Len(t, cls.Parts, 2,
+		"two content VOBs (M=1, M=2) become Parts")
+	assert.Equal(t, vts1, cls.Parts[0].Path)
+	assert.Equal(t, vts2, cls.Parts[1].Path)
+	require.Len(t, cls.DiscScaffolding, 3,
+		"two IFOs + one BUP under the nested VIDEO_TS/ are scaffolding")
+	assert.Empty(t, cls.Extras,
+		"no non-DVD files in this fixture")
+}
+
+// TestClassifyDVDMixedCaseFilenames pins the case-insensitivity
+// contract: a real-world rip may have lowercase or mixed-case .vob
+// / .ifo names. macOS-rip-on-Linux folders are a particularly
+// frequent source of mixed casing.
+func TestClassifyDVDMixedCaseFilenames(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Mixed Case DVD")
+	writeFile(t, filepath.Join(folder, "Video_TS.ifo"), 8*1024)
+	writeFile(t, filepath.Join(folder, "Video_TS.bup"), 8*1024)
+	writeFile(t, filepath.Join(folder, "vts_01_0.ifo"), 8*1024)
+	writeFile(t, filepath.Join(folder, "vts_01_0.bup"), 8*1024)
+	vts1 := filepath.Join(folder, "vts_01_1.vob")
+	vts2 := filepath.Join(folder, "Vts_01_2.VOB")
+	writeFile(t, vts1, 1024*1024)
+	writeFile(t, vts2, 1024*1024)
+
+	cls, _ := f.loadClassification(t)
+
+	assert.Equal(t, "dvd", cls.DiscFormat,
+		"mixed-case Video_TS.ifo must still classify as DVD")
+	require.Len(t, cls.Parts, 2,
+		"both case variants of the content VOB must be detected")
+	// Parts sorted by chunk integer, not lex string — even though in
+	// this case the lexical and numeric orderings happen to agree.
+	assert.Equal(t, vts1, cls.Parts[0].Path)
+	assert.Equal(t, vts2, cls.Parts[1].Path)
+}
+
+// TestClassifyDVDDoubleDigitChunkOrder pins the integer-vs-lexical
+// sort contract: a rip with M >= 10 (rare but legal — a single title
+// set can hold up to 99 chunks per spec) must sort VTS_01_10.VOB
+// AFTER VTS_01_9.VOB, not before. A naive sort.Strings would
+// reverse them; classifyDVD sorts by integer chunk index instead.
+func TestClassifyDVDDoubleDigitChunkOrder(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Long DVD")
+	writeFile(t, filepath.Join(folder, "VIDEO_TS.IFO"), 8*1024)
+	writeFile(t, filepath.Join(folder, "VTS_01_0.IFO"), 8*1024)
+	v1 := filepath.Join(folder, "VTS_01_1.VOB")
+	v2 := filepath.Join(folder, "VTS_01_2.VOB")
+	v9 := filepath.Join(folder, "VTS_01_9.VOB")
+	v10 := filepath.Join(folder, "VTS_01_10.VOB")
+	writeFile(t, v1, 1024*1024)
+	writeFile(t, v2, 1024*1024)
+	writeFile(t, v9, 1024*1024)
+	writeFile(t, v10, 1024*1024)
+
+	cls, _ := f.loadClassification(t)
+
+	require.Len(t, cls.Parts, 4)
+	assert.Equal(t, v1, cls.Parts[0].Path)
+	assert.Equal(t, v2, cls.Parts[1].Path)
+	assert.Equal(t, v9, cls.Parts[2].Path,
+		"VTS_01_9.VOB must sort before VTS_01_10.VOB by chunk integer")
+	assert.Equal(t, v10, cls.Parts[3].Path)
 }
