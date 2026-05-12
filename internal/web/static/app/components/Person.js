@@ -82,7 +82,7 @@ function mapPersonDetail(node) {
 // across pages.
 const STATUS_META = {
   synced:          { label: 'Synced',          badge: 'badge-success' },
-  format_mismatch: { label: 'Format mismatch', badge: 'badge-warning' },
+  out_of_sync: { label: 'Out of sync', badge: 'badge-warning' },
   missing:         { label: 'Missing',         badge: 'badge-error' },
   wanted:          { label: 'Wanted',          badge: 'badge-info' },
   orphan:          { label: 'Orphan',          badge: 'badge-neutral' },
@@ -188,7 +188,7 @@ function sortItems(items, sort) {
 // detail payload. Used to drive the stat tiles when the API doesn't
 // echo a top-level state_counts.
 function stateCountsFromRecordings(recs) {
-  const counts = { synced: 0, format_mismatch: 0, missing: 0, wanted: 0, orphan: 0 };
+  const counts = { synced: 0, out_of_sync: 0, missing: 0, wanted: 0, orphan: 0 };
   (recs || []).forEach((r) => {
     if (counts[r.state] != null) counts[r.state]++;
   });
@@ -369,7 +369,7 @@ const Person = {
     const total = recordings.length;
     const synced = counts.synced;
     const wantsMissing = counts.wanted + counts.missing;
-    const mismatch = counts.format_mismatch;
+    const mismatch = counts.out_of_sync;
     const years = yearsActive(recordings);
 
     const sorted = sortItems(recordings, { key: p.sortKey, dir: p.sortDir });

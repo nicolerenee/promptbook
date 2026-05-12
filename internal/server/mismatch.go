@@ -27,10 +27,10 @@ const (
 	// disk for a recording that isn't in their Encora collection — the
 	// suggested push is POST /collection/{id}/collect.
 	MismatchTypeAddToCollection MismatchType = "add_to_collection"
-	// MismatchTypeFormatMismatch is raised when the locally-computed
+	// MismatchTypeOutOfSync is raised when the locally-computed
 	// format string differs from the collection.format value — the
 	// suggested push is POST /collection/{id}/format/{...}.
-	MismatchTypeFormatMismatch MismatchType = "format_mismatch"
+	MismatchTypeOutOfSync MismatchType = "out_of_sync"
 	// MismatchTypeMissingFile is raised when the recording is in the
 	// collection but no version row backs it locally — there's nothing
 	// to push, but the user may want to download the file.
@@ -53,7 +53,7 @@ var mismatchTypeLabels = []struct {
 }{
 	{Key: "", Label: allTabLabel},
 	{Key: MismatchTypeAddToCollection, Label: "Add to collection"},
-	{Key: MismatchTypeFormatMismatch, Label: "Format mismatch"},
+	{Key: MismatchTypeOutOfSync, Label: "Out of sync"},
 	{Key: MismatchTypeMissingFile, Label: "Missing file"},
 	{Key: MismatchTypeWantedFile, Label: "Wanted file"},
 }
@@ -81,7 +81,7 @@ const mismatchScanLimit = 4096
 // MismatchItem is one row in the mismatches list. Type identifies the
 // kind of divergence; Description is the pre-baked one-line summary
 // the UI renders. LocalFormat / EncoraFormat are populated for
-// FormatMismatch rows and otherwise zero.
+// OutOfSync rows and otherwise zero.
 type MismatchItem struct {
 	Type         MismatchType   `json:"type"`
 	RecordingID  int64          `json:"recording_id"`
@@ -164,15 +164,27 @@ func stateToMismatch(st storage.RecordingState) (MismatchItem, bool) {
 		EncoraFormat: st.EncoraFormat,
 	}
 	switch st.Status {
+	case storage.StatusOutOfSync:
+		// OutOfSync covers three subcases (see storage.ComputeStatus):
+		// in-collection-with-format-drift, in-wants-with-file, and
+		// have-file-but-no-encora-link. The first dispatches to a
+		// format push; the latter two need an add-to-collection
+		// upstream write, so we split the MismatchType here.
+		if st.InCollection {
+			item.Type = MismatchTypeOutOfSync
+			item.Description = fmt.Sprintf(
+				"Local %q differs from Encora %q — push to update",
+				st.LocalFormat, st.EncoraFormat,
+			)
+		} else {
+			item.Type = MismatchTypeAddToCollection
+			item.Description = "Has file; not in collection — push to add"
+		}
 	case storage.StatusOrphan:
-		item.Type = MismatchTypeAddToCollection
-		item.Description = "Has file; not in collection — push to add"
-	case storage.StatusFormatMismatch:
-		item.Type = MismatchTypeFormatMismatch
-		item.Description = fmt.Sprintf(
-			"Local %q differs from Encora %q — push to update",
-			st.LocalFormat, st.EncoraFormat,
-		)
+		// Metadata-only ghost (no file, no collection, no wants).
+		// Nothing to reconcile upstream — the user has to either
+		// add to collection/wants manually or remove the row.
+		return MismatchItem{}, false
 	case storage.StatusMissing:
 		item.Type = MismatchTypeMissingFile
 		item.Description = "In collection but no local file — download to reconcile"

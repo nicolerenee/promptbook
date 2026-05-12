@@ -38,7 +38,7 @@ const (
 
 // ApplyAction is one user-selected push to Encora. Type identifies which
 // mismatch is being resolved; NewFormat carries the proposed format string
-// for FormatMismatch and is empty otherwise.
+// for OutOfSync and is empty otherwise.
 type ApplyAction struct {
 	Type        MismatchType `json:"type"`
 	RecordingID int64        `json:"recording_id"`
@@ -65,7 +65,7 @@ type actionKey struct {
 
 // validationResult bundles the outputs of buildValidationSet — a set of
 // keys the apply pass will accept, plus the LocalFormat oracle for
-// FormatMismatch rows so we can reject tampered NewFormat values.
+// OutOfSync rows so we can reject tampered NewFormat values.
 type validationResult struct {
 	allowed      map[actionKey]struct{}
 	localFormats map[int64]string
@@ -86,7 +86,7 @@ func buildValidationSet(ctx context.Context, client *ent.Client) (validationResu
 	}
 	for _, item := range items {
 		v.allowed[actionKey{Type: item.Type, ID: item.RecordingID}] = struct{}{}
-		if item.Type == MismatchTypeFormatMismatch {
+		if item.Type == MismatchTypeOutOfSync {
 			v.localFormats[item.RecordingID] = item.LocalFormat
 		}
 	}
@@ -95,7 +95,7 @@ func buildValidationSet(ctx context.Context, client *ent.Client) (validationResu
 
 // validateAction returns the ApplyResult to use when the submitted
 // action either no longer matches the live mismatch report (state
-// changed under the user's feet) or — for FormatMismatch — when the
+// changed under the user's feet) or — for OutOfSync — when the
 // submitted NewFormat doesn't match the recording's current LocalFormat.
 // ok=true means the action passed validation and the caller should
 // proceed to applyOne.
@@ -106,7 +106,7 @@ func (v validationResult) validate(action ApplyAction) (ApplyResult, bool) {
 			Error:  "action no longer applies — recording state has changed",
 		}, false
 	}
-	if action.Type == MismatchTypeFormatMismatch {
+	if action.Type == MismatchTypeOutOfSync {
 		want := v.localFormats[action.RecordingID]
 		if action.NewFormat != want {
 			return ApplyResult{
@@ -161,7 +161,7 @@ func applyOne(
 		res.HTTPStatus = http.StatusOK
 		return res
 
-	case MismatchTypeFormatMismatch:
+	case MismatchTypeOutOfSync:
 		rl, err := client.UpdateCollectionFormat(
 			ctx, action.RecordingID, action.NewFormat,
 		)

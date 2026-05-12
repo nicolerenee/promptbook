@@ -23,12 +23,12 @@ type BannerLayout {
 }
 
 # ShowStateCounts is the per-status histogram a Show carries. The five
-# Status tokens (synced / format_mismatch / missing / wanted / orphan)
+# Status tokens (synced / out_of_sync / missing / wanted / orphan)
 # get one Int! field each so the SPA can render the badge cluster
 # without parsing a map shape.
 type ShowStateCounts {
   synced: Int!
-  formatMismatch: Int!
+  outOfSync: Int!
   missing: Int!
   wanted: Int!
   orphan: Int!
@@ -280,7 +280,7 @@ type ShowsListPage {
 extend type Query {
   # recordingsList is the offset-paginated, status-aware list query
   # the SPA's recordings page hits. status is a comma-separated set of
-  # storage.Status tokens (synced / format_mismatch / missing /
+  # storage.Status tokens (synced / out_of_sync / missing /
   # wanted / orphan); empty string disables the filter. sort is one of
   # 'recording' / 'date' / 'master' / 'local_format' / 'status'; dir
   # is 'asc' / 'desc'. Mirrors the legacy /api/v1/recordings shape so

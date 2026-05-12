@@ -406,8 +406,8 @@ func (r *showResolver) StateCounts(ctx context.Context, obj *ent.Show) (*ShowSta
 		switch st.Status {
 		case storage.StatusSynced:
 			out.Synced++
-		case storage.StatusFormatMismatch:
-			out.FormatMismatch++
+		case storage.StatusOutOfSync:
+			out.OutOfSync++
 		case storage.StatusMissing:
 			out.Missing++
 		case storage.StatusWanted:

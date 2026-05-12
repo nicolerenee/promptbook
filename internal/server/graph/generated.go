@@ -466,11 +466,11 @@ type ComplexityRoot struct {
 	}
 
 	ShowStateCounts struct {
-		FormatMismatch func(childComplexity int) int
-		Missing        func(childComplexity int) int
-		Orphan         func(childComplexity int) int
-		Synced         func(childComplexity int) int
-		Wanted         func(childComplexity int) int
+		Missing   func(childComplexity int) int
+		Orphan    func(childComplexity int) int
+		OutOfSync func(childComplexity int) int
+		Synced    func(childComplexity int) int
+		Wanted    func(childComplexity int) int
 	}
 
 	ShowsListItem struct {
@@ -2575,12 +2575,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ShowEdge.Node(childComplexity), true
 
-	case "ShowStateCounts.formatMismatch":
-		if e.ComplexityRoot.ShowStateCounts.FormatMismatch == nil {
-			break
-		}
-
-		return e.ComplexityRoot.ShowStateCounts.FormatMismatch(childComplexity), true
 	case "ShowStateCounts.missing":
 		if e.ComplexityRoot.ShowStateCounts.Missing == nil {
 			break
@@ -2593,6 +2587,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ShowStateCounts.Orphan(childComplexity), true
+	case "ShowStateCounts.outOfSync":
+		if e.ComplexityRoot.ShowStateCounts.OutOfSync == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ShowStateCounts.OutOfSync(childComplexity), true
 	case "ShowStateCounts.synced":
 		if e.ComplexityRoot.ShowStateCounts.Synced == nil {
 			break
@@ -3719,8 +3719,8 @@ func (ec *executionContext) childFields_ShowStateCounts(ctx context.Context, fie
 	switch field.Name {
 	case "synced":
 		return ec.fieldContext_ShowStateCounts_synced(ctx, field)
-	case "formatMismatch":
-		return ec.fieldContext_ShowStateCounts_formatMismatch(ctx, field)
+	case "outOfSync":
+		return ec.fieldContext_ShowStateCounts_outOfSync(ctx, field)
 	case "missing":
 		return ec.fieldContext_ShowStateCounts_missing(ctx, field)
 	case "wanted":
@@ -12746,16 +12746,16 @@ func (ec *executionContext) fieldContext_ShowStateCounts_synced(_ context.Contex
 	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
-func (ec *executionContext) _ShowStateCounts_formatMismatch(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
+func (ec *executionContext) _ShowStateCounts_outOfSync(ctx context.Context, field graphql.CollectedField, obj *ShowStateCounts) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
 		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_ShowStateCounts_formatMismatch(ctx, field)
+			return ec.fieldContext_ShowStateCounts_outOfSync(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return obj.FormatMismatch, nil
+			return obj.OutOfSync, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
@@ -12765,7 +12765,7 @@ func (ec *executionContext) _ShowStateCounts_formatMismatch(ctx context.Context,
 		true,
 	)
 }
-func (ec *executionContext) fieldContext_ShowStateCounts_formatMismatch(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_ShowStateCounts_outOfSync(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ShowStateCounts", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
@@ -25861,8 +25861,8 @@ func (ec *executionContext) _ShowStateCounts(ctx context.Context, sel ast.Select
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "formatMismatch":
-			out.Values[i] = ec._ShowStateCounts_formatMismatch(ctx, field, obj)
+		case "outOfSync":
+			out.Values[i] = ec._ShowStateCounts_outOfSync(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

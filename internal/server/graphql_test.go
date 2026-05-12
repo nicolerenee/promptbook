@@ -220,7 +220,7 @@ func TestGraphQLShowEnrichment(t *testing.T) {
 					lastYear
 					localBannerURL
 					stateCounts {
-						synced formatMismatch missing wanted orphan
+						synced outOfSync missing wanted orphan
 					}
 				}
 			}
@@ -242,11 +242,11 @@ func TestGraphQLShowEnrichment(t *testing.T) {
 						LastYear       *int   `json:"lastYear"`
 						LocalBannerURL string `json:"localBannerURL"`
 						StateCounts    struct {
-							Synced         int `json:"synced"`
-							FormatMismatch int `json:"formatMismatch"`
-							Missing        int `json:"missing"`
-							Wanted         int `json:"wanted"`
-							Orphan         int `json:"orphan"`
+							Synced    int `json:"synced"`
+							OutOfSync int `json:"outOfSync"`
+							Missing   int `json:"missing"`
+							Wanted    int `json:"wanted"`
+							Orphan    int `json:"orphan"`
 						} `json:"stateCounts"`
 					} `json:"node"`
 				} `json:"edges"`
@@ -334,7 +334,7 @@ func TestGraphQLShowsList(t *testing.T) {
 				id
 				name
 				recordingCount
-				stateCounts { synced missing wanted orphan formatMismatch }
+				stateCounts { synced missing wanted orphan outOfSync }
 			}
 		}
 	}`

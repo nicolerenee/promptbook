@@ -32,7 +32,7 @@ function writeStoredView(v) {
 // consistent across the SPA.
 const STATUS_META = {
   synced:          { label: 'Synced',          badge: 'badge-success' },
-  format_mismatch: { label: 'Format mismatch', badge: 'badge-warning' },
+  out_of_sync: { label: 'Out of sync', badge: 'badge-warning' },
   missing:         { label: 'Missing',         badge: 'badge-error' },
   wanted:          { label: 'Wanted',          badge: 'badge-info' },
   orphan:          { label: 'Orphan',          badge: 'badge-neutral' },
@@ -40,7 +40,7 @@ const STATUS_META = {
 
 // STATUS_ORDER drives stateBadgeCluster's render sequence so the
 // badges always appear in the same visual rhythm.
-const STATUS_ORDER = ['synced', 'format_mismatch', 'missing', 'wanted', 'orphan'];
+const STATUS_ORDER = ['synced', 'out_of_sync', 'missing', 'wanted', 'orphan'];
 
 const SORT_COLUMNS = [
   { key: 'name',            label: 'Show' },
@@ -112,7 +112,7 @@ const SHOWS_LIST_QUERY = `
         localPosterURL
         stateCounts {
           synced
-          formatMismatch
+          outOfSync
           missing
           wanted
           orphan
@@ -146,7 +146,7 @@ function mapShowItem(node) {
     local_poster_url: node.localPosterURL || '',
     state_counts: {
       synced:          sc.synced || 0,
-      format_mismatch: sc.formatMismatch || 0,
+      out_of_sync: sc.outOfSync || 0,
       missing:         sc.missing || 0,
       wanted:          sc.wanted || 0,
       orphan:          sc.orphan || 0,

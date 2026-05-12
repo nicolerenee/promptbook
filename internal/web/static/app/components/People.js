@@ -39,7 +39,7 @@ const PEOPLE_LIST_QUERY = `
         recordingCount
         stateCounts {
           synced
-          formatMismatch
+          outOfSync
           missing
           wanted
           orphan
@@ -70,7 +70,7 @@ function mapPersonItem(node) {
     recording_count: node.recordingCount || 0,
     state_counts: {
       synced:          sc.synced || 0,
-      format_mismatch: sc.formatMismatch || 0,
+      out_of_sync: sc.outOfSync || 0,
       missing:         sc.missing || 0,
       wanted:          sc.wanted || 0,
       orphan:          sc.orphan || 0,
@@ -82,7 +82,7 @@ function mapPersonItem(node) {
 // per-state breakdown the same way the library page does.
 const STATUS_META = {
   synced:          { label: 'Synced',          short: 'Sync',     badge: 'badge-success' },
-  format_mismatch: { label: 'Format mismatch', short: 'Mismatch', badge: 'badge-warning' },
+  out_of_sync: { label: 'Out of sync', short: 'Mismatch', badge: 'badge-warning' },
   missing:         { label: 'Missing',         short: 'Missing',  badge: 'badge-error' },
   wanted:          { label: 'Wanted',          short: 'Wanted',   badge: 'badge-info' },
   orphan:          { label: 'Orphan',          short: 'Orphan',   badge: 'badge-neutral' },
@@ -91,7 +91,7 @@ const STATUS_META = {
 // STATE_ORDER fixes the badge cluster order — synced first so the most
 // common state reads left-to-right, mismatch/missing/wanted/orphan
 // after.
-const STATE_ORDER = ['synced', 'format_mismatch', 'missing', 'wanted', 'orphan'];
+const STATE_ORDER = ['synced', 'out_of_sync', 'missing', 'wanted', 'orphan'];
 
 // SORT_COLUMNS lists the sortable headers in render order. `key` is
 // both URL token + the column id; the server resolves it against a

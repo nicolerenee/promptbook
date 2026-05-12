@@ -25,7 +25,7 @@ import state from '../state.js';
 // checkboxes render disabled and they're skipped from any apply
 // payload. Badge classes follow the design-doc taxonomy:
 //   add_to_collection → info
-//   format_mismatch   → warning
+//   out_of_sync   → warning
 //   missing_file      → error
 //   wanted_file       → info
 const TYPE_META = {
@@ -36,8 +36,8 @@ const TYPE_META = {
     resolution: 'Push to Encora',
     actionable: true,
   },
-  format_mismatch: {
-    label: 'Format mismatch',
+  out_of_sync: {
+    label: 'Out of sync',
     pill: 'Mismatch',
     badge: 'badge-warning',
     resolution: 'Update format on Encora',
@@ -63,7 +63,7 @@ const TYPE_META = {
 const TYPE_FILTERS = [
   { key: '',                  label: 'All' },
   { key: 'add_to_collection', label: 'Add to collection' },
-  { key: 'format_mismatch',   label: 'Format mismatch' },
+  { key: 'out_of_sync',   label: 'Out of sync' },
   { key: 'missing_file',      label: 'Missing file' },
   { key: 'wanted_file',       label: 'Wanted file' },
 ];
@@ -140,7 +140,7 @@ function fetchMismatches() {
 
 // onPush fires the batch apply. Builds the actions array per the
 // legacy contract — only actionable types contribute, and
-// format_mismatch carries the local_format as new_format so the
+// out_of_sync carries the local_format as new_format so the
 // server's validation (which compares submitted new_format against the
 // recording's current local_format) accepts the push.
 function onPush() {
@@ -158,7 +158,7 @@ function onPush() {
       recording_id: it.recording_id,
       new_format: '',
     };
-    if (it.type === 'format_mismatch') {
+    if (it.type === 'out_of_sync') {
       act.new_format = it.local_format || '';
     }
     actions.push(act);

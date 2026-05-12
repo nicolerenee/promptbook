@@ -216,11 +216,11 @@ type ResolvedCastEntry struct {
 }
 
 type ShowStateCounts struct {
-	Synced         int `json:"synced"`
-	FormatMismatch int `json:"formatMismatch"`
-	Missing        int `json:"missing"`
-	Wanted         int `json:"wanted"`
-	Orphan         int `json:"orphan"`
+	Synced    int `json:"synced"`
+	OutOfSync int `json:"outOfSync"`
+	Missing   int `json:"missing"`
+	Wanted    int `json:"wanted"`
+	Orphan    int `json:"orphan"`
 }
 
 type ShowsListItem struct {

@@ -2,7 +2,7 @@
 //
 // Page header w/ sub-text + action stubs, status filter chips,
 // sortable + paginated table OR poster grid. Status taxonomy is the
-// LOWERCASE storage.Status set ('synced', 'format_mismatch',
+// LOWERCASE storage.Status set ('synced', 'out_of_sync',
 // 'missing', 'wanted', 'orphan'). Wants are reachable via
 // status='wanted'; the dedicated /wants page is gone.
 //
@@ -49,7 +49,7 @@ function writeStoredView(v) {
 // against /api/v1/recordings JSON resolve directly.
 const STATUS_META = {
   synced:          { label: 'Synced',          badge: 'badge-success' },
-  format_mismatch: { label: 'Format mismatch', badge: 'badge-warning' },
+  out_of_sync: { label: 'Out of sync', badge: 'badge-warning' },
   missing:         { label: 'Missing',         badge: 'badge-error' },
   wanted:          { label: 'Wanted',          badge: 'badge-info' },
   orphan:          { label: 'Orphan',          badge: 'badge-neutral' },
@@ -59,7 +59,7 @@ const STATUS_META = {
 const STATUS_FILTERS = [
   { key: '',                label: 'All' },
   { key: 'synced',          label: 'Synced' },
-  { key: 'format_mismatch', label: 'Format mismatch' },
+  { key: 'out_of_sync', label: 'Out of sync' },
   { key: 'missing',         label: 'Missing' },
   { key: 'wanted',          label: 'Wanted' },
   { key: 'orphan',          label: 'Orphan' },

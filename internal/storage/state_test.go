@@ -70,36 +70,37 @@ func TestComputeStatus(t *testing.T) {
 			want: storage.StatusSynced,
 		},
 		{
-			name: "format_mismatch: file + collection + differing format",
+			name: "out_of_sync: file + collection + differing format",
 			state: storage.RecordingState{
 				FileCount:    1,
 				InCollection: true,
 				EncoraFormat: "MKV 1080p",
 				LocalFormat:  "MKV 720p",
 			},
-			want: storage.StatusFormatMismatch,
+			want: storage.StatusOutOfSync,
 		},
 		{
-			name: "orphan: file + not in collection + not in wants",
+			// File on disk with no Encora relationship: recording
+			// exists locally but Encora has no record of it being
+			// owned or wanted. Treated as OutOfSync (action: add to
+			// collection or wants); Orphan is reserved for the
+			// metadata-only-no-file ghost case.
+			name: "out_of_sync: file + not in collection + not in wants",
 			state: storage.RecordingState{
 				FileCount: 1,
 			},
-			want: storage.StatusOrphan,
+			want: storage.StatusOutOfSync,
 		},
 		{
-			// In-wants always reads as Wanted regardless of file
-			// presence — the wants list can't carry a release format,
-			// so a file-on-disk-but-only-in-wants recording isn't
-			// "Synced" in any meaningful sense. The user promotes
-			// the recording to the collection (via the recording
-			// detail page's Add to Collection action) before Synced
-			// applies.
-			name: "wanted: file + not in collection + in wants",
+			// In-wants with a file: wants list can't carry a release
+			// format so this needs reconciling — OutOfSync covers it.
+			// Pure Wanted only applies to no-file-yet recordings.
+			name: "out_of_sync: file + not in collection + in wants",
 			state: storage.RecordingState{
 				FileCount: 1,
 				InWants:   true,
 			},
-			want: storage.StatusWanted,
+			want: storage.StatusOutOfSync,
 		},
 		{
 			name: "missing: no file + in collection",
@@ -141,7 +142,7 @@ func TestComputeStatus(t *testing.T) {
 				EncoraFormat: "MKV 1080p",
 				LocalFormat:  "MKV 720p",
 			},
-			want: storage.StatusFormatMismatch,
+			want: storage.StatusOutOfSync,
 		},
 		{
 			name: "collection wins over wants when both set + no file",
@@ -187,7 +188,7 @@ func TestLoadStateSynced(t *testing.T) {
 	assert.Equal(t, fallback, got.LocalFormat)
 }
 
-func TestLoadStateFormatMismatch(t *testing.T) {
+func TestLoadStateOutOfSync(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
@@ -199,12 +200,12 @@ func TestLoadStateFormatMismatch(t *testing.T) {
 
 	got, err := storage.LoadState(ctx, db, recordingID)
 	require.NoError(t, err)
-	assert.Equal(t, storage.StatusFormatMismatch, got.Status)
+	assert.Equal(t, storage.StatusOutOfSync, got.Status)
 	assert.True(t, got.InCollection)
 	assert.Equal(t, "MKV 1080p", got.EncoraFormat)
 	// LocalFormat is whatever the new compose path produces for the
 	// seeded version — we only need it to differ from EncoraFormat
-	// to exercise the FormatMismatch branch.
+	// to exercise the OutOfSync branch.
 	assert.Equal(t, "MKV - ? + ? - ? - 0 B", got.LocalFormat)
 	assert.NotEqual(t, got.EncoraFormat, got.LocalFormat)
 }
@@ -246,7 +247,7 @@ func TestLoadStateWanted(t *testing.T) {
 	assert.Empty(t, got.EncoraFormat)
 }
 
-func TestLoadStateOrphan(t *testing.T) {
+func TestLoadStateOutOfSyncNoEncoraRelationship(t *testing.T) {
 	t.Parallel()
 
 	ctx, db := openTestDB(t)
@@ -257,14 +258,16 @@ func TestLoadStateOrphan(t *testing.T) {
 
 	got, err := storage.LoadState(ctx, db, recordingID)
 	require.NoError(t, err)
-	assert.Equal(t, storage.StatusOrphan, got.Status)
+	assert.Equal(t, storage.StatusOutOfSync, got.Status,
+		"file on disk with no Encora collection/wants entry is OutOfSync")
 	assert.False(t, got.InCollection)
 	assert.False(t, got.InWants)
 	assert.Equal(t, 1, got.FileCount)
 	assert.Empty(t, got.EncoraFormat)
 	// Legacy-fallback compose output for a seedVersion with no
-	// MediaInfoJSON / size — exercises the orphan path's local-format
-	// surfacing without asserting on the format string's content.
+	// MediaInfoJSON / size — exercises the file-but-no-encora-link
+	// path's local-format surfacing without asserting on the format
+	// string's content.
 	assert.Equal(t, "MKV - ? + ? - ? - 0 B", got.LocalFormat)
 }
 
@@ -283,10 +286,10 @@ func TestListStatesFilterByStatus(t *testing.T) {
 	seedCollection(ctx, t, db, 2000, fallbackMKV)
 	seedVersion(ctx, t, db, 2000, "/store/synced.mkv", "MKV 1080p")
 
-	// FormatMismatch: collection row + file with different format.
+	// OutOfSync: collection row + file with different format.
 	// Encora carries the new compose output but the legacy-fallback
 	// version reports a mismatching string, so ComputeStatus reports
-	// FormatMismatch.
+	// OutOfSync.
 	seedShow(ctx, t, db, 201, "Mismatch Show")
 	seedRecording(ctx, t, db, 2001, 201)
 	seedCollection(ctx, t, db, 2001, "MP4 - x264 + AAC - 720p - 5.00 GB")

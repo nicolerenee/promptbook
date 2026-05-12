@@ -557,8 +557,8 @@ func incrementStateCount(counts *ShowStateCounts, status storage.Status) {
 	switch status {
 	case storage.StatusSynced:
 		counts.Synced++
-	case storage.StatusFormatMismatch:
-		counts.FormatMismatch++
+	case storage.StatusOutOfSync:
+		counts.OutOfSync++
 	case storage.StatusMissing:
 		counts.Missing++
 	case storage.StatusWanted:
@@ -1120,8 +1120,8 @@ func incrStateCount(dst *ShowStateCounts, status storage.Status) {
 	switch status {
 	case storage.StatusSynced:
 		dst.Synced++
-	case storage.StatusFormatMismatch:
-		dst.FormatMismatch++
+	case storage.StatusOutOfSync:
+		dst.OutOfSync++
 	case storage.StatusMissing:
 		dst.Missing++
 	case storage.StatusWanted:

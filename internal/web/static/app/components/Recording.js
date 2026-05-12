@@ -16,7 +16,7 @@
 //      by a typed-confirmation prompt (window.prompt, matching legacy)
 //
 // Status taxonomy (lowercase, identical to Library.js):
-//   synced / format_mismatch / missing / wanted / orphan
+//   synced / out_of_sync / missing / wanted / orphan
 // Status comes from the server's Recording.status GraphQL field (same
 // storage.ComputeStatus result the list page uses) so the badge here
 // always agrees with the list-page badge.
@@ -56,7 +56,7 @@ import RecordingRenameModal, {
 // consistent across pages.
 const STATUS_META = {
   synced:          { label: 'Synced',          badge: 'badge-success' },
-  format_mismatch: { label: 'Format mismatch', badge: 'badge-warning' },
+  out_of_sync: { label: 'Out of sync', badge: 'badge-warning' },
   missing:         { label: 'Missing',         badge: 'badge-error' },
   wanted:          { label: 'Wanted',          badge: 'badge-info' },
   orphan:          { label: 'Orphan',          badge: 'badge-neutral' },

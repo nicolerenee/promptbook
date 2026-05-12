@@ -20,26 +20,34 @@ type Status string
 // rules that map (file present, in collection, in wants, format match) to
 // one of these.
 const (
-	// StatusSynced means we have at least one file and either (a) the
-	// recording is in the user's Encora collection and our locally-
-	// computed format string matches collection.format, or (b) the
-	// recording is on the wants list but not the collection — the user
-	// owns what they wanted, even if Encora hasn't been told yet.
+	// StatusSynced means the recording is in the user's Encora
+	// collection AND we have a file on disk AND the locally-computed
+	// release format matches collection.format. The "everything's
+	// fine, nothing to do" state.
 	StatusSynced Status = "synced"
-	// StatusFormatMismatch means we have a file and the recording is in
-	// the collection, but our computed format string differs from
-	// collection.format. The user needs to either update Encora or
-	// rescan the local file.
-	StatusFormatMismatch Status = "format_mismatch"
+	// StatusOutOfSync means we have a file on disk but Encora doesn't
+	// reflect it correctly. Covers three subcases:
+	//   (a) recording is in collection but format string differs from
+	//       collection.format (push local format up, or re-encode).
+	//   (b) recording is in wants but NOT in collection (promote to
+	//       collection — the wants list can't carry a release format,
+	//       so "I have it" is not yet visible on Encora's side).
+	//   (c) recording is in neither wants nor collection (the local
+	//       file is unknown to Encora; user can add to collection
+	//       directly or to wants for tracking).
+	// All three need user action to reconcile with Encora.
+	StatusOutOfSync Status = "out_of_sync"
 	// StatusMissing means the recording is in the user's collection but
 	// no file backs it locally.
 	StatusMissing Status = "missing"
 	// StatusWanted means the recording is on the wants list and no file
-	// backs it locally.
+	// backs it locally — the only purely-aspirational state.
 	StatusWanted Status = "wanted"
-	// StatusOrphan means there is a local file for a recording that is
-	// neither in the collection nor on the wants list — typically a
-	// stray import the user hasn't reconciled yet.
+	// StatusOrphan covers the rare metadata-only state: no file, no
+	// collection entry, no wants entry. Usually a recording the
+	// scanner auto-fetched from Encora before the user took any
+	// action. Distinct from OutOfSync because there's no file to be
+	// out of sync about.
 	StatusOrphan Status = "orphan"
 )
 
@@ -65,33 +73,30 @@ type RecordingState struct {
 // prefer the collection-derived states when both apply.
 //
 // The order is:
-//  1. file present + in collection + formats match → Synced
-//  2. file present + in collection + formats differ → FormatMismatch
-//  3. file present + not in collection + not in wants → Orphan
-//  4. in wants + not in collection → Wanted (file presence is
-//     orthogonal: the wants list itself can't carry a release format,
-//     so a file-on-disk-but-only-in-wants recording is NOT "Synced"
-//     in any meaningful sense. The user needs to promote it to the
-//     collection before Synced applies.)
-//  5. no file + in collection → Missing
-//  6. fallback (no file, neither in collection nor wants) → Orphan
+//  1. file + in collection + formats match → Synced
+//  2. file + (in collection with format mismatch OR in wants only
+//     OR neither in collection nor wants) → OutOfSync. The unifying
+//     property is "I have a file and Encora doesn't reflect that
+//     correctly"; the recording detail page picks the right Encora
+//     write per subcase.
+//  3. no file + in collection → Missing
+//  4. no file + in wants → Wanted
+//  5. fallback (no file, no collection, no wants) → Orphan
 func ComputeStatus(s RecordingState) Status {
 	hasFile := s.FileCount > 0
 	switch {
 	case hasFile && s.InCollection && s.EncoraFormat == s.LocalFormat:
 		return StatusSynced
-	case hasFile && s.InCollection:
-		return StatusFormatMismatch
-	case s.InWants && !s.InCollection:
-		return StatusWanted
-	case hasFile && !s.InCollection:
-		return StatusOrphan
-	case !hasFile && s.InCollection:
+	case hasFile:
+		return StatusOutOfSync
+	case s.InCollection:
 		return StatusMissing
+	case s.InWants:
+		return StatusWanted
 	default:
-		// Defensive fallback: no file, no collection, no wants. Shouldn't
-		// happen in practice — there'd be no row to inspect — but treat
-		// it as Orphan so callers always get a defined status.
+		// No file, no collection, no wants — metadata-only ghost.
+		// Typically a recording the scanner auto-fetched from Encora
+		// before the user took any action.
 		return StatusOrphan
 	}
 }

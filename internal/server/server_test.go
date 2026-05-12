@@ -744,7 +744,7 @@ func TestAPIApplyHandlesAddToCollection(t *testing.T) {
 	assert.Contains(t, events[0].Summary, "12345")
 }
 
-func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
+func TestAPIApplyHandlesOutOfSync(t *testing.T) {
 	t.Parallel()
 	srv, db, stub := applyTestServer(t)
 
@@ -761,7 +761,7 @@ func TestAPIApplyHandlesFormatMismatch(t *testing.T) {
 	body, err := json.Marshal(map[string]any{
 		"actions": []map[string]any{
 			{
-				"type":         "format_mismatch",
+				"type":         "out_of_sync",
 				"recording_id": 90100222,
 				"new_format":   localCompose,
 			},
@@ -1019,7 +1019,7 @@ func TestAPIApplyRejectsStaleAction(t *testing.T) {
 		"a stale-action rejection must not produce an encora_push history row")
 }
 
-// TestAPIApplyRejectsTamperedFormat asserts that a FormatMismatch action
+// TestAPIApplyRejectsTamperedFormat asserts that a OutOfSync action
 // whose NewFormat doesn't match the live LocalFormat oracle is refused
 // before the encora client is touched. Without this guard a malicious
 // or stale form could push arbitrary format strings.
@@ -1035,7 +1035,7 @@ func TestAPIApplyRejectsTamperedFormat(t *testing.T) {
 	body, err := json.Marshal(map[string]any{
 		"actions": []map[string]any{
 			{
-				"type":         "format_mismatch",
+				"type":         "out_of_sync",
 				"recording_id": 5151,
 				"new_format":   "MKV 4K",
 			},

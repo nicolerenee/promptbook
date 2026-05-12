@@ -34,7 +34,7 @@ import ImagePickerModal, {
 // consistent across the SPA.
 const STATUS_META = {
   synced:          { label: 'Synced',          badge: 'badge-success' },
-  format_mismatch: { label: 'Format mismatch', badge: 'badge-warning' },
+  out_of_sync: { label: 'Out of sync', badge: 'badge-warning' },
   missing:         { label: 'Missing',         badge: 'badge-error' },
   wanted:          { label: 'Wanted',          badge: 'badge-info' },
   orphan:          { label: 'Orphan',          badge: 'badge-neutral' },
@@ -104,7 +104,7 @@ const SHOW_DETAIL_QUERY = `
       localBannerURL
       stateCounts {
         synced
-        formatMismatch
+        outOfSync
         missing
         wanted
         orphan
@@ -174,7 +174,7 @@ function mapShowDetail(node) {
     local_banner_url: node.localBannerURL || '',
     state_counts: {
       synced:          sc.synced || 0,
-      format_mismatch: sc.formatMismatch || 0,
+      out_of_sync: sc.outOfSync || 0,
       missing:         sc.missing || 0,
       wanted:          sc.wanted || 0,
       orphan:          sc.orphan || 0,
