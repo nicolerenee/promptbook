@@ -42,7 +42,7 @@ func (stubExternalEncoraClient) Subtitles(
 }
 
 func (stubExternalEncoraClient) AddToCollection(
-	context.Context, int64,
+	context.Context, int64, string,
 ) (encora.RateLimitInfo, error) {
 	return encora.RateLimitInfo{Remaining: 30}, nil
 }

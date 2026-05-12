@@ -126,7 +126,7 @@ func (s *stubClient) Subtitles(_ context.Context, _ int64) ([]encora.Subtitle, e
 	return s.subs, encora.RateLimitInfo{Remaining: 30}, nil
 }
 
-func (s *stubClient) AddToCollection(_ context.Context, id int64) (encora.RateLimitInfo, error) {
+func (s *stubClient) AddToCollection(_ context.Context, id int64, _ string) (encora.RateLimitInfo, error) {
 	s.addCalledForIDs = append(s.addCalledForIDs, id)
 	return encora.RateLimitInfo{Remaining: 30}, nil
 }

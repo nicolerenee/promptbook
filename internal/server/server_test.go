@@ -608,6 +608,7 @@ func TestAPIMismatchesFilterByType(t *testing.T) {
 type stubEncoraClient struct {
 	mu                sync.Mutex
 	addCalls          []int64
+	addFormats        []string
 	formatCalls       []stubFormatCall
 	addErr            error
 	formatErr         error
@@ -643,10 +644,11 @@ type stubFormatCall struct {
 	Format string
 }
 
-func (s *stubEncoraClient) AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error) {
+func (s *stubEncoraClient) AddToCollection(ctx context.Context, id int64, format string) (encora.RateLimitInfo, error) {
 	s.mu.Lock()
 	hook := s.onAdd
 	s.addCalls = append(s.addCalls, id)
+	s.addFormats = append(s.addFormats, format)
 	s.observedAddCtxCancelled = append(s.observedAddCtxCancelled, ctx.Err() != nil)
 	var resp stubResponse
 	used := false

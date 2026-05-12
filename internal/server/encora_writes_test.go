@@ -71,7 +71,7 @@ func (s *stubDestructiveClient) AddToWants(
 }
 
 func (s *stubDestructiveClient) AddToCollection(
-	_ context.Context, id int64,
+	_ context.Context, id int64, _ string,
 ) (encora.RateLimitInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

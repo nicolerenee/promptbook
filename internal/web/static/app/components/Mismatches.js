@@ -158,7 +158,12 @@ function onPush() {
       recording_id: it.recording_id,
       new_format: '',
     };
-    if (it.type === 'out_of_sync') {
+    // out_of_sync + add_to_collection both push the local format to
+    // Encora: out_of_sync updates the existing collection.format, and
+    // add_to_collection threads the format through the
+    // `/collection/{id}/collect?format=…` call so the recording lands
+    // in-collection-with-format in one round-trip.
+    if (it.type === 'out_of_sync' || it.type === 'add_to_collection') {
       act.new_format = it.local_format || '';
     }
     actions.push(act);

@@ -182,6 +182,30 @@ func SetCollectionFormat(
 // the recording id has no row in collection_entries.
 var ErrCollectionEntryNotFound = errors.New("storage: collection entry not found")
 
+// UpsertCollectionEntry inserts or updates the collection_entries
+// row for the given recording. Used after a successful "Add to
+// Encora collection" push (the reconciler's AddToCollection apply
+// branch + the recording detail page's standalone Add to Collection
+// action) so the local state mirrors the upstream change without
+// waiting for the next full sync round-trip. Format may be empty
+// when the caller doesn't have a meaningful local format computed
+// yet — the row still lands so InCollection flips to true.
+func UpsertCollectionEntry(
+	ctx context.Context, client *ent.Client, recordingID int64, format string,
+) error {
+	err := client.CollectionEntry.Create().
+		SetID(recordingID).
+		SetFormat(format).
+		OnConflictColumns(collectionentry.FieldID).
+		UpdateNewValues().
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf(
+			"upsert collection_entries for %d: %w", recordingID, err)
+	}
+	return nil
+}
+
 // SetRecordingExternallyManaged flips the recordings.externally_managed
 // flag for the given recording. Used by the ingest pipeline (when an
 // import opted into externally-managed mode) and by the recording

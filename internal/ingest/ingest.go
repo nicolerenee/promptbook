@@ -52,7 +52,7 @@ var VideoExtensions = map[string]struct{}{
 type Client interface {
 	Recording(ctx context.Context, id int64) (encora.Recording, encora.RateLimitInfo, error)
 	Subtitles(ctx context.Context, id int64) ([]encora.Subtitle, encora.RateLimitInfo, error)
-	AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
+	AddToCollection(ctx context.Context, id int64, format string) (encora.RateLimitInfo, error)
 }
 
 // Engine bundles ingest dependencies. One Engine handles many paths.
@@ -980,7 +980,13 @@ func (e *Engine) lookupOrAdd(
 	}
 
 	if opts.AddToCollection {
-		if _, addErr := e.Client.AddToCollection(ctx, id); addErr != nil {
+		// Empty format here — ingest's --add-to-collection flag is the
+		// CLI-only "track this in Encora" hook for one-off imports; the
+		// caller doesn't have the locally-computed format string yet.
+		// The recording-detail / reconciler flows pass the local format
+		// through when they call AddToCollection through the
+		// EncoraDestructiveClient / EncoraWriteClient surfaces.
+		if _, addErr := e.Client.AddToCollection(ctx, id, ""); addErr != nil {
 			return nil, false, fmt.Errorf("add to collection: %w", addErr)
 		}
 	}

@@ -21,7 +21,7 @@ import (
 // (RemoveFromCollection, RemoveFromWants, AddToWants) deliberately stay
 // off the surface so we can't push destructive changes by accident.
 type EncoraWriteClient interface {
-	AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
+	AddToCollection(ctx context.Context, id int64, format string) (encora.RateLimitInfo, error)
 	UpdateCollectionFormat(
 		ctx context.Context, id int64, format string,
 	) (encora.RateLimitInfo, error)
@@ -86,7 +86,13 @@ func buildValidationSet(ctx context.Context, client *ent.Client) (validationResu
 	}
 	for _, item := range items {
 		v.allowed[actionKey{Type: item.Type, ID: item.RecordingID}] = struct{}{}
-		if item.Type == MismatchTypeOutOfSync {
+		// Both out_of_sync and add_to_collection push the local
+		// release format up to Encora (the latter via the
+		// `?format=…` query param on collect). Track LocalFormat
+		// for both types so the validator can anti-tamper-check the
+		// submitted NewFormat.
+		if item.Type == MismatchTypeOutOfSync ||
+			item.Type == MismatchTypeAddToCollection {
 			v.localFormats[item.RecordingID] = item.LocalFormat
 		}
 	}
@@ -106,7 +112,18 @@ func (v validationResult) validate(action ApplyAction) (ApplyResult, bool) {
 			Error:  "action no longer applies — recording state has changed",
 		}, false
 	}
-	if action.Type == MismatchTypeOutOfSync {
+	// out_of_sync + add_to_collection both push the local release
+	// format up — the latter via the `collect?format=…` shortcut.
+	// Anti-tamper: whichever client sent the action must have agreed
+	// with the local format the reconciler computed (the SPA reads
+	// it from the same source the apply path consults). Empty
+	// NewFormat is tolerated on add_to_collection only — covers the
+	// "no versions yet" case where the recording still wants to land
+	// in the collection without a format.
+	pushesFormat := action.Type == MismatchTypeOutOfSync ||
+		action.Type == MismatchTypeAddToCollection
+	allowEmpty := action.Type == MismatchTypeAddToCollection && action.NewFormat == ""
+	if pushesFormat && !allowEmpty {
 		want := v.localFormats[action.RecordingID]
 		if action.NewFormat != want {
 			return ApplyResult{
@@ -147,11 +164,30 @@ func applyOne(
 
 	switch action.Type {
 	case MismatchTypeAddToCollection:
-		rl, err := client.AddToCollection(ctx, action.RecordingID)
+		// Encora's /collection/{id}/collect endpoint accepts a
+		// `?format=...` query parameter so the recording lands in
+		// the collection AND carries its format in one round-trip.
+		// Combining the two halves means the user doesn't have to
+		// follow up with a separate format push — that was the
+		// behaviour pre-fix, and it left every newly-promoted
+		// recording sitting in collection with an empty format.
+		rl, err := client.AddToCollection(
+			ctx, action.RecordingID, action.NewFormat,
+		)
 		if err != nil {
 			res.Error, res.HTTPStatus = describeEncoraError(err)
 			recordRateLimitBudget(err, rl, sleepBudget)
 			return res
+		}
+		// Mirror the upstream change into local state so the
+		// reconciler flips the recording from OutOfSync → Synced on
+		// the next state computation without waiting for a full
+		// collection sync. Local-write failures here log + don't
+		// fail the operation — the encora push already succeeded.
+		if localErr := storage.UpsertCollectionEntry(
+			ctx, db, action.RecordingID, action.NewFormat,
+		); localErr != nil {
+			_ = localErr
 		}
 		recordEncoraPush(ctx, db,
 			fmt.Sprintf("Added recording %d to Encora collection", action.RecordingID),

@@ -159,11 +159,28 @@ func (c *Client) Screenshots(ctx context.Context, id int64) ([]string, RateLimit
 	return urls, rl, err
 }
 
-// AddToCollection POSTs to /collection/{id}/collect. The plan run defers
-// real exercise of this endpoint; it exists so library ingest can wire
-// --add-to-collection against a mock client.
-func (c *Client) AddToCollection(ctx context.Context, id int64) (RateLimitInfo, error) {
-	return c.do(ctx, http.MethodPost, fmt.Sprintf("collection/%d/collect", id), nil)
+// AddToCollection POSTs to /collection/{id}/collect, optionally
+// setting the release format in the same call via the API's
+// `?format=...` query parameter. Combining the two halves means the
+// recording lands in the user's collection AND carries the right
+// format string in a single round-trip, avoiding the "in collection
+// but format empty" transient state the two-step flow produced.
+//
+// An empty format string omits the query parameter — Encora records
+// the recording as collected without a format, which is the legacy
+// behaviour we keep for callers that don't have a meaningful format
+// to push (orphan-with-file imports where the local format hasn't
+// been computed yet).
+func (c *Client) AddToCollection(
+	ctx context.Context, id int64, format string,
+) (RateLimitInfo, error) {
+	u := *c.baseURL
+	u.Path = fmt.Sprintf("/api/collection/%d/collect", id)
+	if format != "" {
+		return c.doAbsolute(ctx, http.MethodPost,
+			u.String()+"?format="+url.QueryEscape(format), nil)
+	}
+	return c.doAbsolute(ctx, http.MethodPost, u.String(), nil)
 }
 
 // UpdateCollectionFormat POSTs to /collection/{id}/format/{format}. The

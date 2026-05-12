@@ -26,7 +26,7 @@ type EncoraDestructiveClient interface {
 	RemoveFromCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
 	RemoveFromWants(ctx context.Context, id int64) (encora.RateLimitInfo, error)
 	AddToWants(ctx context.Context, id int64) (encora.RateLimitInfo, error)
-	AddToCollection(ctx context.Context, id int64) (encora.RateLimitInfo, error)
+	AddToCollection(ctx context.Context, id int64, format string) (encora.RateLimitInfo, error)
 }
 
 // recordingIDDetail is the detail-map key the destructive endpoints (and
@@ -203,10 +203,22 @@ func (s *Server) handleRemoveFromWants(c echo.Context) error {
 // endpoint moves it (server-side) to the collection — promptbook
 // doesn't need to issue a separate wants-remove.
 //
-// Use case: a recording was on the user's wants list, they traded for
-// it offline, ingested the files locally, and now want to officially
-// move it into their Encora collection. The recording detail page
-// surfaces this action when InWants && !InCollection && hasFile.
+// Reads the recording's local release format and passes it through
+// to Encora in the same `collect` call, so the recording lands in
+// the collection AND carries its format in one round-trip. Avoids
+// the "in collection but format empty" transient that drove a
+// follow-up format-push every time the user added a recording.
+//
+// On success the local collection_entries row is upserted so the
+// state computation flips InCollection=true without waiting for the
+// next full sync. Local-write failures are non-fatal — the upstream
+// push is the source-of-truth action.
+//
+// Use case: a recording was on the user's wants list, they traded
+// for it offline, ingested the files locally, and now want to
+// officially move it into their Encora collection. The recording
+// detail page surfaces this action when InWants && !InCollection &&
+// hasFile.
 func (s *Server) handleAddToCollection(c echo.Context) error {
 	id, err := parseRecordingIDParam(c)
 	if err != nil {
@@ -217,7 +229,8 @@ func (s *Server) handleAddToCollection(c echo.Context) error {
 		return err
 	}
 
-	m, err := loadRecordingMembership(c.Request().Context(), s.db, id)
+	ctx := c.Request().Context()
+	m, err := loadRecordingMembership(ctx, s.db, id)
 	if err != nil {
 		return err
 	}
@@ -227,13 +240,39 @@ func (s *Server) handleAddToCollection(c echo.Context) error {
 		})
 	}
 
-	return s.callDestructive(c, id,
+	// Compute the local format from the recording's versions so the
+	// add-to-collection call also sets the right release format
+	// upstream. Empty format is OK (no versions yet) — the row
+	// still lands and the user can push the format later.
+	localFormat := computeLocalFormat(ctx, s.db, id)
+
+	resp := s.callDestructive(c, id,
 		"add_to_collection",
 		fmt.Sprintf("Added recording %d to Encora collection", id),
-		func(ctx context.Context) (encora.RateLimitInfo, error) {
-			return client.AddToCollection(ctx, id)
+		func(callCtx context.Context) (encora.RateLimitInfo, error) {
+			return client.AddToCollection(callCtx, id, localFormat)
 		},
 	)
+	// Mirror the upstream change locally so the SPA's next read
+	// reflects InCollection=true. Failure here is non-fatal: the
+	// encora push already succeeded.
+	if upsertErr := storage.UpsertCollectionEntry(
+		c.Request().Context(), s.db, id, localFormat,
+	); upsertErr != nil {
+		_ = upsertErr
+	}
+	return resp
+}
+
+// computeLocalFormat reads the recording's versions and renders the
+// canonical release format string. Returns "" on any error or when
+// no versions exist — callers treat that as "no format to push".
+func computeLocalFormat(ctx context.Context, db *ent.Client, id int64) string {
+	versions, err := storage.ListVersions(ctx, db, id)
+	if err != nil || len(versions) == 0 {
+		return ""
+	}
+	return storage.ComputeFormatString(versions)
 }
 
 // handleAddToWants handles POST /api/v1/encora/wants/:id/add. Rejects
