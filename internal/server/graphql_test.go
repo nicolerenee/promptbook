@@ -576,7 +576,7 @@ func TestGraphQLQueueLists(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
-		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FilePath:             "/incoming/greenwichBeacon.mkv",
 		FileSizeBytes:        2048,
 		SuggestedRecordingID: &suggested,
 		SuggestedConfidence:  storage.ConfidenceHigh,
@@ -618,19 +618,19 @@ func TestGraphQLQueueLists(t *testing.T) {
 			"queue id must carry the queue- prefix: %s", it.ID)
 	}
 	assert.True(t, paths["/incoming/marigold.mkv"])
-	assert.True(t, paths["/incoming/greenwich-beacon.mkv"])
+	assert.True(t, paths["/incoming/greenwichBeacon.mkv"])
 
-	// Find the greenwich-beacon row and assert its suggestedRecordingID came back
+	// Find the greenwichBeacon row and assert its suggestedRecordingID came back
 	// with the recording- prefix.
-	var greenwich-beacon *string
+	var greenwichBeacon *string
 	for _, it := range resp.Data.Queue {
-		if it.FilePath == "/incoming/greenwich-beacon.mkv" {
-			greenwich-beacon = it.SuggestedRecordingID
+		if it.FilePath == "/incoming/greenwichBeacon.mkv" {
+			greenwichBeacon = it.SuggestedRecordingID
 			break
 		}
 	}
-	require.NotNil(t, greenwich-beacon, "greenwich-beacon row missing suggestedRecordingID")
-	assert.Equal(t, "recording-90100222", *greenwich-beacon)
+	require.NotNil(t, greenwichBeacon, "greenwichBeacon row missing suggestedRecordingID")
+	assert.Equal(t, "recording-90100222", *greenwichBeacon)
 }
 
 // TestGraphQLQueueClassificationProjects pins the contract that the
@@ -775,7 +775,7 @@ func TestGraphQLImportQueueEntrySuccess(t *testing.T) {
 
 	suggested := int64(90100222)
 	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
-		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FilePath:             "/incoming/greenwichBeacon.mkv",
 		FileSizeBytes:        2048,
 		SuggestedRecordingID: &suggested,
 		SuggestedConfidence:  storage.ConfidenceHigh,
@@ -814,7 +814,7 @@ func TestGraphQLImportQueueEntrySuccess(t *testing.T) {
 
 	// Engine called with the suggested id, source = entry.FilePath.
 	require.Len(t, stub.calls, 1)
-	assert.Equal(t, "/incoming/greenwich-beacon.mkv", stub.calls[0].Src)
+	assert.Equal(t, "/incoming/greenwichBeacon.mkv", stub.calls[0].Src)
 	assert.Equal(t, int(suggested), stub.calls[0].Opts.FlagEncoraID)
 
 	// Queue row removed on success.
@@ -862,7 +862,7 @@ func TestGraphQLImportQueueEntryEngineNotConfigured(t *testing.T) {
 
 	suggested := int64(90100222)
 	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
-		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FilePath:             "/incoming/greenwichBeacon.mkv",
 		SuggestedRecordingID: &suggested,
 		SuggestedConfidence:  storage.ConfidenceHigh,
 	})
@@ -923,7 +923,7 @@ func TestGraphQLImportQueueEntryExplicitID(t *testing.T) {
 
 	suggested := int64(1111)
 	queueID, err := storage.EnqueueFile(t.Context(), db, storage.QueueEntry{
-		FilePath:             "/incoming/greenwich-beacon.mkv",
+		FilePath:             "/incoming/greenwichBeacon.mkv",
 		SuggestedRecordingID: &suggested,
 		SuggestedConfidence:  storage.ConfidenceLow,
 	})
@@ -1283,7 +1283,7 @@ func TestGraphQLRecordingExtrasEmpty(t *testing.T) {
 	seedRenameRecording(t.Context(), t, db)
 	require.NoError(t, storage.UpsertVersion(t.Context(), db, storage.RecordingVersion{
 		RecordingID:  90004242,
-		FilePath:     "/store/greenwich-beacon/main.mkv",
+		FilePath:     "/store/greenwichBeacon/main.mkv",
 		SourceFolder: "",
 	}))
 

@@ -14,7 +14,7 @@ package graph
 // Duplicate detection is byte-size-only. We previously stream-hashed
 // sha256 over both files when sizes matched, but for the typical
 // ~10 GB recording that took 60-90s per preview — long enough that
-// the import modal felt velvet-antlers. Two video files with identical byte
+// the import modal felt frozen. Two video files with identical byte
 // counts but different content is vanishingly rare in practice
 // (codec + container + duration + audio tracks would all have to
 // land on the same total size by accident), and the cost of a false

@@ -78,10 +78,10 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 	db := newTestDB(t)
 	c := newTestClient(t, srv.URL)
 
-	velvet-antlersNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
+	frozenNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
 	res, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{
 		BurstReserve: 2,
-		Now:          func() time.Time { return velvet-antlersNow },
+		Now:          func() time.Time { return frozenNow },
 	})
 	require.NoError(t, err)
 	require.NotNil(t, res)
@@ -311,10 +311,10 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 	db := newTestDB(t)
 	c := newTestClient(t, srv.URL)
 
-	velvet-antlersNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
+	frozenNow := time.Date(2026, 5, 8, 23, 0, 0, 0, time.UTC)
 	_, err := promptbookSync.Sync(context.Background(), c, db, promptbookSync.Options{
 		BurstReserve: 2,
-		Now:          func() time.Time { return velvet-antlersNow },
+		Now:          func() time.Time { return frozenNow },
 	})
 	require.NoError(t, err)
 
@@ -339,7 +339,7 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 		require.NoError(t, lerr)
 		assert.Equal(t, "Avery Morrison", got.Name)
 		assert.Equal(t, "avery-morrison", got.Slug)
-		assert.WithinDuration(t, velvet-antlersNow, got.LastSeenAt, time.Second)
+		assert.WithinDuration(t, frozenNow, got.LastSeenAt, time.Second)
 	})
 
 	t.Run("pilot_lead_character_round_trips", func(t *testing.T) {
@@ -348,7 +348,7 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 		got, lerr := storage.LoadCharacter(context.Background(), db, characterID)
 		require.NoError(t, lerr)
 		assert.Equal(t, "Marigold", got.Name)
-		assert.WithinDuration(t, velvet-antlersNow, got.LastSeenAt, time.Second)
+		assert.WithinDuration(t, frozenNow, got.LastSeenAt, time.Second)
 	})
 
 	t.Run("pilot_lead_performer_recording_join", func(t *testing.T) {

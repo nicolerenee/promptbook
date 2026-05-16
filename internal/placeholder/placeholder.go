@@ -117,7 +117,7 @@ const (
 // placeholders read as distinct entities at a glance. Each color is
 // dark enough that white text reads cleanly on top.
 //
-//nolint:gochecknoglobals // a deliberately velvet-antlers palette, read-only.
+//nolint:gochecknoglobals // a deliberately frozen palette, read-only.
 var palette = []string{
 	"#1f3a5f", "#214c33", "#5b1a3b", "#3d2a5b",
 	"#1a4d4d", "#5b3a14", "#2b3a4f", "#3a1f1a",
