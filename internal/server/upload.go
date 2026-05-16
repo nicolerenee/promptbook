@@ -1,0 +1,553 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/labstack/echo/v4"
+
+	"github.com/nicolerenee/promptbook/internal/imagecache"
+	"github.com/nicolerenee/promptbook/internal/storage"
+)
+
+// nfoRefreshTrigger is the small kind enum the fan-out helper switches
+// on. Lifted into a named type so the upload + refresh-job sites
+// both spell the same value.
+type nfoRefreshTrigger int
+
+const (
+	nfoRefreshRecording nfoRefreshTrigger = iota
+	nfoRefreshShow
+	nfoRefreshPerformer
+)
+
+// triggerNFORefresh fires the NFO-rewrite cascade in a background
+// goroutine so the upload-handler call returns immediately. Errors
+// are logged at warn-level — they're never surfaced to the user
+// because a failed rewrite doesn't invalidate the underlying image
+// write that already succeeded. nil receivers and nil services are
+// silent no-ops so callers don't have to guard.
+//
+// The detached context.Background() is deliberate: the rewrite runs
+// off the caller's request lifecycle, so a cancelled request body
+// must not abort the cascade. The image is already on disk; we owe
+// the user the NFO rewrite even if their browser disconnected.
+func (s *Server) triggerNFORefresh(kind nfoRefreshTrigger, id int64) {
+	if s == nil || s.nfoRefresh == nil {
+		return
+	}
+	go func() {
+		ctx := context.Background()
+		var err error
+		switch kind {
+		case nfoRefreshRecording:
+			err = s.nfoRefresh.RewriteForRecording(ctx, id)
+		case nfoRefreshShow:
+			err = s.nfoRefresh.RewriteForShow(ctx, id)
+		case nfoRefreshPerformer:
+			err = s.nfoRefresh.RewriteForPerformer(ctx, id)
+		}
+		if err != nil {
+			s.logger.Warn().
+				Err(err).
+				Int("kind", int(kind)).
+				Int64("id", id).
+				Msg("nforefresh: cascade failed")
+		}
+	}()
+}
+
+// maxUploadBytes caps a single multipart upload. 10 MiB is comfortably
+// above realistic poster + fanart sizes (a 4K JPEG at quality 95 is
+// ~3-4 MB) but tight enough that an oversized client can't OOM the
+// process. Enforced via http.MaxBytesReader BEFORE we read anything
+// into a decoder, so the cap is the real ceiling — not just a
+// post-hoc length check.
+const maxUploadBytes = 10 * 1024 * 1024
+
+// uploadFormField is the multipart field name every upload endpoint
+// expects. Lifted into a constant so handlers + tests agree on the
+// spelling.
+const uploadFormField = "file"
+
+// uploadResponse is the JSON envelope every upload endpoint returns.
+// On success: {ok: true}. On failure: ok=false + a human-readable
+// error.
+type uploadResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// fromURLRequest is the JSON body for the "set from URL" endpoints.
+// The picker UI POSTs the chosen upstream URL; the server downloads
+// it into the canonical slot. Position + ImageRegion are optional
+// per-recording layout overrides set via the picker's preview-tile
+// selectors. They get merged into recording_image_choices.OverlayStyleJSON
+// so the persisted style matches what the user previewed.
+type fromURLRequest struct {
+	URL         string `json:"url"`
+	Position    string `json:"position,omitempty"`
+	ImageRegion string `json:"image_region,omitempty"`
+}
+
+// readUploadBody pulls the "file" form-file out of a multipart request
+// and returns its body reader. The caller must close the returned
+// io.ReadCloser. The request body is wrapped in http.MaxBytesReader
+// before parsing so an oversized payload trips a 400 instead of
+// streaming through the decoder.
+func readUploadBody(c echo.Context) (io.ReadCloser, error) {
+	req := c.Request()
+	req.Body = http.MaxBytesReader(c.Response().Writer, req.Body, maxUploadBytes)
+
+	fh, err := c.FormFile(uploadFormField)
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("read upload: %s", err.Error()))
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return nil, echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("open upload: %s", err.Error()))
+	}
+	return f, nil
+}
+
+// mapUploadError turns a SaveUploaded* / Fetch* error into a JSON
+// envelope + HTTP status. Decode failures are the user's fault (400);
+// everything else is a server fault (500).
+func mapUploadError(err error) (int, uploadResponse) {
+	if errors.Is(err, imagecache.ErrDisabled) {
+		return http.StatusServiceUnavailable, uploadResponse{
+			Error: "image cache not configured",
+		}
+	}
+	// SaveUploaded* surfaces decode failures via encodeAsJPEG, which
+	// wraps with "decode image:" inside an "upload: ..." envelope.
+	if err != nil && strings.Contains(err.Error(), "decode image") {
+		return http.StatusBadRequest, uploadResponse{
+			Error: "decode upload: not a recognised image (PNG/JPEG/GIF only)",
+		}
+	}
+	return http.StatusInternalServerError, uploadResponse{
+		Error: err.Error(),
+	}
+}
+
+// handleUploadRecordingFanart handles POST
+// /api/v1/recordings/:id/fanart-upload. Multipart "file" field is the
+// upload payload (10 MiB cap). The bytes are decoded + re-encoded as
+// JPEG and written to recordings/<id>/fanart.jpg.
+func (s *Server) handleUploadRecordingFanart(c echo.Context) error {
+	id, err := parseRecordingIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.recordingExists(c, id); existsErr != nil {
+		return existsErr
+	}
+
+	body, err := readUploadBody(c)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+
+	if saveErr := s.ImageCache().SaveUploadedRecordingFanart(
+		c.Request().Context(), id, body); saveErr != nil {
+		status, resp := mapUploadError(saveErr)
+		return c.JSON(status, resp)
+	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// handleUploadRecordingPoster handles POST
+// /api/v1/recordings/:id/poster-upload. The bytes are written to
+// poster-src.jpg (the renderer's input) and an immediate Regenerate
+// produces poster.jpg with the burned-in overlay.
+func (s *Server) handleUploadRecordingPoster(c echo.Context) error {
+	id, err := parseRecordingIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.recordingExists(c, id); existsErr != nil {
+		return existsErr
+	}
+
+	body, err := readUploadBody(c)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+
+	if saveErr := s.ImageCache().SaveUploadedRecordingPosterSrc(
+		c.Request().Context(), id, body); saveErr != nil {
+		status, resp := mapUploadError(saveErr)
+		return c.JSON(status, resp)
+	}
+	if r := s.ImageRenderer(); r != nil {
+		if rerr := r.Regenerate(c.Request().Context(), id); rerr != nil {
+			s.logger.Warn().
+				Err(rerr).
+				Int64("recording_id", id).
+				Msg("poster-upload: regenerate failed; poster-src is on disk")
+		}
+	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// handleUploadShowBanner handles POST /api/v1/shows/:id/banner-upload.
+// Writes the upload to shows/<id>/banner.jpg.
+func (s *Server) handleUploadShowBanner(c echo.Context) error {
+	showID, err := parseShowIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+
+	body, err := readUploadBody(c)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+
+	if saveErr := s.ImageCache().SaveUploadedShowBanner(
+		c.Request().Context(), showID, body); saveErr != nil {
+		status, resp := mapUploadError(saveErr)
+		return c.JSON(status, resp)
+	}
+	s.triggerNFORefresh(nfoRefreshShow, showID)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// handleUploadActorHeadshot handles POST
+// /api/v1/actors/:id/headshot-upload. New under v2 — the previous
+// cache layout had no actor-upload affordance.
+func (s *Server) handleUploadActorHeadshot(c echo.Context) error {
+	actorID, err := parseActorIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+
+	body, err := readUploadBody(c)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+
+	if saveErr := s.ImageCache().SaveUploadedHeadshot(
+		c.Request().Context(), actorID, body); saveErr != nil {
+		status, resp := mapUploadError(saveErr)
+		return c.JSON(status, resp)
+	}
+	s.triggerNFORefresh(nfoRefreshPerformer, actorID)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// handleSetRecordingFanartFromURL handles POST
+// /api/v1/recordings/:id/fanart-from-url. Body: {url: "..."}. The
+// server downloads the URL into recordings/<id>/fanart.jpg (atomic).
+// The existing slot is removed first so the picker's "set this URL"
+// always lands fresh bytes (FetchRecordingFanart is idempotent on
+// existing files and would otherwise short-circuit the download).
+//
+// Same-origin frame-extract URLs (the fanart-fallback path) are
+// handled directly off disk instead of going through the HTTP
+// fetcher — those URLs are relative paths the cache itself wrote,
+// no remote round-trip is appropriate. After a successful copy the
+// frames cache is cleared (the chosen frame is now in fanart.jpg;
+// the rest are no longer useful).
+func (s *Server) handleSetRecordingFanartFromURL(c echo.Context) error {
+	id, err := parseRecordingIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.recordingExists(c, id); existsErr != nil {
+		return existsErr
+	}
+	url, parseErr := parseFromURL(c)
+	if parseErr != nil {
+		return parseErr
+	}
+
+	// Same-origin frame-extract path: copy from the cache directory
+	// straight into the fanart slot, then scrub the frames cache.
+	if framePath, ok := s.fanartFrameSourcePath(id, url); ok {
+		if copyErr := copyFileAtomic(
+			framePath, s.ImageCache().RecordingFanartPath(id),
+		); copyErr != nil {
+			return c.JSON(http.StatusInternalServerError, uploadResponse{
+				Error: copyErr.Error(),
+			})
+		}
+		if clearErr := s.ImageCache().ClearFrames(id); clearErr != nil {
+			s.logger.Warn().
+				Err(clearErr).
+				Int64("recording_id", id).
+				Msg("fanart-from-url: clear frames cache failed")
+		}
+		s.triggerNFORefresh(nfoRefreshRecording, id)
+		return c.JSON(http.StatusOK, uploadResponse{OK: true})
+	}
+
+	_ = removeIfExists(s.ImageCache().RecordingFanartPath(id))
+	if _, fetchErr := s.ImageCache().FetchRecordingFanart(
+		c.Request().Context(), id, url); fetchErr != nil {
+		status, resp := mapUploadError(fetchErr)
+		return c.JSON(status, resp)
+	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// fanartFrameSourcePath maps a same-origin frame URL of the form
+// /images/frames/recordings/<id>/<idx>.jpg back to its disk path.
+// Returns ok=false for any URL that isn't this exact shape, or whose
+// recording id doesn't match the request's recording (defends
+// against a malicious client trying to escape its slot via a
+// crafted URL — the picker only ever produces a same-id URL on the
+// happy path).
+func (s *Server) fanartFrameSourcePath(
+	recordingID int64, url string,
+) (string, bool) {
+	const prefix = "/images/"
+	if !strings.HasPrefix(url, prefix) {
+		return "", false
+	}
+	rel := strings.TrimPrefix(url, prefix)
+	urlRecID, idx, ok := parseFrameImagePath("/" + rel)
+	if !ok || urlRecID != recordingID {
+		return "", false
+	}
+	if s.imageCache == nil || s.imageCache.Disabled() {
+		return "", false
+	}
+	framePath := s.imageCache.FramePath(recordingID, idx)
+	if framePath == "" {
+		return "", false
+	}
+	info, statErr := os.Stat(framePath)
+	if statErr != nil || info.IsDir() {
+		return "", false
+	}
+	return framePath, true
+}
+
+// copyFileAtomic copies src to dst via a sibling .tmp + rename so
+// the destination file is never half-written. Mirrors
+// imagecache.writeAtomic's pattern. The parent directory is
+// created if it doesn't exist.
+func copyFileAtomic(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open frame source %s: %w", src, err)
+	}
+	defer func() { _ = in.Close() }()
+	if mkErr := os.MkdirAll(filepath.Dir(dst), 0o750); mkErr != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), mkErr)
+	}
+	tmp := dst + ".tmp"
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	if _, copyErr := io.Copy(out, in); copyErr != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("copy frame %s -> %s: %w", src, tmp, copyErr)
+	}
+	if closeErr := out.Close(); closeErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close %s: %w", tmp, closeErr)
+	}
+	if renameErr := os.Rename(tmp, dst); renameErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename %s -> %s: %w", tmp, dst, renameErr)
+	}
+	return nil
+}
+
+// handleSetRecordingPosterFromURL downloads the URL into poster-src.jpg
+// and triggers a render so poster.jpg refreshes against the new source.
+// When the client supplies position / image_region in the JSON body
+// they're persisted into the recording's OverlayStyleJSON before the
+// render runs, so the saved poster matches what the picker preview
+// showed.
+func (s *Server) handleSetRecordingPosterFromURL(c echo.Context) error {
+	id, err := parseRecordingIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.recordingExists(c, id); existsErr != nil {
+		return existsErr
+	}
+	req, parseErr := parseFromURLRequest(c)
+	if parseErr != nil {
+		return parseErr
+	}
+	if persistErr := s.persistBannerLayout(
+		c.Request().Context(), id, req.Position, req.ImageRegion,
+	); persistErr != nil {
+		s.logger.Warn().Err(persistErr).Int64("recording_id", id).
+			Msg("poster-from-url: persist banner layout failed")
+		return c.JSON(http.StatusInternalServerError,
+			uploadResponse{Error: persistErr.Error()})
+	}
+	_ = removeIfExists(s.ImageCache().RecordingPosterSrcPath(id))
+	_ = removeIfExists(s.ImageCache().RecordingPosterPath(id))
+	if _, fetchErr := s.ImageCache().FetchRecordingPosterSrc(
+		c.Request().Context(), id, req.URL); fetchErr != nil {
+		status, resp := mapUploadError(fetchErr)
+		return c.JSON(status, resp)
+	}
+	if r := s.ImageRenderer(); r != nil {
+		if rerr := r.Regenerate(c.Request().Context(), id); rerr != nil {
+			s.logger.Warn().
+				Err(rerr).
+				Int64("recording_id", id).
+				Msg("poster-from-url: regenerate failed")
+		}
+	}
+	s.triggerNFORefresh(nfoRefreshRecording, id)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// handleSetShowBannerFromURL downloads the URL into the show's banner
+// slot.
+func (s *Server) handleSetShowBannerFromURL(c echo.Context) error {
+	showID, err := parseShowIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	if existsErr := s.showExists(c.Request().Context(), showID); existsErr != nil {
+		return existsErr
+	}
+	url, parseErr := parseFromURL(c)
+	if parseErr != nil {
+		return parseErr
+	}
+	_ = removeIfExists(s.ImageCache().ShowBannerPath(showID))
+	if _, fetchErr := s.ImageCache().FetchShowBanner(
+		c.Request().Context(), showID, url); fetchErr != nil {
+		status, resp := mapUploadError(fetchErr)
+		return c.JSON(status, resp)
+	}
+	s.triggerNFORefresh(nfoRefreshShow, showID)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// handleSetActorHeadshotFromURL downloads the URL into the actor's
+// headshot slot.
+func (s *Server) handleSetActorHeadshotFromURL(c echo.Context) error {
+	actorID, err := parseActorIDParam(c)
+	if err != nil {
+		return err
+	}
+	if cacheErr := s.requireImageCache(); cacheErr != nil {
+		return cacheErr
+	}
+	url, parseErr := parseFromURL(c)
+	if parseErr != nil {
+		return parseErr
+	}
+	_ = removeIfExists(s.ImageCache().HeadshotPath(actorID))
+	if _, fetchErr := s.ImageCache().FetchHeadshot(
+		c.Request().Context(), actorID, url); fetchErr != nil {
+		status, resp := mapUploadError(fetchErr)
+		return c.JSON(status, resp)
+	}
+	s.triggerNFORefresh(nfoRefreshPerformer, actorID)
+	return c.JSON(http.StatusOK, uploadResponse{OK: true})
+}
+
+// parseFromURL pulls the URL field off the JSON body and rejects empty
+// values with a 400.
+func parseFromURL(c echo.Context) (string, error) {
+	req, err := parseFromURLRequest(c)
+	if err != nil {
+		return "", err
+	}
+	return req.URL, nil
+}
+
+// parseFromURLRequest decodes the full from-URL JSON envelope so
+// callers that care about the optional position + image_region
+// fields can read them. Trims whitespace and rejects empty URL.
+func parseFromURLRequest(c echo.Context) (fromURLRequest, error) {
+	var req fromURLRequest
+	if err := c.Bind(&req); err != nil {
+		return fromURLRequest{}, echo.NewHTTPError(http.StatusBadRequest,
+			fmt.Sprintf("decode body: %s", err.Error()))
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		return fromURLRequest{}, echo.NewHTTPError(
+			http.StatusBadRequest, "url is required")
+	}
+	req.Position = strings.TrimSpace(req.Position)
+	req.ImageRegion = strings.TrimSpace(req.ImageRegion)
+	return req, nil
+}
+
+// parseShowIDParam extracts and validates the show_id path parameter.
+func parseShowIDParam(c echo.Context) (int64, error) {
+	id, err := storage.ParseRecordingID(c.Param("id"))
+	if err != nil {
+		return 0, echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return id, nil
+}
+
+// parseActorIDParam extracts and validates the actor_id path parameter.
+// Rejects non-positive ids with a 400.
+func parseActorIDParam(c echo.Context) (int64, error) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		return 0, echo.NewHTTPError(http.StatusBadRequest,
+			"invalid actor id")
+	}
+	return id, nil
+}
+
+// removeIfExists removes path, ignoring os.ErrNotExist. Other errors
+// propagate. Used by the from-url endpoints to clear an existing slot
+// so the next FetchX call lands the new bytes (FetchX is idempotent
+// on existing files).
+func removeIfExists(path string) error {
+	if path == "" {
+		return nil
+	}
+	err := os.Remove(path)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}

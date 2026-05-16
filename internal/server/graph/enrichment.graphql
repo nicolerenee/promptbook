@@ -1,0 +1,716 @@
+# enrichment.graphql — server-side derived fields layered on top of
+# the entgql-generated schema.
+#
+# entgql owns ent.graphql; that file is regenerated every codegen run
+# and any hand-edits get blown away. The fields below either need
+# logic that doesn't live on the ent graph (file-system mtime,
+# reconciler-derived status, image-cache URLs) or shape that doesn't
+# round-trip cleanly through ent's "field on a column" model
+# (BannerLayout's parsed-from-JSON struct, the per-status histogram
+# on Show).
+#
+# All resolvers live in enrichment.resolvers.go. The fields are added
+# to the existing ent types via `extend type` so the connection +
+# where-input plumbing entgql produced for those types still works.
+
+# BannerLayout is the parsed-from-OverlayStyleJSON shape the recording
+# detail page consumes. Mirrors bannerLayoutResponse from the legacy
+# REST endpoint. Both fields default to empty string when nothing is
+# persisted; the SPA falls back to "bottom" / "middle" defaults.
+type BannerLayout {
+  position: String!
+  imageRegion: String!
+}
+
+# ShowStateCounts is the per-status histogram a Show carries. The five
+# Status tokens (synced / out_of_sync / missing / wanted / orphan)
+# get one Int! field each so the SPA can render the badge cluster
+# without parsing a map shape.
+type ShowStateCounts {
+  synced: Int!
+  outOfSync: Int!
+  missing: Int!
+  wanted: Int!
+  orphan: Int!
+}
+
+# ResolvedCastEntry is the cast-row shape the Recording detail page
+# needs. Mirrors storage.ResolvedCastEntry but adds the local
+# headshot URL the picker resolves through the image cache. Both id
+# fields are PrefixedID — castEntryID points at the join row,
+# performerID at the canonical performer.
+type ResolvedCastEntry {
+  castEntryID: ID!
+  performerID: ID!
+  performerName: String!
+  performerSlug: String!
+  characterID: ID
+  characterName: String
+  statusLabel: String
+  statusAbbrev: String
+  characterOrder: Int!
+  localHeadshotURL: String!
+}
+
+# AudioStream / SubtitleStream / MediaInfo are the Sonarr-style media
+# info shape the recording detail page renders as a table. Sourced
+# from probe.MediaInfo persisted on the latest recording_versions row
+# (media_info_json blob) at ingest time; legacy versions imported
+# before the field existed have a nil mediaInfo and the SPA hides the
+# card.
+type AudioStream {
+  codec: String!
+  channelLayout: String!
+  bitrate: Int!
+  language: String!
+}
+
+type SubtitleStream {
+  codec: String!
+  language: String!
+}
+
+type MediaInfo {
+  container: String!
+  videoCodec: String!
+  width: Int!
+  height: Int!
+  videoBitDepth: Int!
+  videoFps: Float!
+  durationSeconds: Float!
+  scanType: String!
+  audioStreams: [AudioStream!]!
+  subtitleStreams: [SubtitleStream!]!
+}
+
+# Recording field extensions. status comes from the storage.LoadState
+# reconciler; the URL fields and nfo* fields read from disk through
+# the image cache + filesystem helpers. bannerLayout +
+# overlayTextOverride + overlayDisabled surface the recording's
+# persisted image-choice fields the SPA already keys off of.
+extend type Recording {
+  status: String!
+  localPosterURL: String!
+  localFanartURL: String!
+  nfoContent: String!
+  nfoModifiedAt: Time
+  bannerLayout: BannerLayout!
+  overlayTextOverride: String
+  overlayDisabled: Boolean!
+  resolvedCast: [ResolvedCastEntry!]!
+  # Reconciler-derived booleans + format strings the SPA detail page
+  # uses to drive its danger-zone + format-mismatch surfaces. Sourced
+  # from the same storage.LoadState reconciler that powers `status`
+  # so the values agree across fields.
+  inCollection: Boolean!
+  inWants: Boolean!
+  encoraFormat: String!
+  localFormatString: String!
+  collectedAt: String
+  # mediaInfo is the Sonarr-style probe data captured at ingest time.
+  # Reads the latest recording_versions row's media_info_json blob and
+  # decodes it; nil when there is no version yet or the blob is empty
+  # / unparseable (legacy imports stay nil until they're re-ingested).
+  mediaInfo: MediaInfo
+  # localReleaseFormat is the locally-derived release-format string
+  # built from the recording's versions + their MediaInfo blobs.
+  # Replaces the legacy free-text encora release_format field as the
+  # canonical "what files do you have" display string. Format is
+  # "{Container} - {VideoCodec} / {AudioCodec} - {Quality} - {Size}";
+  # multi-version recordings wrap each version in [...] joined by a
+  # single space, ordered by height descending. Empty string when no
+  # versions are registered. See releaseformat.Compose for details.
+  #
+  # Named with the "local" prefix to match the rest of the
+  # enrichment surface (localFormatString, localPosterURL, ...) and
+  # to avoid colliding with the ent-generated `releaseFormat` Go
+  # field on Recording (which holds encora's raw free-text — kept on
+  # disk but no longer surfaced through GraphQL).
+  localReleaseFormat: String!
+  # extras lists every non-main file in the recording's source_folder
+  # (folder-as-unit drops). Returns [] when the version was a
+  # loose-file import or when the source folder is gone. Read-only
+  # display surface; the SPA renders folders as collapsible tree
+  # nodes.
+  extras: [RecordingExtra!]!
+  # externalIDs lists every third-party provider id attached to the
+  # recording — Encora (back-filled at migration time) plus any
+  # TMDB / IMDB / future-provider ids the importer wrote. The list
+  # is ordered alphabetically by provider for deterministic chip
+  # rendering; the SPA decides whether to reorder by user-facing
+  # priority. Empty when the recording has no rows in external_ids,
+  # which shouldn't happen for synced Encora recordings.
+  externalIDs: [RecordingExternalID!]!
+}
+
+# RecordingExternalID is one chip on the recording detail header.
+# provider is the lowercase provider token; label is the human-
+# readable name ("Encora", "TMDB", "IMDB") the chip body renders;
+# externalID is the raw id (digits for TMDB/Encora, "tt"+digits for
+# IMDB); url is the canonical public web link, or null for an
+# unknown provider.
+type RecordingExternalID {
+  provider: String!
+  label: String!
+  externalID: String!
+  url: String
+}
+
+# RecordingExtra is one row in the Recording.extras list — a non-main
+# file moved into a Jellyfin-shaped subfolder of the recording's
+# canonical folder at ingest time. Phase 1 reads the rows from the
+# `recording_extras` table; legacy folder-walking at read time is
+# replaced. New `kind` + `label` fields surface the typed metadata
+# the modal collected; pre-table imports return empty `kind`/`label`
+# strings.
+type RecordingExtra {
+  # Canonical absolute path of the moved file under the recording's
+  # folder, e.g. "/library/.../featurettes/bows.mp4".
+  path: String!
+  # Display name (file basename) for the SPA's tree renderer.
+  name: String!
+  # File size in bytes; 0 when the on-disk size wasn't captured.
+  sizeBytes: Int!
+  # Always false in phase 1 — directories aren't first-class extras
+  # rows; per-file rows are walked into the canonical layout at
+  # ingest time. Kept on the type for SPA backward compatibility.
+  isDir: Boolean!
+  # Kind is the Jellyfin-style label for the extra: featurette,
+  # scene, behindthescenes, interview, trailer, deletedscenes,
+  # other, audio, or photo. Empty string for legacy rows that
+  # pre-date the typed table.
+  kind: String!
+  # Optional user-supplied display label (e.g. "Bows — Baker /
+  # Marinerage"). Empty when no label was set; the SPA falls back to
+  # the file name.
+  label: String!
+}
+
+# Show field extensions. localBannerURL + recordingCount + stateCounts
+# match the legacy ShowDetailResponse fields; firstYear / lastYear
+# span the show's recordings so the detail header reads "2017 — 2024".
+# description is sourced from the first non-empty
+# show_description across the show's recordings (mirrors the REST
+# loadShowDescription helper).
+extend type Show {
+  localBannerURL: String!
+  recordingCount: Int!
+  stateCounts: ShowStateCounts!
+  firstYear: Int
+  lastYear: Int
+  description: String!
+}
+
+# Performer field extensions. localHeadshotURL is the only enrichment
+# the people pages need — performer.recordings is already exposed via
+# the entgql-generated edge.
+extend type Performer {
+  localHeadshotURL: String!
+}
+
+# RecordingsListItem mirrors the REST RecordingListItem shape — the
+# fields the SPA's recordings list needs to render rows (show name,
+# date, tour, master, status, format). Sourced through storage's
+# reconciler so the by-status filter agrees with the per-recording
+# Status field. Distinct from `Recording` (the ent type) because the
+# list page needs a flatter shape than the full node — show name + the
+# reconciler-derived status flatten across into a single struct so
+# the SPA template doesn't have to chase edges per row.
+type RecordingsListItem {
+  id: ID!
+  showID: ID!
+  show: String!
+  tour: String!
+  dateFull: String!
+  dateMonthKnown: Boolean!
+  dateDayKnown: Boolean!
+  # dateVariant is the encora date_variant disambiguator (e.g. "1",
+  # "4") that distinguishes recordings sharing the same calendar day
+  # — typically matinee/evening pairs. Null when the recording has no
+  # variant flag. Frontend renderers append it as " (N)" when set.
+  dateVariant: String
+  master: String!
+  status: String!
+  inCollection: Boolean!
+  inWants: Boolean!
+  fileCount: Int!
+  encoraFormat: String!
+  localFormat: String!
+  # localReleaseFormat is the same locally-derived release-format
+  # string Recording.localReleaseFormat surfaces, denormalized onto
+  # the list-row shape so the recordings table can render it
+  # without per-row follow-up queries. Same format spec — see
+  # releaseformat.Compose. Empty when no versions are registered.
+  localReleaseFormat: String!
+  localPosterURL: String!
+}
+
+# RecordingsListPage is the offset-paginated envelope the SPA list
+# pages expect (mirrors the REST { items, total, limit, offset }
+# shape). Stays flat rather than wrapping in a Relay connection
+# because the page UX is fundamentally page-N-of-M; cursor-based
+# pagination doesn't help when the user clicks "Page 7" directly.
+type RecordingsListPage {
+  items: [RecordingsListItem!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+# ShowsListItem mirrors the REST ShowListItem shape — same flatten
+# rationale as RecordingsListItem. stateCounts surfaces the per-show
+# status histogram the SPA renders as a badge cluster.
+type ShowsListItem {
+  id: ID!
+  name: String!
+  recordingCount: Int!
+  stateCounts: ShowStateCounts!
+  firstYear: Int
+  lastYear: Int
+  localPosterURL: String!
+}
+
+type ShowsListPage {
+  items: [ShowsListItem!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+# DVDTitle is one entry in a DVD's title set as seen by makemkvcon.
+# Surfaced to the SPA's remux picker so the user can decide which
+# titles to convert (typically just the main feature, but bonus
+# featurettes and chaptered tracks live alongside).
+type DVDTitle {
+  index:           Int!
+  duration:        Int!         # seconds
+  sizeBytes:       Int!
+  chapters:        Int!
+  sourceFilename:  String!
+  videoCodec:      String!
+  videoResolution: String!
+  audioTracks:     [DVDAudioTrack!]!
+  subtitleTracks:  [DVDSubtitleTrack!]!
+}
+
+# DVDAudioTrack is one audio stream of a DVDTitle. Codec / language /
+# channels come verbatim from the makemkvcon SINFO lines.
+type DVDAudioTrack {
+  index:    Int!
+  codec:    String!
+  language: String!
+  channels: String!
+}
+
+# DVDSubtitleTrack is one subtitle stream of a DVDTitle.
+type DVDSubtitleTrack {
+  index:    Int!
+  language: String!
+}
+
+# RemuxDVDPayload is returned by the remuxDVDTitles mutation. jobRunID
+# is the just-enqueued job_runs.id the SPA can poll on the Jobs page
+# to watch progress.
+type RemuxDVDPayload {
+  jobRunID: Int!
+}
+
+extend type Query {
+  # scanDVDTitles runs makemkvcon's info pass against the recording's
+  # VIDEO_TS folder and returns every title makemkvcon enumerated.
+  # Fast (a few seconds even on a big disc — only the IFO files are
+  # read, not the VOBs themselves). Errors when the recording isn't
+  # a DVD layout, isn't found, or makemkvcon isn't configured.
+  scanDVDTitles(recordingID: ID!): [DVDTitle!]!
+
+  # recordingsList is the offset-paginated, status-aware list query
+  # the SPA's recordings page hits. status is a comma-separated set of
+  # storage.Status tokens (synced / out_of_sync / missing /
+  # wanted / orphan); empty string disables the filter. sort is one of
+  # 'recording' / 'date' / 'master' / 'local_format' / 'status'; dir
+  # is 'asc' / 'desc'. Mirrors the legacy /api/v1/recordings shape so
+  # the SPA layer is a thin wire-format swap.
+  recordingsList(
+    status: String
+    sort: String
+    dir: String
+    limit: Int
+    offset: Int
+  ): RecordingsListPage!
+
+  # showsList is the offset-paginated, sortable by-show aggregate the
+  # SPA's /shows page hits. Mirrors /api/v1/shows.
+  showsList(
+    sort: String
+    dir: String
+    limit: Int
+    offset: Int
+  ): ShowsListPage!
+
+  # peopleList is the offset-paginated by-performer aggregate. Scope
+  # is collection ∪ wants (only performers credited on a recording
+  # the user has or wants surface here). sort is 'name' or 'count';
+  # dir is 'asc' or 'desc'. Mirrors /api/v1/people.
+  peopleList(
+    sort: String
+    dir: String
+    limit: Int
+    offset: Int
+  ): PersonListPage!
+
+  # person returns the full performer detail with their recording
+  # credits + per-recording reconciler state. Mirrors
+  # /api/v1/people/{id}. Returns null when the id doesn't resolve.
+  person(id: ID!): PersonDetail
+}
+
+# PersonListItem mirrors the REST PersonListItem shape — performer
+# header fields plus the per-status histogram so the SPA's badge
+# cluster keeps its existing look.
+type PersonListItem {
+  performerID: ID!
+  name: String!
+  slug: String!
+  recordingCount: Int!
+  stateCounts: ShowStateCounts!
+}
+
+type PersonListPage {
+  items: [PersonListItem!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+# PersonRecording is one credit row on the people-detail page.
+# Mirrors the REST PersonRecording struct exactly so the SPA renderer
+# stays untouched.
+type PersonRecording {
+  id: ID!
+  show: String!
+  tour: String!
+  dateFull: String!
+  dateMonthKnown: Boolean!
+  dateDayKnown: Boolean!
+  # dateVariant is the encora date_variant disambiguator — see
+  # RecordingsListItem.dateVariant. Null when unset.
+  dateVariant: String
+  showID: ID!
+  state: String!
+}
+
+# PersonDetail is the JSON payload for /api/v1/people/{id}. URL is
+# the canonical encora.it link the detail page renders as a sidebar
+# affordance. localHeadshotURL is the image-cache URL — the SPA also
+# falls back to a placeholder if not present.
+type PersonDetail {
+  performerID: ID!
+  name: String!
+  slug: String!
+  url: String!
+  recordings: [PersonRecording!]!
+  localHeadshotURL: String!
+}
+
+# QueueEntry is one row of the manual import queue. Mirrors
+# storage.QueueEntry; the wire id is the prefixed "queue-N" form so
+# the Mithril SPA can route on it without juggling raw int64s.
+# suggestedRecordingID is nullable when the scanner had no candidate.
+# suggestedRecording surfaces the same recording in its rich shape
+# (show name, date, tour, master) so the queue table can render the
+# match summary without a follow-up round-trip; null when
+# suggestedRecordingID is null or the row no longer exists.
+type QueueEntry {
+  id: ID!
+  filePath: String!
+  fileSizeBytes: Int!
+  discoveredAt: Time!
+  lastSeenAt: Time!
+  suggestedRecordingID: ID
+  suggestedRecording: RecordingsListItem
+  suggestedConfidence: String!
+  notes: String!
+  # extrasCount is the number of OTHER media files in the same source
+  # folder when this row represents a folder-as-unit drop. Surfaced so
+  # the SPA can render "+N extras" next to the file path. 0 for loose
+  # files at the watched-dir root.
+  extrasCount: Int!
+  # classification is the scanner's per-file role suggestion for this
+  # folder-as-unit drop. Drives the queue import modal's multi-file
+  # picker so the user can confirm the heuristic or override per-file.
+  # Empty Parts/Extras + Ambiguous=false for legacy rows that pre-date
+  # the classifier or for loose-file entries.
+  classification: QueueClassification!
+}
+
+# QueueClassification is the scanner's per-folder classification —
+# ordered Parts when filename markers indicate multipart, role-tagged
+# Extras for everything else, and an Ambiguous flag for "two similar-
+# sized videos at root, no markers" cases the modal needs to surface
+# to the user.
+#
+# externalIDs are the third-party provider ids (TMDB / IMDB / …) the
+# scanner pulled out of the folder basename — Radarr-managed pro-shot
+# drops carry [tmdbid-N] / {imdb-ttN} markers that map straight onto
+# this list. Empty for plain folders with no tags. The ingest engine
+# persists these into the external_ids table once the recording lands.
+#
+# discFormat marks folders the ingest engine routes through a
+# disc-preserving mover instead of the regular file-template path.
+# Empty for normal folders; "dvd" when the scanner detects a
+# VIDEO_TS layout (DVD rip). The SPA's queue import modal surfaces
+# the value as a small badge next to the "Files in this folder"
+# header so the user sees the layout will be preserved.
+type QueueClassification {
+  parts: [QueueClassifiedFile!]!
+  extras: [QueueClassifiedFile!]!
+  ambiguous: Boolean!
+  externalIDs: [QueueExternalID!]!
+  discFormat: String!
+}
+
+# QueueClassifiedFile is one media file inside a QueueClassification.
+# suggestedKind is one of the assignment kind tokens the
+# importQueueEntry mutation speaks (main / part-N / extra-{kind}).
+# partIndex is 0 for non-parts and >0 for ordered parts.
+type QueueClassifiedFile {
+  path: String!
+  sizeBytes: Int!
+  suggestedKind: String!
+  partIndex: Int!
+}
+
+# QueueExternalID is one parsed-from-folder-name provider id. provider
+# is the lowercase provider token ("tmdb", "imdb"); externalID is the
+# raw wire-format id (digits for TMDB, "tt"+digits for IMDB). url is
+# the canonical public web link for the id, or null when the provider
+# has no known url template.
+type QueueExternalID {
+  provider: String!
+  externalID: String!
+  url: String
+}
+
+extend type Query {
+  # queue returns every row in the manual_import_queue ordered
+  # oldest-first. Empty queue still returns [] so the client can
+  # range over it safely.
+  queue: [QueueEntry!]!
+
+  # searchRecordings is the typeahead source for the queue import
+  # modal. Matches on show name and tour, ranked by simple
+  # substring + position score against the query string.
+  # Empty/short queries return []. Limited to ~25 results — the
+  # dropdown is meant to narrow down, not paginate.
+  searchRecordings(query: String!, limit: Int): [RecordingsListItem!]!
+
+  # previewQueueImport returns the planned destination path for
+  # importing the given queue entry as the given recording. Drives
+  # the filename preview in the queue import modal. Does NOT move
+  # the file; this is purely a Plan-side dry-run.
+  previewQueueImport(input: PreviewQueueImportInput!): ImportPreview!
+
+  # previewRecordingRename returns the planned destination for each
+  # version of the recording under the current library config + rename
+  # templates. Pure dry-run: no files move, no DB writes. Empty list
+  # when the recording has no versions. Per-version planning errors
+  # populate the row's `error` field; other versions still appear.
+  previewRecordingRename(recordingID: ID!): [RenamePreviewItem!]!
+}
+
+# PreviewQueueImportInput drives the previewQueueImport query — the
+# queue row's source path + the chosen target recording. Both ids
+# are prefixed strings (queue-N, recording-N) so the wire format
+# stays consistent with importQueueEntry.
+#
+# externallyManaged, when true, switches the preview into the
+# catalog-only flow: destAbsolute echoes the source path verbatim
+# (the file stays in place) and destExists / isDuplicate stay false
+# (no overwrite check applies — promptbook never moves the file).
+# Default false preserves the legacy preview behaviour for callers
+# that don't know about the option.
+input PreviewQueueImportInput {
+  queueID: ID!
+  recordingID: ID!
+  externallyManaged: Boolean
+}
+
+# RenamePreviewItem is one row in the per-recording rename preview.
+# source is the version's current absolute path; destination is the
+# planned absolute path under the current rename templates. willMove
+# is false when source == destination (file is already canonical).
+# error is populated on a per-row basis when the plan failed for that
+# version (probe error, template error, etc.); other versions still
+# get returned so the modal can show a partial result.
+type RenamePreviewItem {
+  versionID: ID!
+  source: String!
+  destination: String!
+  willMove: Boolean!
+  error: String!
+}
+
+# RenameResultItem is one row in the per-recording apply-rename
+# outcome. moved=true on a successful Apply; false otherwise (with
+# error populated). destination carries the final dest on success or
+# the planned dest on failure so the SPA's result view can still
+# render where the file would have gone. Per-version errors don't
+# abort the batch; the SPA gets a row per version regardless.
+type RenameResultItem {
+  versionID: ID!
+  source: String!
+  destination: String!
+  moved: Boolean!
+  error: String!
+}
+
+# RegenerateNFOResult is the thin wrapper around
+# nforefresh.Service.RewriteForRecording. ok=true on success — the
+# no-version-row case counts as a successful no-op, mirroring the
+# service's own contract. ok=false carries the error message in
+# `error`.
+type RegenerateNFOResult {
+  ok: Boolean!
+  error: String!
+}
+
+# ImportPreview is the planned-destination payload the queue import
+# modal renders as a code block. destAbsolute is the full path
+# (LibraryRoot + folder + file + ext); destFolder + destFile are the
+# split-apart pieces in case the UI wants to render them separately.
+#
+# destExists / isSameFile / isDuplicate surface a destination-conflict
+# check the modal renders so the user isn't silently overwriting an
+# existing file. The three flags are mutually exclusive when
+# destExists is true:
+#   - isSameFile=true   → src and dest resolve to the same on-disk
+#     entry (the file is already at its canonical location). Import
+#     proceeds without moving — Plan.Apply short-circuits to a no-op.
+#     Common during library-root backfill.
+#   - isDuplicate=true  → dest is a different file with matching size.
+#     Import is a no-op; the modal surfaces this as informational.
+#   - both false        → dest holds a different file. Import would
+#     overwrite and requires explicit overwrite=true on the mutation.
+type ImportPreview {
+  destFolder: String!
+  destFile: String!
+  destAbsolute: String!
+  destExists: Boolean!
+  isSameFile: Boolean!
+  isDuplicate: Boolean!
+}
+
+# ImportQueueEntryInput drives the importQueueEntry mutation.
+# recordingID is optional — when null, the queue entry's
+# suggestedRecordingID (which must be set) is used as the target.
+# overwrite, when true, allows the importer to replace an existing
+# different-content file at the destination. Required when the
+# preview's destExists is true and isDuplicate is false; otherwise
+# the mutation rejects the request rather than silently overwriting.
+# fileAssignments routes per-source files in a folder-as-unit drop to
+# their roles. When nil/empty, ingest falls back to the legacy
+# single-file flow (FilePath = main, no extras processed) so callers
+# that don't yet know about multipart/extras keep their behaviour.
+# Each assignment's sourcePath should be a path inside the queue row's
+# classification (Parts ∪ Extras); the ingest engine validates the
+# kind tokens and rejects invalid shapes server-side.
+input ImportQueueEntryInput {
+  queueID: ID!
+  recordingID: ID
+  overwrite: Boolean
+  fileAssignments: [FileAssignmentInput!]
+  # externallyManaged, when true, runs the catalog-only ingest:
+  # promptbook does NOT move the file, write movie.nfo, or fetch
+  # subtitles. The recording_versions row's file_path is the source
+  # path verbatim; .encora-id + .promptbook-externally-managed
+  # sentinel land next to the source so a later scan recognizes the
+  # file even if the external tool (Radarr/Plex) renames the parent
+  # folder. Default false preserves the legacy move-the-file flow.
+  externallyManaged: Boolean
+}
+
+# FileAssignmentInput routes one source path to a role for the
+# importQueueEntry mutation. Kind tokens mirror ingest.AssignmentKind*:
+# "main" / "part-1" / "part-2" / "extra-featurette" /
+# "extra-behindthescenes" / "extra-audio" / "extra-photo" /
+# "extra-other" / "skip" — the canonical wire-format strings the
+# multi-file ingest engine speaks.
+input FileAssignmentInput {
+  sourcePath: String!
+  kind: String!
+  # label is the optional user-supplied display label, only used for
+  # extras (featurette / behindthescenes / etc.). Empty for main /
+  # part-N / skip rows.
+  label: String
+}
+
+# ImportQueueEntryPayload mirrors the legacy REST importQueueResponse.
+# ok=true means the file moved + the queue row was deleted +
+# a manual_import history event was written. dest is the moved-to
+# path (or planned path on a dry run). error is set when ok=false.
+type ImportQueueEntryPayload {
+  ok: Boolean!
+  action: String!
+  dest: String!
+  error: String!
+}
+
+# Mutation is the root for write surfaces. importQueueEntry is the
+# first one — moves a queued file into the canonical library tree and
+# clears the queue row on success. The per-recording rename + NFO
+# regen entry points are the operator surfaces the recording detail
+# page exposes for already-imported recordings.
+type Mutation {
+  importQueueEntry(input: ImportQueueEntryInput!): ImportQueueEntryPayload!
+
+  # applyRecordingRename moves each version file to its canonical
+  # destination under the current rename templates, then triggers an
+  # NFO rewrite at the new folder. Per-version failures populate the
+  # row's `error` field but do not abort the batch — the SPA renders
+  # the full per-version outcome so partial successes are visible.
+  applyRecordingRename(recordingID: ID!): [RenameResultItem!]!
+
+  # regenerateRecordingNFO rewrites the recording's movie.nfo from
+  # scratch using the current data + image + media-info state. Thin
+  # wrapper around nforefresh.Service.RewriteForRecording — the
+  # no-version-row case is a successful no-op (ok=true).
+  regenerateRecordingNFO(recordingID: ID!): RegenerateNFOResult!
+
+  # setRecordingExternallyManaged flips the recording's
+  # externally_managed flag. Flipping ON drops the
+  # .promptbook-externally-managed sentinel in the recording's
+  # source folder (so a later scan recognizes it even if the
+  # external tool renames the parent folder) and deletes any
+  # existing movie.nfo at the version's directory; flipping OFF
+  # removes the sentinel. Files stay where they are in either
+  # direction — the user can hit "Preview rename" afterwards if
+  # they want promptbook to take ownership.
+  #
+  # Returns the refreshed Recording so the SPA's local state
+  # reflects the new flag without a follow-up query.
+  setRecordingExternallyManaged(
+    recordingID: ID!
+    externallyManaged: Boolean!
+  ): Recording!
+
+  # setRecordingPrivateNotes overwrites the recording's private_notes
+  # text. Empty string is valid (the "no notes" state). The field is
+  # local-only: never synced to Encora. Returns the refreshed
+  # Recording so the SPA can paint the saved value verbatim.
+  setRecordingPrivateNotes(
+    recordingID: ID!
+    notes: String!
+  ): Recording!
+
+  # remuxDVDTitles enqueues the remux-dvd job for the selected
+  # makemkvcon title indexes (0-based). The job is async + long-
+  # running — 5–15 min for a typical 4 GB DVD — so the mutation
+  # returns immediately with the job_runs.id the SPA can poll on
+  # the Jobs page to watch progress. Errors when the recording
+  # isn't a DVD layout, makemkvcon isn't configured, or
+  # titleIndexes is empty.
+  remuxDVDTitles(
+    recordingID:  ID!
+    titleIndexes: [Int!]!
+  ): RemuxDVDPayload!
+}

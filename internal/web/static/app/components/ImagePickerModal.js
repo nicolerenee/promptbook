@@ -1,0 +1,545 @@
+// ImagePickerModal.js — DaisyUI <dialog>-based modal that hosts the
+// image-picker subsections previously rendered as a giant inline card
+// at the top of the recording / show detail page.
+//
+// Two modes:
+//   kind: 'recording'  — three tabs (poster / backdrop / overlay text).
+//                        Each tab renders the per-section vnode from
+//                        the parent (passed in via attrs.tabs).
+//   kind: 'show'       — single body, just the poster picker. No tabs.
+//
+// The component is "dumb" about state — the parent owns the open flag,
+// the active-tab pointer, the busy/error fields, and the renderers
+// for each section. We only do three things:
+//   1. Sync the <dialog> open state to attrs.open via showModal()/close()
+//      in oncreate + onupdate (so toggling the parent's flag reflects
+//      visually, including Esc-to-close which dispatches a 'close' event
+//      we forward via attrs.onClose).
+//   2. Render the title row + close button + (optional) tab strip.
+//   3. Render the active section's vnode in the modal body.
+//
+// The image error toast is rendered by the parent — outside the modal
+// so users see upload/save failures even after the modal closes.
+
+import m from 'https://esm.sh/mithril@2.2.2';
+
+// dimsCache stashes natural width × height for any image the picker
+// has loaded. Keyed by the rendered <img src> so stale entries get
+// replaced naturally when callers append cache-busters (?v= or ?gen=).
+// The browser already loads each image once for its visual render —
+// reading naturalWidth/naturalHeight in onload is free, no extra
+// request. m.redraw() on first capture surfaces the dimensions caption
+// in the next tick.
+const dimsCache = new Map();
+
+// captureDims is the shared <img onload> handler. Reads the literal
+// src attribute (not el.src, which the browser resolves to an
+// absolute URL) so the cache key matches what dimsLabel looks up.
+// Only redraws when we actually learn something new so a redraw
+// storm doesn't fire from every picker-strip render.
+function captureDims(ev) {
+  const el = ev.target;
+  if (!el) return;
+  const key = el.getAttribute('src');
+  if (!key) return;
+  const w = el.naturalWidth | 0;
+  const h = el.naturalHeight | 0;
+  if (!w || !h) return;
+  const prev = dimsCache.get(key);
+  if (prev && prev.w === w && prev.h === h) return;
+  dimsCache.set(key, { w, h });
+  m.redraw();
+}
+
+// dimsLabel returns the small "1280 × 720" caption for src, or null
+// when we haven't loaded the image yet (browser hasn't fired onload).
+// Callers wrap it in their own layout; we only own the styling.
+function dimsLabel(src) {
+  const dims = dimsCache.get(src);
+  if (!dims) return null;
+  return m('span', {
+    class: 'text-xs font-mono opacity-60 leading-tight',
+  }, dims.w + ' × ' + dims.h);
+}
+
+// PencilIcon is the small pencil-on-square glyph used for the
+// "Edit images" header button. Inlined as a Mithril vnode so the
+// component file stays self-contained.
+export function PencilIcon() {
+  return m('svg', {
+    xmlns: 'http://www.w3.org/2000/svg', width: 16, height: 16,
+    viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+    'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+    'aria-hidden': 'true', class: 'h-4 w-4 shrink-0',
+  }, [
+    m('path', { d: 'M12 20h9' }),
+    m('path', {
+      d: 'M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z',
+    }),
+  ]);
+}
+
+// renderEditImagesButton is the small ghost-styled action that opens
+// the modal. Used by both Recording.js and Show.js so the affordance
+// looks identical across the two pages.
+export function renderEditImagesButton({ onclick, disabled }) {
+  return m('button', {
+    type: 'button',
+    class: 'btn btn-sm btn-ghost gap-2',
+    disabled: !!disabled,
+    onclick,
+  }, [
+    PencilIcon(),
+    m('span', 'Edit images'),
+  ]);
+}
+
+// renderImageInfoToast surfaces a transient success/info message
+// (e.g. "Refresh queued — page will update when complete.") as a
+// DaisyUI alert-info toast pinned to the bottom-right. Same dismiss
+// pattern as renderImageErrorToast — onDismiss clears the parent's
+// state field. Auto-stays until the parent clears it; the parent is
+// expected to setTimeout the dismiss for short-lived confirmations.
+export function renderImageInfoToast({ message, onDismiss }) {
+  if (!message) return null;
+  return m('div', { class: 'toast toast-end z-50' }, [
+    m('div', { role: 'status', class: 'alert alert-info' }, [
+      m('span', { class: 'text-sm' }, message),
+      m('button', {
+        type: 'button',
+        class: 'btn btn-xs btn-ghost',
+        'aria-label': 'Dismiss',
+        onclick: onDismiss,
+      }, '×'),
+    ]),
+  ]);
+}
+
+// renderImageErrorToast surfaces state.recording.imageError /
+// state.show.imageError as a DaisyUI toast pinned to the bottom-right
+// of the viewport. Sits outside the modal so a failed POST still
+// reaches the user even if they closed the dialog mid-action.
+//
+// onDismiss clears the parent's error field so the toast can be
+// dismissed by hand (the alert auto-stays until cleared — there is no
+// auto-timeout because failure messages benefit from explicit ack).
+export function renderImageErrorToast({ error, onDismiss }) {
+  if (!error) return null;
+  return m('div', { class: 'toast toast-end z-50' }, [
+    m('div', { role: 'alert', class: 'alert alert-error' }, [
+      m('span', { class: 'text-sm' }, error),
+      m('button', {
+        type: 'button',
+        class: 'btn btn-xs btn-ghost',
+        'aria-label': 'Dismiss',
+        onclick: onDismiss,
+      }, '×'),
+    ]),
+  ]);
+}
+
+// renderUpstreamPicker is the shared picker tab body used by both
+// Recording.js (poster + fanart) and Show.js (banner). It renders:
+//   1. The current local image (the chosen slot under v2). When the
+//      caller passes previewURL alongside, a "Preview" tile sits
+//      next to it showing what the staged selection will look like
+//      after the overlay band is composited (poster row only).
+//   2. A live-fetched strip of upstream thumbnails. Click one to
+//      stage it (a primary-color ring marks the selection); the
+//      parent's footer "Save" button is responsible for committing
+//      the choice via the matching from-url endpoint. Two-step gesture
+//      because picking the wrong thumbnail and accidentally writing
+//      the slot is a poor UX.
+//   3. An Upload button for "the upstream options aren't what I want"
+//      override. Uploads are immediate — picking a file IS the
+//      explicit confirmation.
+//   4. A "Re-fetch upstream options" footer button so the user can
+//      re-pull the strip without closing the modal — useful right
+//      after firing the refresh-images job.
+//
+// Attrs:
+//   currentURL    — /images/... path of the current local image (or "").
+//   currentLabel  — caption under the current image ("Current poster").
+//   currentAlt    — alt text for the current image.
+//   aspect        — 'poster' | 'fanart' | 'banner' for thumbnail sizing.
+//   options       — array of {url, source} from the options endpoint.
+//                   null/undefined while the fetch is in flight; an
+//                   empty array means "no upstream options found".
+//   loading       — true while the options fetch is in flight.
+//   error         — string error from the options fetch (e.g. 503).
+//   busy          — disables every action button while a POST runs.
+//   staged        — URL string of the currently staged selection, or
+//                   null/'' when nothing is staged. Matched against
+//                   each option's URL to draw the ring highlight.
+//   previewURL    — optional /api/v1/recordings/:id/poster-preview URL
+//                   that the parent has built from the staged option.
+//                   Renders a "Preview" tile next to "Current" so the
+//                   user sees the burned-in result before committing.
+//                   Pass null/'' to suppress (e.g. fanart picker).
+//   onPick(url)   — fired when the user clicks an upstream thumbnail.
+//                   Parent stages the URL; modal footer's Save commits.
+//   onUpload(file)— fired when the user picks a file via Upload.
+//   onRefetch()   — fired when the user hits "Re-fetch upstream options".
+//   uploadLabel   — Upload button label ("Upload poster", etc.).
+//   optionsCaption — optional small italic text rendered under the
+//                    upstream-options strip. Used by the fanart
+//                    fallback to surface "Random frames from your
+//                    local file" so the user knows the options
+//                    aren't curated upstream art.
+//
+// Skeleton + error + empty states all match DaisyUI conventions
+// (skeleton-rectangle, alert-error, neutral muted text).
+export function renderUpstreamPicker(attrs) {
+  const {
+    currentURL, currentLabel, currentAlt,
+    aspect, options, loading, error, busy, loadGen, staged, previewURL,
+    layoutControls,
+    onPick, onUpload, onRefetch, uploadLabel, optionsCaption,
+  } = attrs;
+
+  // Aspect drives both the thumbnail and the "current" preview tile.
+  const thumbClass = aspect === 'fanart' || aspect === 'backdrop'
+    ? 'aspect-video w-48'
+    : 'aspect-[2/3] w-32';
+  // The Current tile shrinks when a Preview tile is also rendered so
+  // both fit comfortably in the modal width on the poster row.
+  const showPreview = !!previewURL;
+  const currentClass = showPreview
+    ? (aspect === 'fanart' || aspect === 'backdrop'
+        ? 'aspect-video w-full max-w-md'
+        : 'aspect-[2/3] w-40')
+    : (aspect === 'fanart' || aspect === 'backdrop'
+        ? 'aspect-video w-full max-w-2xl'
+        : 'aspect-[2/3] w-48');
+
+  return m('section', { class: 'space-y-4' }, [
+    // Banner-layout selectors (position + image-region) — caller
+    // supplies the rendered vnode; we just slot it in above the
+    // Current/Preview pair so the user sees their choices reflect
+    // immediately in the Preview tile.
+    layoutControls,
+    // Current + (optional) Preview, laid out side-by-side.
+    m('div', { class: 'space-y-2' }, [
+      m('h3', { class: 'text-sm font-semibold' }, currentLabel),
+      m('div', { class: 'flex flex-row flex-wrap gap-4 items-start' }, [
+        currentURL
+          ? m('div', { class: 'flex flex-col gap-1' }, [
+              m('figure', {
+                class: 'relative rounded overflow-hidden bg-base-200 ' + currentClass,
+              }, [
+                m('img', {
+                  src: currentURL,
+                  alt: currentAlt || '',
+                  class: 'w-full h-full object-cover',
+                  loading: 'lazy',
+                  onload: captureDims,
+                }),
+                m('span', {
+                  class: 'absolute top-2 left-2 badge badge-primary badge-sm',
+                }, 'Current'),
+              ]),
+              dimsLabel(currentURL),
+            ])
+          : m('div', {
+              class: 'rounded bg-base-200 flex items-center justify-center ' +
+                     'text-base-content/40 text-sm font-mono ' + currentClass,
+            }, 'No image on disk yet'),
+        showPreview
+          ? m('div', { class: 'flex flex-col gap-1' }, [
+              m('figure', {
+                class: 'relative rounded overflow-hidden bg-base-200 ' +
+                       'border-2 border-primary ring-2 ring-primary ' +
+                       'ring-offset-2 ring-offset-base-100 ' + currentClass,
+              }, [
+                m('img', {
+                  src: previewURL,
+                  alt: 'preview with overlay',
+                  class: 'w-full h-full object-cover',
+                  loading: 'lazy',
+                  onload: captureDims,
+                }),
+                m('span', {
+                  class: 'absolute top-2 left-2 badge badge-primary badge-sm',
+                }, 'Preview'),
+              ]),
+              dimsLabel(previewURL),
+            ])
+          : null,
+      ]),
+    ]),
+
+    // Upstream options strip.
+    m('div', { class: 'space-y-2' }, [
+      m('div', { class: 'flex items-center justify-between gap-2 flex-wrap' }, [
+        m('h3', { class: 'text-sm font-semibold' }, 'Upstream options'),
+        m('div', { class: 'flex items-center gap-2' }, [
+          uploadButton({
+            label: uploadLabel || 'Upload',
+            disabled: busy,
+            onSelect: onUpload,
+          }),
+          m('button', {
+            type: 'button',
+            class: 'btn btn-sm btn-ghost gap-1',
+            disabled: busy || loading,
+            onclick: onRefetch,
+          }, [
+            loading
+              ? m('span', { class: 'loading loading-spinner loading-xs' })
+              : null,
+            'Re-fetch',
+          ]),
+        ]),
+      ]),
+      renderUpstreamStrip({
+        options, loading, error, busy, onPick, thumbClass, onRefetch, loadGen,
+        staged,
+      }),
+      optionsCaption
+        ? m('p', { class: 'text-xs italic opacity-70' }, optionsCaption)
+        : null,
+    ]),
+  ]);
+}
+
+// renderUpstreamStrip renders the thumbnail row inside the picker
+// body: skeleton tiles while loading, an error alert on failure,
+// an empty-state message when upstream had nothing, otherwise a
+// horizontally-scrollable strip of clickable thumbnails.
+function renderUpstreamStrip(attrs) {
+  const { options, loading, error, busy, onPick, thumbClass, staged } = attrs;
+  if (loading && !Array.isArray(options)) {
+    // Skeleton placeholders — three rectangles matching the picker's
+    // expected aspect so the layout doesn't jump on resolution.
+    return m('div', { class: 'flex gap-3 overflow-x-auto py-2' },
+      [0, 1, 2].map((i) => m('div', {
+        key: 'sk-' + i,
+        class: 'skeleton ' + thumbClass + ' shrink-0',
+      })));
+  }
+  if (error) {
+    return m('div', { role: 'alert', class: 'alert alert-error' }, [
+      m('span', { class: 'text-sm' }, error),
+      m('button', {
+        type: 'button',
+        class: 'btn btn-sm btn-ghost',
+        disabled: busy,
+        onclick: attrs.onRefetch,
+      }, 'Try again'),
+    ]);
+  }
+  if (!Array.isArray(options) || options.length === 0) {
+    return m('div', { class: 'opacity-60 text-sm py-2' },
+      'No upstream options found. Upload a custom image instead.');
+  }
+  // Thumbnails route through /api/v1/upstream-image so the browser
+  // makes a same-origin fetch instead of a cross-origin one to
+  // stagemedia.me / encora.it. Safari was aborting the cross-origin
+  // loads with "network connection lost" even with no-referrer.
+  // The raw url stays in opt.url so onPick still POSTs the upstream
+  // URL to /poster-from-url; only the rendered <img> goes through
+  // the proxy.
+  //
+  // loadGen is bumped by the caller each time fresh options are
+  // fetched and folded into both the proxy URL (?gen=) and the
+  // Mithril key, so a Re-fetch after a failed load forces the
+  // browser to re-issue the request rather than serve the cached
+  // failure.
+  const gen = attrs.loadGen || 0;
+  return m('div', { class: 'flex gap-3 overflow-x-auto py-2' },
+    options.map((opt, idx) => {
+      const isStaged = staged && opt.url === staged;
+      // Staged thumbnail gets a 4px primary ring + persistent border;
+      // unstaged uses the hover/focus border like before. Two layers
+      // (border + ring) so the cue is visible even on light images.
+      const stagedCls = isStaged
+        ? ' border-primary ring-2 ring-primary ring-offset-2 ring-offset-base-100'
+        : ' border-transparent hover:border-primary focus:border-primary';
+      const thumbSrc = proxyURL(opt.url, gen);
+      return m('div', {
+        key: opt.url + '-' + idx + '-' + gen,
+        class: 'shrink-0 flex flex-col items-center gap-1',
+      }, [
+        m('button', {
+          type: 'button',
+          class: 'rounded overflow-hidden bg-base-200 ' +
+                 'border-2 focus:outline-none ' +
+                 'disabled:opacity-50 disabled:cursor-not-allowed ' +
+                 thumbClass + stagedCls,
+          title: opt.source ? 'from ' + opt.source : '',
+          'aria-pressed': isStaged ? 'true' : 'false',
+          disabled: busy,
+          onclick: () => onPick(opt.url),
+        }, m('img', {
+          src: thumbSrc,
+          alt: opt.source || 'upstream option ' + (idx + 1),
+          class: 'w-full h-full object-cover',
+          loading: 'lazy',
+          onload: captureDims,
+        })),
+        dimsLabel(thumbSrc),
+      ]);
+    }));
+}
+
+// proxyURL wraps an upstream URL in /api/v1/upstream-image so the
+// browser fetches it same-origin. gen, when non-zero, is appended as
+// &gen= (outside the encoded url param) so a Re-fetch evicts the
+// cached load without changing the upstream URL the server forwards.
+//
+// Same-origin URLs (relative paths like /images/...) bypass the proxy
+// entirely — they're already same-origin so wrapping them in the
+// upstream proxy would just trip the allowlist and 400. The fanart-
+// fallback frame URLs are this shape; the picker grid renders them
+// directly off the local /images/* mount.
+function proxyURL(url, gen) {
+  if (!url) return url;
+  if (url.charAt(0) === '/') {
+    if (!gen) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'gen=' + gen;
+  }
+  let out = '/api/v1/upstream-image?url=' + encodeURIComponent(url);
+  if (gen) out += '&gen=' + gen;
+  return out;
+}
+
+// uploadButton wraps a hidden <input type="file"> in a <label> so the
+// label-click → input-click delegation is browser-native (no JS
+// coordination). The previous implementation captured the input ref
+// in a closure via oncreate, but oncreate only fires on first mount —
+// every subsequent re-render created a fresh closure with inputEl=null,
+// so any click after the first redraw silently no-op'd. The picker
+// re-renders frequently (busy state, options loading, gen counter
+// bumping), so the closure-captured ref was almost always stale by
+// the time the user clicked. Label-wrapping sidesteps the issue
+// entirely.
+let _uploadInputSeq = 0;
+function uploadButton(opts) {
+  _uploadInputSeq += 1;
+  const id = 'pb-upload-' + _uploadInputSeq;
+  const disabled = !!opts.disabled;
+  return m('label', {
+    for: id,
+    class: 'btn btn-sm btn-ghost' + (disabled ? ' btn-disabled' : ''),
+    'aria-disabled': disabled ? 'true' : 'false',
+  }, [
+    m('input', {
+      id,
+      type: 'file',
+      accept: 'image/*',
+      class: 'hidden',
+      disabled,
+      onchange: (ev) => {
+        const f = ev.target.files && ev.target.files[0];
+        ev.target.value = '';
+        if (f && typeof opts.onSelect === 'function') opts.onSelect(f);
+      },
+    }),
+    opts.label || 'Upload',
+  ]);
+}
+
+// ImagePickerModal renders the <dialog>. Attrs:
+//   open      — boolean; mirrors state.X.pickerOpen.
+//   onClose   — fired when the dialog closes (Esc, backdrop, ✕).
+//   title     — header title string. Default "Edit images".
+//   tabs      — optional [{key, label, render}]. When present, the
+//               modal renders a tab strip and switches the body based
+//               on activeTab. When absent the body is a single render().
+//   activeTab — current tab key (only used when tabs is set).
+//   onTabChange — fired when the user clicks a tab.
+//   render    — () => vnode; used when tabs is unset (show mode).
+//   busy      — surfaces the spinner in the title row.
+//   footerActions — optional [{label, onClick, disabled, primary}].
+//                   Rendered as a row of buttons at the bottom of the
+//                   modal body, e.g. the "Refresh from upstream" job
+//                   trigger that closes the modal + queues a toast.
+const ImagePickerModal = {
+  oncreate(vnode) {
+    const dom = vnode.dom;
+    // Forward the native 'close' event (Esc, form method=dialog
+    // submit, backdrop click) so the parent can flip its open flag.
+    dom.addEventListener('close', () => {
+      if (typeof vnode.attrs.onClose === 'function') {
+        vnode.attrs.onClose();
+        m.redraw();
+      }
+    });
+    if (vnode.attrs.open && !dom.open) dom.showModal();
+  },
+
+  onupdate(vnode) {
+    const dom = vnode.dom;
+    if (vnode.attrs.open && !dom.open) dom.showModal();
+    else if (!vnode.attrs.open && dom.open) dom.close();
+  },
+
+  view(vnode) {
+    const a = vnode.attrs;
+    const title = a.title || 'Edit images';
+    const tabs = Array.isArray(a.tabs) ? a.tabs : null;
+    const activeTab = a.activeTab;
+    const busy = !!a.busy;
+
+    // Body switches between tabs[].render() and a.render() depending
+    // on whether the parent supplied a tab list. The active vnode is
+    // resolved fresh each render so component state stays live.
+    let body = null;
+    if (tabs) {
+      const active = tabs.find((t) => t.key === activeTab) || tabs[0];
+      body = active && typeof active.render === 'function'
+        ? active.render() : null;
+    } else if (typeof a.render === 'function') {
+      body = a.render();
+    }
+
+    return m('dialog', { class: 'modal' }, [
+      m('div', { class: 'modal-box max-w-4xl' }, [
+        // Close button at the corner. method=dialog so the click
+        // closes the dialog without us needing to wire onclick.
+        m('form', { method: 'dialog' },
+          m('button', {
+            type: 'submit',
+            class: 'btn btn-sm btn-circle btn-ghost absolute right-2 top-2',
+            'aria-label': 'Close',
+          }, '✕')),
+        m('div', { class: 'flex items-center gap-3 mb-3 pr-8' }, [
+          m('h3', { class: 'font-bold text-lg' }, title),
+          busy
+            ? m('span', { class: 'loading loading-spinner loading-sm' })
+            : null,
+        ]),
+        tabs
+          ? m('div', { role: 'tablist', class: 'tabs tabs-box mb-4' },
+              tabs.map((t) => m('a', {
+                role: 'tab',
+                class: 'tab' + (t.key === activeTab ? ' tab-active' : ''),
+                onclick: (ev) => {
+                  ev.preventDefault();
+                  if (typeof a.onTabChange === 'function') a.onTabChange(t.key);
+                },
+              }, t.label)))
+          : null,
+        m('div', { class: 'space-y-2' }, body),
+        Array.isArray(a.footerActions) && a.footerActions.length > 0
+          ? m('div', { class: 'modal-action mt-4' },
+              a.footerActions.map((act, idx) => m('button', {
+                key: 'fa-' + idx,
+                type: 'button',
+                class: 'btn btn-sm ' + (act.primary ? 'btn-primary' : 'btn-ghost'),
+                disabled: !!act.disabled,
+                onclick: act.onClick,
+              }, act.label)))
+          : null,
+      ]),
+      // Backdrop form — clicking outside the modal-box submits and
+      // closes the dialog (DaisyUI 5 idiom). The native 'close' event
+      // fires next, which we forwarded in oncreate, so the parent's
+      // open flag flips back to false.
+      m('form', { method: 'dialog', class: 'modal-backdrop' },
+        m('button', { type: 'submit', 'aria-label': 'Close' }, 'close')),
+    ]);
+  },
+};
+
+export default ImagePickerModal;

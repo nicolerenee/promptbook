@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css">
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
+  <!-- highlight.js powers the recording detail page's NFO XML viewer.
+       @highlightjs/cdn-assets ships browser-ready bundles (the npm
+       highlight.js package itself ships CommonJS files that call
+       require() and explode in a browser context). highlight.min.js
+       includes the popular languages (XML / HTML among them), so the
+       recording page's NFO row can call hljs.highlightElement against
+       the rendered <code class="language-xml"> with no follow-up
+       registerLanguage call. atom-one-dark matches the DaisyUI
+       "night" theme; light themes still read cleanly since we only
+       colour tag / attr names, not full-line backgrounds. -->
+  <link href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/atom-one-dark.min.css" rel="stylesheet" type="text/css">
+  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script type="module" src="/static/app/main.js" defer></script>
+  <style>
+    /* Brand palette — fixed regardless of DaisyUI theme.
+       "book" is always sky blue; "prompt" swaps between deep navy
+       (light themes) and cream (dark themes). The DaisyUI dark themes
+       we ship today are "night" and "dark"; extend the [data-theme=]
+       selector list when more dark themes get added. */
+    .pb-prompt { color: #13284A; }
+    .pb-book   { color: #4577A0; }
+    [data-theme="night"] .pb-prompt,
+    [data-theme="dark"]  .pb-prompt { color: #E8E4DA; }
+    /* Icon variant swap: render only the matching SVG for the active
+       theme. Both <img>s ship in the DOM so toggling theme is purely
+       a CSS change — no Mithril redraw needed. */
+    .pb-mark-light { display: inline-block; }
+    .pb-mark-dark  { display: none; }
+    [data-theme="night"] .pb-mark-light,
+    [data-theme="dark"]  .pb-mark-light { display: none; }
+    [data-theme="night"] .pb-mark-dark,
+    [data-theme="dark"]  .pb-mark-dark  { display: inline-block; }
+  </style>
+</head>
+<body class="min-h-screen bg-base-100">
+  <div id="app"></div>
+</body>
+</html>

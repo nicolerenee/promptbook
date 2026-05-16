@@ -20,13 +20,15 @@ type Recording struct {
 // Date encodes Encora's partial-date model.
 //
 // FullDate is always ISO; consumers must check MonthKnown/DayKnown to format.
-// Time is one of "evening", "matinee", "unknown".
+// Time is one of "evening", "matinee", "unknown". DateVariant disambiguates
+// multiple recordings on the same date (Encora returns it as a string —
+// observed values: "1", "4" — null otherwise).
 type Date struct {
-	FullDate    string `json:"full_date"`
-	MonthKnown  bool   `json:"month_known"`
-	DayKnown    bool   `json:"day_known"`
-	DateVariant *int   `json:"date_variant"`
-	Time        string `json:"time"`
+	FullDate    string  `json:"full_date"`
+	MonthKnown  bool    `json:"month_known"`
+	DayKnown    bool    `json:"day_known"`
+	DateVariant *string `json:"date_variant"`
+	Time        string  `json:"time"`
 }
 
 // NFT marks Not-For-Trade gating.
@@ -37,9 +39,19 @@ type NFT struct {
 
 // CastEntry pairs a performer with a character + status (u/s, swing).
 type CastEntry struct {
-	Performer Performer `json:"performer"`
-	Character Character `json:"character"`
-	Status    *string   `json:"status"`
+	Performer Performer   `json:"performer"`
+	Character Character   `json:"character"`
+	Status    *CastStatus `json:"status"`
+}
+
+// CastStatus is the principal/understudy/swing/etc. label on a cast entry.
+//
+// Distinct values observed in fixtures: Alternate (alt), Emergency Cover (e/c),
+// Swing (s/w), Temporary Replacement (t/r), Understudy (u/s). Nil means
+// principal.
+type CastStatus struct {
+	Label        string `json:"label"`
+	Abbreviation string `json:"abbreviation"`
 }
 
 // Performer is an actor.
@@ -92,6 +104,31 @@ type CollectionEntry struct {
 	UserWatched int       `json:"user_watched"`
 	UpdatedAt   string    `json:"updated_at"`
 	CollectedAt string    `json:"collected_at"`
+}
+
+// WantEntry is one element of /api/wants.
+//
+// The wire format only carries the recording payload — no priority or added_at
+// fields, despite the recon doc's earlier guess.
+type WantEntry struct {
+	Recording Recording `json:"recording"`
+}
+
+// Profile mirrors the /api/profile response.
+//
+// Only fields used by promptbook are mapped; the upstream payload carries
+// extras (notifications, vouching, etc.) that we deliberately ignore.
+type Profile struct {
+	ID                int64  `json:"id"`
+	Name              string `json:"name"`
+	Slug              string `json:"slug"`
+	Username          string `json:"username"`
+	Status            string `json:"status"`
+	RecordingsCount   int    `json:"recordings_count"`
+	WantsCount        int    `json:"wants_count"`
+	LastSeenAt        string `json:"last_seen_at"`
+	ProfileVisibility string `json:"profile_visibility"`
+	ColVisibility     string `json:"col_visibility"`
 }
 
 // Page is the Laravel-style pagination envelope.

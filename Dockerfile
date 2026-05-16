@@ -17,10 +17,10 @@ ARG BUILT_BY=unknown
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
   -ldflags="-s -w \
-  -X github.com/nicolerenee/promptbook/cmd.Version=${VERSION} \
-  -X github.com/nicolerenee/promptbook/cmd.Commit=${COMMIT} \
-  -X github.com/nicolerenee/promptbook/cmd.BuildDate=${BUILD_DATE} \
-  -X github.com/nicolerenee/promptbook/cmd.BuiltBy=${BUILT_BY}" \
+  -X github.com/nicolerenee/promptbook/internal/version.Version=${VERSION} \
+  -X github.com/nicolerenee/promptbook/internal/version.Commit=${COMMIT} \
+  -X github.com/nicolerenee/promptbook/internal/version.BuildDate=${BUILD_DATE} \
+  -X github.com/nicolerenee/promptbook/internal/version.BuiltBy=${BUILT_BY}" \
   -o /promptbook .
 
 # Runtime stage

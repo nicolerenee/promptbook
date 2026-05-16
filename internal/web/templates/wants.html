@@ -1,0 +1,13 @@
+{{define "wants.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "head"}}<script src="/static/wants.js" defer></script>{{end}}
+
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Wants<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
+  </div>
+</div>
+<div id="page-root" data-page="wants"></div>
+{{end}}

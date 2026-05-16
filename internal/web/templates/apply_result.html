@@ -1,0 +1,59 @@
+{{define "apply_result.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Apply<em>.</em></h1>
+    <div class="pb-h-sub">{{.Succeeded}} of {{.Total}} action(s) succeeded</div>
+  </div>
+  <div class="pb-h-actions">
+    <a class="pb-btn" href="/mismatches">Back to mismatches</a>
+    <a class="pb-btn" href="/history">View history</a>
+  </div>
+</div>
+
+{{if .Rows}}
+<div class="pb-table-wrap">
+  <table class="pb-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Type</th>
+        <th>Show</th>
+        <th>Tour</th>
+        <th>Date</th>
+        <th>Recording</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Rows}}
+      <tr>
+        <td>
+          {{if .OK}}
+            <span class="pb-badge-square pb-apply-ok" title="OK">OK</span>
+          {{else}}
+            <span class="pb-badge-square pb-apply-err" title="Error">Error</span>
+          {{end}}
+        </td>
+        <td><span class="pb-badge-square pb-status-mismatch">{{.Type}}</span></td>
+        <td>{{if .Show}}{{.Show}}{{else}}<span class="pb-muted">—</span>{{end}}</td>
+        <td>{{if .Tour}}{{.Tour}}{{else}}<span class="pb-muted">—</span>{{end}}</td>
+        <td class="pb-cell-mono">{{if .DateFull}}{{.DateFull}}{{else}}—{{end}}</td>
+        <td><a class="pb-link" href="/recordings/{{.RecordingID}}">{{.RecordingID}}</a></td>
+        <td>
+          {{if .OK}}
+            {{if .NewFormat}}<span class="pb-mono">format → {{.NewFormat}}</span>{{else}}<span class="pb-muted">pushed</span>{{end}}
+          {{else}}
+            <span class="pb-muted">{{.Error}}</span>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="pb-empty">No actions submitted.</div>
+{{end}}
+{{end}}

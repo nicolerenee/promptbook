@@ -40,11 +40,16 @@ no-emphasis-as-heading: false # MD036
 no-duplicate-heading: # MD024
   siblings_only: true
 
-# Allow long lines in code blocks and tables and use a default of 120 for others.
+# Allow long lines in code blocks and tables and use a default of 200 for others.
+# Prose lines come from real recon notes — readability suffers when wrapped at 120.
 line-length: # MD013
-  line_length: 120
+  line_length: 200
   code_blocks: false
   tables: false
+
+# Table column style is too prescriptive for hand-written tables; rely on
+# alignment-style and consistent rendering instead.
+table-column-style: false # MD060
 
 first-line-heading:
   allow_preamble: true

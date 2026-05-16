@@ -1,0 +1,83 @@
+/* Promptbook design tokens
+   Light = playbill cream + ink. Dark = midnight + bone.
+   Accents share chroma — only hue varies. */
+
+:root {
+  /* Type */
+  --font-display: 'Instrument Serif', 'Cormorant Garamond', Georgia, serif;
+  --font-ui: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+
+  /* Light theme — playbill cream */
+  --bg: #F5EFE3;
+  --bg-card: #FBF7EC;
+  --bg-elev: #FFFCF3;
+  --bg-sunken: #EEE7D6;
+  --ink: #1A1814;
+  --ink-2: #3D362B;
+  --ink-3: #6B6354;
+  --ink-4: #9A9082;
+  --rule: rgba(26, 24, 20, 0.10);
+  --rule-2: rgba(26, 24, 20, 0.06);
+  --hover: rgba(26, 24, 20, 0.04);
+
+  /* Status — same chroma & lightness, hue only */
+  --status-synced:  oklch(0.62 0.13 150);   /* green */
+  --status-mismatch: oklch(0.70 0.13 75);   /* amber */
+  --status-missing:  oklch(0.58 0.16 25);   /* curtain red */
+  --status-wanted:   oklch(0.55 0.14 285);  /* violet */
+  --status-orphan:   oklch(0.58 0.02 60);   /* warm gray */
+
+  /* Confidence */
+  --conf-high: oklch(0.62 0.13 150);
+  --conf-med:  oklch(0.70 0.13 75);
+  --conf-low:  oklch(0.58 0.16 25);
+
+  /* Accent (theatrical) */
+  --accent: oklch(0.55 0.18 25);
+  --accent-ink: oklch(0.30 0.14 25);
+  --accent-soft: oklch(0.94 0.04 25);
+
+  /* NFT warning */
+  --nft-bg: oklch(0.94 0.06 60);
+  --nft-rule: oklch(0.70 0.14 60);
+  --nft-ink: oklch(0.32 0.10 50);
+
+  /* Layout */
+  --row-h: 52px;
+  --pad-x: 28px;
+  --shell-w: 232px;
+}
+
+[data-theme="dark"] {
+  --bg: #15161A;
+  --bg-card: #1C1D22;
+  --bg-elev: #23242A;
+  --bg-sunken: #101116;
+  --ink: #E8E4DA;
+  --ink-2: #BDB7AB;
+  --ink-3: #877F6F;
+  --ink-4: #5A5447;
+  --rule: rgba(232, 228, 218, 0.09);
+  --rule-2: rgba(232, 228, 218, 0.05);
+  --hover: rgba(232, 228, 218, 0.05);
+
+  --status-synced:  oklch(0.74 0.14 150);
+  --status-mismatch: oklch(0.80 0.14 75);
+  --status-missing:  oklch(0.72 0.17 25);
+  --status-wanted:   oklch(0.72 0.14 285);
+  --status-orphan:   oklch(0.70 0.02 60);
+
+  --accent: oklch(0.72 0.16 25);
+  --accent-ink: oklch(0.86 0.10 25);
+  --accent-soft: oklch(0.30 0.07 25);
+
+  --nft-bg: oklch(0.28 0.06 60);
+  --nft-rule: oklch(0.55 0.13 60);
+  --nft-ink: oklch(0.88 0.10 70);
+}
+
+/* Density */
+[data-density="compact"] { --row-h: 40px; --pad-x: 20px; }
+[data-density="cozy"]    { --row-h: 52px; --pad-x: 28px; }
+[data-density="comfy"]   { --row-h: 64px; --pad-x: 36px; }

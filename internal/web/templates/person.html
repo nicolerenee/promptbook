@@ -1,0 +1,13 @@
+{{define "person.html"}}{{template "_layout.html" .}}{{end}}
+
+{{define "head"}}<script src="/static/person.js" defer></script>{{end}}
+
+{{define "body"}}
+<div class="pb-page-h">
+  <div>
+    <h1 class="pb-h1">Person<em>.</em></h1>
+    <div class="pb-h-sub" data-page-sub>Loading…</div>
+  </div>
+</div>
+<div id="page-root" data-page="person" data-person-id="{{.PersonID}}"></div>
+{{end}}

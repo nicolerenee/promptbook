@@ -3,3 +3,6 @@
 
 ignores:
   - CHANGELOG.md
+  - .claude/**
+  - "**/.claude/**"
+  - design_handoff_promptbook_ui/**

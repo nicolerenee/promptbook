@@ -1,0 +1,467 @@
+package storage_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/brianvoe/gofakeit/v7"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/nicolerenee/promptbook/internal/ent"
+	"github.com/nicolerenee/promptbook/internal/ent/recording"
+	"github.com/nicolerenee/promptbook/internal/ent/recordingversion"
+	"github.com/nicolerenee/promptbook/internal/storage"
+)
+
+// seedRandomRecording wraps the canonical seedRecording with random IDs
+// so versions tests don't have to invent unique IDs at every call site.
+// Returns the recording_id.
+func seedRandomRecording(ctx context.Context, t *testing.T, db *ent.Client) int64 {
+	t.Helper()
+	gofakeit.Seed(0)
+	showID := int64(gofakeit.Number(1, 1_000_000))
+	recordingID := int64(gofakeit.Number(1_000_001, 2_000_000))
+	seedShow(ctx, t, db, showID, gofakeit.MovieName())
+	seedRecording(ctx, t, db, recordingID, showID)
+	return recordingID
+}
+
+func TestUpsertAndListVersions(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	small := storage.RecordingVersion{
+		RecordingID:   recordingID,
+		FilePath:      "/store/marigold/1080p.mkv",
+		FileSizeBytes: 5 * 1024 * 1024 * 1024,
+		Container:     "mkv",
+		Quality:       "1080p",
+		VideoCodec:    "h264",
+		AudioCodec:    "aac",
+		FormatLabel:   "MKV 1080p h264",
+	}
+	large := storage.RecordingVersion{
+		RecordingID:   recordingID,
+		FilePath:      "/store/marigold/2160p.mkv",
+		FileSizeBytes: 40 * 1024 * 1024 * 1024,
+		Container:     "mkv",
+		Quality:       "2160p",
+		VideoCodec:    "hevc",
+		AudioCodec:    "flac",
+		FormatLabel:   "MKV 2160p hevc",
+	}
+
+	require.NoError(t, storage.UpsertVersion(ctx, db, small))
+	require.NoError(t, storage.UpsertVersion(ctx, db, large))
+
+	got, err := storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	assert.Equal(t, large.FilePath, got[0].FilePath, "largest file first")
+	assert.Equal(t, small.FilePath, got[1].FilePath, "smaller file second")
+	assert.Equal(t, large.FileSizeBytes, got[0].FileSizeBytes)
+	assert.Equal(t, large.Quality, got[0].Quality)
+	assert.NotZero(t, got[0].ID)
+	assert.NotZero(t, got[0].AddedAt, "added_at populated by default")
+	assert.NotZero(t, got[0].LastSeenAt, "last_seen_at populated by upsert")
+}
+
+// TestUpsertVersionRoundTripsPartIndex pins the part_index column
+// added in the multipart-and-extras phase 1 schema migration. Two
+// rows with the same recording_id and consecutive part indices
+// model one multipart version (act-1 + act-2); single-file
+// recordings keep part_index at 0.
+func TestUpsertVersionRoundTripsPartIndex(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	tests := []struct {
+		name     string
+		filePath string
+		part     int
+	}{
+		{
+			name:     "single-file leaves part_index at 0",
+			filePath: "/store/greenwich-beacon/single.mkv",
+			part:     0,
+		},
+		{
+			name:     "multipart part 1",
+			filePath: "/store/greenwich-beacon/greenwich-beacon - part-1.mkv",
+			part:     1,
+		},
+		{
+			name:     "multipart part 2",
+			filePath: "/store/greenwich-beacon/greenwich-beacon - part-2.mkv",
+			part:     2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+				RecordingID: recordingID,
+				FilePath:    tt.filePath,
+				FormatLabel: "MKV",
+				PartIndex:   tt.part,
+			}))
+
+			versions, err := storage.ListVersions(ctx, db, recordingID)
+			require.NoError(t, err)
+			var got storage.RecordingVersion
+			for _, v := range versions {
+				if v.FilePath == tt.filePath {
+					got = v
+					break
+				}
+			}
+			require.NotZero(t, got.ID, "version row not found for %s", tt.filePath)
+			assert.Equal(t, tt.part, got.PartIndex)
+		})
+	}
+}
+
+// TestUpsertVersionPersistsSourceFolder pins the source_folder column
+// added in the recording-detail phase 2 schema migration. Folder-as-
+// unit drops record the original directory so the recording detail
+// page can later enumerate sibling 'extras' files; loose-file imports
+// leave the field empty.
+func TestUpsertVersionPersistsSourceFolder(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	tests := []struct {
+		name         string
+		filePath     string
+		sourceFolder string
+	}{
+		{
+			name:         "folder-as-unit drop captures parent",
+			filePath:     "/store/marigold/main.mkv",
+			sourceFolder: "/incoming/Marigold 2024-09-15",
+		},
+		{
+			name:         "loose-file import leaves it empty",
+			filePath:     "/store/marigold/loose.mkv",
+			sourceFolder: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+				RecordingID:  recordingID,
+				FilePath:     tt.filePath,
+				FormatLabel:  "MKV",
+				SourceFolder: tt.sourceFolder,
+			}))
+
+			versions, err := storage.ListVersions(ctx, db, recordingID)
+			require.NoError(t, err)
+			var got storage.RecordingVersion
+			for _, v := range versions {
+				if v.FilePath == tt.filePath {
+					got = v
+					break
+				}
+			}
+			require.NotZero(t, got.ID, "version row not found for %s", tt.filePath)
+			assert.Equal(t, tt.sourceFolder, got.SourceFolder)
+		})
+	}
+}
+
+func TestUpsertVersionIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	first := storage.RecordingVersion{
+		RecordingID:   recordingID,
+		FilePath:      "/store/marigold/master.mkv",
+		FileSizeBytes: 1 * 1024 * 1024 * 1024,
+		Container:     "mkv",
+		Quality:       "720p",
+		FormatLabel:   "MKV 720p",
+		Notes:         "initial scan",
+	}
+	require.NoError(t, storage.UpsertVersion(ctx, db, first))
+
+	// Capture the original added_at so we can confirm it survives the
+	// conflict path.
+	versions, err := storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	originalAddedAt := versions[0].AddedAt
+	originalID := versions[0].ID
+
+	second := first
+	second.FileSizeBytes = 12 * 1024 * 1024 * 1024
+	second.Quality = "1080p"
+	second.FormatLabel = "MKV 1080p"
+	second.Notes = "rescan"
+	require.NoError(t, storage.UpsertVersion(ctx, db, second))
+
+	versions, err = storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, versions, 1, "row count must stay at 1 after upsert")
+
+	got := versions[0]
+	assert.Equal(t, originalID, got.ID, "primary key preserved across upsert")
+	assert.Equal(t, second.FileSizeBytes, got.FileSizeBytes)
+	assert.Equal(t, second.Quality, got.Quality)
+	assert.Equal(t, second.FormatLabel, got.FormatLabel)
+	assert.Equal(t, second.Notes, got.Notes)
+	assert.Equal(t, originalAddedAt, got.AddedAt, "added_at must not change on upsert")
+}
+
+func TestCascadeDeleteOnRecording(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+		RecordingID:   recordingID,
+		FilePath:      "/store/marigold/v1.mkv",
+		FileSizeBytes: 1024,
+		FormatLabel:   "MKV 720p",
+	}))
+
+	versions, err := storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+
+	_, err = db.Recording.Delete().Where(recording.IDEQ(recordingID)).Exec(ctx)
+	require.NoError(t, err)
+
+	count, err := db.RecordingVersion.Query().
+		Where(recordingversion.RecordingID(recordingID)).Count(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "deleting recording must cascade-delete its versions")
+}
+
+func TestDeleteVersion(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+		RecordingID: recordingID,
+		FilePath:    "/store/marigold/keep.mkv",
+		FormatLabel: "MKV 1080p",
+	}))
+	require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+		RecordingID: recordingID,
+		FilePath:    "/store/marigold/drop.mkv",
+		FormatLabel: "MKV 720p",
+	}))
+
+	versions, err := storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, versions, 2)
+
+	var dropID int64
+	for _, v := range versions {
+		if v.FilePath == "/store/marigold/drop.mkv" {
+			dropID = v.ID
+		}
+	}
+	require.NotZero(t, dropID)
+
+	require.NoError(t, storage.DeleteVersion(ctx, db, dropID))
+
+	remaining, err := storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	require.Len(t, remaining, 1)
+	assert.Equal(t, "/store/marigold/keep.mkv", remaining[0].FilePath)
+}
+
+func TestDeleteVersionsForRecording(t *testing.T) {
+	t.Parallel()
+
+	ctx, db := openTestDB(t)
+	recordingID := seedRandomRecording(ctx, t, db)
+
+	for _, p := range []string{"/a.mkv", "/b.mkv", "/c.mkv"} {
+		require.NoError(t, storage.UpsertVersion(ctx, db, storage.RecordingVersion{
+			RecordingID: recordingID,
+			FilePath:    p,
+			FormatLabel: "MKV",
+		}))
+	}
+
+	require.NoError(t, storage.DeleteVersionsForRecording(ctx, db, recordingID))
+
+	got, err := storage.ListVersions(ctx, db, recordingID)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestComputeFormatString(t *testing.T) {
+	t.Parallel()
+
+	const oneGiB = int64(1024 * 1024 * 1024)
+	mi1080 := `{"container":"MKV","videoCodec":"h264","width":1920,"height":1080,` +
+		`"audioStreams":[{"codec":"aac"}]}`
+	mi2160 := `{"container":"MKV","videoCodec":"hevc","width":3840,"height":2160,` +
+		`"audioStreams":[{"codec":"aac"}]}`
+	tests := []struct {
+		name     string
+		versions []storage.RecordingVersion
+		want     string
+	}{
+		{
+			name:     "empty slice",
+			versions: nil,
+			want:     "",
+		},
+		{
+			name: "single version with mediainfo",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/x.mkv",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: mi1080,
+				},
+			},
+			want: "MKV - x264 + AAC - 1080p - 5.00 GB",
+		},
+		{
+			name: "two versions sorted best-first and bracketed",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/lo.mkv",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: mi1080,
+				},
+				{
+					FilePath:      "/hi.mkv",
+					FileSizeBytes: 40 * oneGiB,
+					MediaInfoJSON: mi2160,
+				},
+			},
+			want: "[MKV - x265 + AAC - 2160p - 40.00 GB] [MKV - x264 + AAC - 1080p - 5.00 GB]",
+		},
+		{
+			name: "legacy version without mediainfo renders ? placeholders",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/legacy.mkv",
+					FileSizeBytes: 4 * oneGiB,
+				},
+			},
+			want: "MKV - ? + ? - ? - 4.00 GB",
+		},
+		{
+			// Multipart act-1 / act-2 of a single capture — same
+			// container/codec/quality. The two parts merge into a
+			// single line with the sizes summed + a "2 files"
+			// suffix. Mirrors the user-facing example from the
+			// design doc.
+			name: "multipart parts share format and merge",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/greenwich-beacon-part-1.mp4",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     1,
+				},
+				{
+					FilePath:      "/greenwich-beacon-part-2.mp4",
+					FileSizeBytes: 3 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     2,
+				},
+			},
+			want: "MP4 - x264 + AAC - 1080p - 8.00 GB - 2 files",
+		},
+		{
+			// DVD import: five content VOBs from a single disc rip
+			// all share the same VOB / mpeg2 / ac3 / 480p format,
+			// so the multipart-merge collapses them into one line
+			// with the sizes summed + " - 5 files" appended. The
+			// rendered codec is the mpeg2video → mpeg2 mapping
+			// added for DVD support.
+			name: "dvd_five_vobs_merge_as_single_grouped_row",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_1.VOB",
+					FileSizeBytes: 1073741824, // 1.00 GB
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     1,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_2.VOB",
+					FileSizeBytes: 1073741824,
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     2,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_3.VOB",
+					FileSizeBytes: 1073741824,
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     3,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_4.VOB",
+					FileSizeBytes: 1073741824,
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     4,
+				},
+				{
+					FilePath:      "/library/9to5/VIDEO_TS/VTS_01_5.VOB",
+					FileSizeBytes: 376438587, // ~359 MB
+					MediaInfoJSON: `{"container":"VOB","videoCodec":"mpeg2video","width":720,"height":480,"audioStreams":[{"codec":"ac3"}]}`,
+					PartIndex:     5,
+				},
+			},
+			want: "VOB - mpeg2 + AC3 - 480p - 4.35 GB - 5 files",
+		},
+		{
+			// Different formats DON'T merge — two distinct masters
+			// of the same recording stay bracketed best-first even
+			// when one of them happens to be multipart.
+			name: "distinct formats stay bracketed even with parts",
+			versions: []storage.RecordingVersion{
+				{
+					FilePath:      "/hd-part-1.mp4",
+					FileSizeBytes: 5 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     1,
+				},
+				{
+					FilePath:      "/hd-part-2.mp4",
+					FileSizeBytes: 3 * oneGiB,
+					MediaInfoJSON: `{"container":"MP4","videoCodec":"h264","width":1920,"height":1080,"audioStreams":[{"codec":"aac"}]}`,
+					PartIndex:     2,
+				},
+				{
+					FilePath:      "/4k.mkv",
+					FileSizeBytes: 20 * oneGiB,
+					MediaInfoJSON: mi2160,
+				},
+			},
+			want: "[MKV - x265 + AAC - 2160p - 20.00 GB] [MP4 - x264 + AAC - 1080p - 8.00 GB - 2 files]",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := storage.ComputeFormatString(tt.versions)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -21,13 +21,52 @@ storage:
 # Library on disk where canonical-named recordings live.
 library:
   root: /store01/Performances/Broadway
-  folderTemplate: "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
-  fileTemplate: "{Show} - {Tour} - {Date} [{Master}]"
+  # Naming templates. Optional-segment syntax: `{?...}` collapses to
+  # empty when any token inside resolves empty, so `{?[{Master}]}`
+  # produces `[TGM]` when master is set and "" when not — no dangling
+  # brackets or whitespace. New tokens since the v1 defaults:
+  # {DateWithVariant}  smart date + " (N)" suffix when date_variant set
+  # {Container}        uppercase extension (MKV / MP4)
+  # {VideoCodec}       from ffprobe (h264 / hevc / av1)
+  # {Quality}          height-mapped (1080p / 720p / 4K)
+  # {Part}             integer for multi-part rips (act 1 / act 2)
+  folderTemplate: "{Show} ({DateWithVariant}) [encora-{EncoraID}]"
+  fileTemplate: "{Show} ({DateWithVariant}) [encora-{EncoraID}]{? - {Tour}}{?[{Master}]}{?[{VideoCodec}]}{?[{Quality}]}{? - part-{Part}}"
+  # Directories the `library watch` scanner polls for new files.
+  # Anything that isn't already an ingested recording lands on the
+  # manual_import_queue for human review (see `library queue`).
+  incomingDirs: []
+  # How often the watch loop polls each incomingDirs entry.
+  watchInterval: 1m
+  # On-disk directory for cached posters/backdrops/headshots. Empty
+  # disables the image cache entirely (no /images/* serving). Set
+  # explicitly to opt in.
+  imageRoot: ""
+  # ffprobe binary used by the rename engine to extract codec /
+  # resolution / mediainfo. Default looks up "ffprobe" on PATH.
+  # Required at probe time — no silent empty-mediainfo fallback.
+  ffprobePath: ffprobe
 
 # HTTP server (used by `promptbook serve` only).
 server:
+  # Address echo binds to. Default `[::]:8080` listens on all
+  # interfaces (IPv4 + IPv6). Use `127.0.0.1:8080` to restrict to
+  # loopback only. Override via PROMPTBOOK_SERVER_LISTEN as well.
   listen: "[::]:8080"
+  # Externally-reachable base URL of the promptbook server. Used as
+  # the base for image URLs written into NFO files so external media
+  # servers (Jellyfin/Emby/Plex with the right agent) can fetch
+  # posters, fanart, and actor headshots over HTTP. Empty disables
+  # URL emission — NFOs fall back to local sibling files (poster.jpg,
+  # fanart.jpg) for movie images and skip actor thumbs entirely.
+  publicURL: ""
   oidc:
     issuer: ""           # e.g. https://id.freckle.family
     audience: ""
     jwksRefresh: 1h
+
+# StageMedia API for posters + headshots. Optional — leave apiKey blank to disable.
+stagemedia:
+  baseUrl: https://stagemedia.me
+  apiKey: ""           # PROMPTBOOK_STAGEMEDIA_APIKEY env var works too
+  userAgent: promptbook/0.0.1

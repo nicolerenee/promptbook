@@ -11,16 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicolerenee/promptbook/internal/config"
-)
-
-// Version information - set at build time via ldflags.
-//
-//nolint:gochecknoglobals // build-time variables set via ldflags
-var (
-	Version   = "dev"
-	Commit    = "unknown"
-	BuildDate = "unknown"
-	BuiltBy   = "unknown"
+	"github.com/nicolerenee/promptbook/internal/version"
 )
 
 //nolint:gochecknoglobals // cobra CLI flags require package-level variables
@@ -30,8 +21,12 @@ var (
 	logPretty bool
 
 	showVersion bool
-	appConfig   config.Config
 )
+
+// appConfig holds the loaded configuration for use by subcommands.
+//
+//nolint:gochecknoglobals // shared across cobra subcommand RunE funcs.
+var appConfig config.Config
 
 // rootCmd represents the base command.
 //
@@ -64,18 +59,39 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: search $HOME, ., /config for promptbook.yaml or config.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&showVersion, "version", "V", false, "print version information and exit")
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().BoolVar(&logPretty, "log-pretty", false, "enable pretty (human-readable) logging")
+	rootCmd.PersistentFlags().StringVar(
+		&cfgFile,
+		"config",
+		"",
+		"config file (default: search $HOME, ., /config for promptbook.yaml or config.yaml)",
+	)
+	rootCmd.PersistentFlags().BoolVarP(
+		&showVersion,
+		"version",
+		"V",
+		false,
+		"print version information and exit",
+	)
+	rootCmd.PersistentFlags().StringVar(
+		&logLevel,
+		"log-level",
+		"info",
+		"log level (debug, info, warn, error)",
+	)
+	rootCmd.PersistentFlags().BoolVar(
+		&logPretty,
+		"log-pretty",
+		false,
+		"enable pretty (human-readable) logging",
+	)
 }
 
 //nolint:forbidigo // CLI version output requires fmt.Printf
 func printVersion() {
-	fmt.Printf("promptbook %s\n", Version)
-	fmt.Printf("  commit:   %s\n", Commit)
-	fmt.Printf("  built:    %s\n", BuildDate)
-	fmt.Printf("  built by: %s\n", BuiltBy)
+	fmt.Printf("promptbook %s\n", version.Version)
+	fmt.Printf("  commit:   %s\n", version.Commit)
+	fmt.Printf("  built:    %s\n", version.BuildDate)
+	fmt.Printf("  built by: %s\n", version.BuiltBy)
 }
 
 func initConfig() {

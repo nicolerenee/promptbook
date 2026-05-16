@@ -3,7 +3,7 @@
 Originally written 2026-05-07 while paused on Encora API access. Status block
 below tracks what has changed since.
 
-## Status (2026-05-08)
+## Status (2026-05-09)
 
 - ✅ **Phase 0 — API recon done.** Encora API key arrived; key lives in 1P
   at `op://kube-shared/encora-api/credential`. Findings written up at
@@ -12,11 +12,30 @@ below tracks what has changed since.
 - ✅ **Phase 1 — Repo bootstrap done.** Project landed in its own repo
   (`github.com/nicolerenee/promptbook`) as a Go binary with cobra subcommands,
   viper config, modernc.org/sqlite + goose migrations, zerolog logging.
-  Stub subcommands return ErrNotImplemented; storage opens cleanly.
-- 🚧 **Phase 2 — `promptbook sync`.** Next up. Pulls /collection + /wants
-  into SQLite. With 28 owned + 14 wanted recordings on this user's account,
-  one paginated call each suffices.
-- ⏳ Phases 3–7 (rename → nfo → serve → deploy → Jellyfin library) follow.
+- ✅ **Phase 2 — `promptbook collection sync`.** /collection + /wants
+  paginate into SQLite via fixture-tested logic; rate-limit honoured with
+  bail-out + sync_runs row. Schema in `00002_recordings.sql`.
+- ✅ **Phase 3 — Noun-verb CLI restructure.** Old `sync`/`rename`/`nfo`
+  flat commands replaced with `collection sync`/`collection show ID`,
+  `library ingest|scan|rename|nfo`, plus `serve`.
+- ✅ **Phase 4 — `library ingest` + rename/nfo packages.** Resolves the
+  encora id from flag/sidecar/filename/folder, builds a canonical name
+  from configurable templates, moves the file (with cross-device
+  fallback), downloads subtitles when present, writes Jellyfin
+  movie.nfo. End-to-end fixture-backed tests against an in-memory SQLite.
+- ✅ **Phase 5 — `promptbook serve` (basic).** Echo HTTP server listens
+  on `[::]:8080` (all interfaces) by default; override with
+  `server.listen` or `PROMPTBOOK_SERVER_LISTEN` (e.g. `127.0.0.1:8080`)
+  to restrict to loopback. JSON `/api/v1/*` for recordings, wants,
+  sync runs, health. HTML pages for the collection grid, recording
+  detail, wants, sync log. JWT/OIDC auth deferred to Phase 5b.
+- ⏳ **Phase 5b — JWT/OIDC.** Wire freckle.id JWKS validation onto
+  `/api/v1/*` so the all-interfaces default is safe to expose.
+- ⏳ **Phase 6 — Atlantis deploy.** HelmRelease in `nicolerenee/infra`
+  under `kubernetes/apps/media-tools/promptbook/`. HTTPRoute on the
+  public envoy with OIDC SecurityPolicy at `promptbook.freckle.media`.
+- ⏳ **Phase 7 — Add `/store01/Performances/` as a Jellyfin library**
+  and verify NFOs read cleanly without TMDB.
 
 ### Architectural pivots since the original write-up
 
@@ -104,18 +123,18 @@ For bootlegs, mirror Radarr's `[tmdbid-N]` pattern with `[encora-N]`:
 
 Examples:
 
-```
+```text
 Tideline Manor - First US National Tour - 2024-01-21 [encora-90118317]/
   Tideline Manor - First US National Tour - 2024-01-21 [Standard Master].mp4
 
-Mockingbird Lane - Second US National Tour (Non-Equity) - 2023-10-26 [encora-NNNNNN]/
-  Mockingbird Lane - Second US National Tour (Non-Equity) - 2023-10-26 [Standard Master].mp4
+Chasing Polaris - Second US National Tour (Non-Equity) - 2023-10-26 [encora-NNNNNN]/
+  Chasing Polaris - Second US National Tour (Non-Equity) - 2023-10-26 [Standard Master].mp4
 
 Halcyon Crossing - Broadway - 2024-02-09 [encora-NNNNNN]/
   Halcyon Crossing - Broadway - 2024-02-09 [fixturetaper].mp4
 
-Company - Broadway Revival - 2006 [encora-NNNNNN]/
-  Company - Broadway Revival - 2006 [Unknown].mp4
+Greenwich Beacon - Broadway Revival - 2006 [encora-NNNNNN]/
+  Greenwich Beacon - Broadway Revival - 2006 [Unknown].mp4
 ```
 
 Decisions:
@@ -127,7 +146,7 @@ Decisions:
 - **Master in the filename, not folder** — the encora ID already uniquely
   identifies the recording at the folder level.
 - **Year-only fallback** for older recordings without precise dates
-  (`Company - Broadway Revival - 2006`).
+  (`Drift House - Broadway Revival - 2006`).
 
 Pro shots already managed by Radarr (`[tmdbid-...]`) keep their existing
 naming; we don't touch them.
@@ -136,7 +155,7 @@ naming; we don't touch them.
 
 ### Repo layout
 
-```
+```text
 kubernetes/apps/media-tools/promptbook/
   helmrelease.yaml          # app-template chart: Deployment + CronJob
   externalsecret.yaml       # ENCORA_API_KEY from 1Password
@@ -167,7 +186,7 @@ gethomepage.dev, anything similar.
 
 The PVC layout serves `/api/*` directly:
 
-```
+```text
 /data/api/collection.json
 /data/api/wants.json
 /data/api/profile.json
@@ -200,7 +219,7 @@ present-checked — anyone past the gateway is trusted.
 
 ### Sync log
 
-```
+```text
 /data/sync-log/2026-05-07T12-34-56Z.json    # one file per run
 /data/api/sync/latest.json                  # most recent run
 /data/api/sync/orphaned.json                # rolling list of 404'd IDs
@@ -214,7 +233,7 @@ runs.
 
 Mirrors Encora's own three-level navigation:
 
-```
+```text
 /                           → Shows grid (combined: anything in collection or wants)
 /shows/{slug}               → Show detail: tours/productions, owned + wanted
 /shows/{slug}/{tour}        → Tour detail: recordings list (date, master, cast preview)
@@ -325,7 +344,7 @@ NFO shape:
   <genre>Stage Recording</genre>
   <actor>
     <name>Natalie Goodin</name>
-    <role>U/s Elsa</role>
+    <role>u/s Lead</role>
     <order>0</order>
   </actor>
   ...
@@ -380,6 +399,7 @@ NOT be added. So we can't enrich with "44 people own this recording"
 counts at scale; that data only appears on website pages.
 
 **Rate-limit headers** to honor:
+
 - `X-RateLimit-Limit` (per-minute total)
 - `X-RateLimit-Remaining`
 - `X-RateLimit-Reset` (epoch when limit resets)

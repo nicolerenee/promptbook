@@ -1,0 +1,31 @@
+-- +goose Up
+-- Add the externally_managed flag to recordings.
+--
+-- This migration originally used Atlas's SQLite "table rebuild"
+-- pattern (create new_recordings, INSERT...SELECT, DROP recordings,
+-- ALTER TABLE RENAME) wrapped in PRAGMA foreign_keys=off/on. That
+-- shape is destructive when run via goose because goose wraps each
+-- migration in a transaction and SQLite silently ignores
+-- `PRAGMA foreign_keys` inside a transaction. With FK enforcement
+-- still on, the `DROP TABLE recordings` step performs an implicit
+-- DELETE FROM recordings, which cascades into every child with
+-- `ON DELETE CASCADE` (recording_versions, cast_entries,
+-- recording_extras), wiping local file tracking + cast metadata.
+-- See https://www.sqlite.org/pragma.html#pragma_foreign_keys.
+--
+-- The replacement is a plain `ALTER TABLE ADD COLUMN`, which SQLite
+-- has supported for non-null columns with a literal default since
+-- forever. No table rebuild, no PRAGMA, no cascade. Future "add a
+-- nullable / default-valued column" diffs should land as ALTER too;
+-- only schema changes that genuinely need a rebuild (drop column,
+-- change type, change PK) should resort to the rebuild pattern, and
+-- when they do those migrations MUST carry the goose
+-- "NO TRANSACTION" annotation so the PRAGMA actually takes effect.
+ALTER TABLE `recordings` ADD COLUMN `externally_managed` bool NOT NULL DEFAULT (false);
+
+-- +goose Down
+-- SQLite gained `ALTER TABLE ... DROP COLUMN` in 3.35 (2021); modernc
+-- ships a recent enough SQLite to support it. Down-migrations are
+-- best-effort in this project — production never rolls back — but
+-- the symmetric form keeps `goose down` working in dev.
+ALTER TABLE `recordings` DROP COLUMN `externally_managed`;

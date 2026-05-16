@@ -1,0 +1,66 @@
+package schema
+
+import (
+	"time"
+
+	"entgo.io/contrib/entgql"
+	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
+)
+
+// ManualImportQueue maps to `manual_import_queue` — files discovered
+// on disk that don't yet correspond to a known recording.
+type ManualImportQueue struct {
+	ent.Schema
+}
+
+// Annotations sets the table name to `manual_import_queue`. The type
+// is hidden from GraphQL — its default `int` PK would clash with the
+// `int64` IDs on the in-scope nodes; the queue surface stays REST-only.
+func (ManualImportQueue) Annotations() []schema.Annotation {
+	return []schema.Annotation{
+		entsql.Annotation{Table: "manual_import_queue"},
+		entgql.Skip(entgql.SkipAll),
+	}
+}
+
+// Fields of ManualImportQueue.
+func (ManualImportQueue) Fields() []ent.Field {
+	return []ent.Field{
+		field.Text("file_path").Unique(),
+		field.Int64("file_size_bytes").Default(0),
+		field.Time("discovered_at").
+			Default(time.Now).
+			SchemaType(sqliteSchema(typeDatetime)).
+			Annotations(entsql.Default("CURRENT_TIMESTAMP")),
+		field.Time("last_seen_at").
+			Default(time.Now).
+			SchemaType(sqliteSchema(typeDatetime)).
+			Annotations(entsql.Default("CURRENT_TIMESTAMP")),
+		field.Int64("suggested_recording_id").Optional().Nillable(),
+		field.Text("suggested_confidence").Default(""),
+		field.Text("notes").Default(""),
+		// extras_count counts the OTHER media files in the same source
+		// folder when a queue row represents a folder-as-unit (i.e. the
+		// FilePath points at a "main" recording living in a folder that
+		// also holds per-track audio rips, photos, etc.). 0 for queue
+		// rows whose source is a loose file at the watched-dir root.
+		field.Int("extras_count").Default(0),
+		// classification_json carries the scanner's per-file role
+		// classification for this folder-as-unit drop, JSON-encoded
+		// so the queue import modal can render the multi-file picker
+		// without re-walking the folder. Empty string for legacy rows
+		// that pre-date the column or for loose-file enqueues.
+		field.Text("classification_json").Default(""),
+	}
+}
+
+// Indexes of ManualImportQueue.
+func (ManualImportQueue) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("discovered_at"),
+	}
+}

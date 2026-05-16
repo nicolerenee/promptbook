@@ -13,29 +13,63 @@ import (
 // Defaults.
 const (
 	DefaultEncoraBaseURL       = "https://encora.it"
-	DefaultEncoraUserAgent     = "promptbook/0.0.1"
 	DefaultRequestsPerMinute   = 30
 	DefaultBurstReserve        = 2
 	DefaultDatabasePath        = "./promptbook.db"
 	DefaultListenAddr          = "[::]:8080"
 	DefaultJWKSRefreshInterval = 1 * time.Hour
-	DefaultFolderTemplate      = "{Show} - {Tour} - {Date} [encora-{EncoraID}]"
-	DefaultFileTemplate        = "{Show} - {Tour} - {Date} [{Master}]"
+	// DefaultFolderTemplate uses the new {DateWithVariant} ISO-partial
+	// date token so partial-month / variant-disambiguated recordings
+	// render cleanly in the folder name without dangling brackets.
+	DefaultFolderTemplate = "{Show} ({DateWithVariant}) [encora-{EncoraID}]"
+	// DefaultFileTemplate exercises the optional-segment grammar so
+	// empty Tour / Master / probe results / part index collapse to no
+	// output rather than leaving "[]" or " - " stubs in the filename.
+	DefaultFileTemplate = "{Show} ({DateWithVariant}) [encora-{EncoraID}]" +
+		"{? - {Tour}}{?[{Master}]}{?[{VideoCodec}]}{?[{Quality}]}" +
+		"{? - part-{Part}}"
+	// DefaultFFProbePath points at `ffprobe` on PATH. Override via
+	// library.ffprobePath / PROMPTBOOK_LIBRARY_FFPROBEPATH when the
+	// binary lives elsewhere.
+	DefaultFFProbePath = "ffprobe"
+	// DefaultFFmpegPath points at `ffmpeg` on PATH. ffmpeg is used by
+	// the picker's fanart-fallback path to extract still frames from
+	// the local video file when Encora has no curated screenshots for
+	// a recording. Override via library.ffmpegPath /
+	// PROMPTBOOK_LIBRARY_FFMPEGPATH when the binary lives elsewhere
+	// (e.g. a vendored static build); the extractor surfaces a clear
+	// "not available" error if ffmpeg isn't reachable at extraction
+	// time.
+	DefaultFFmpegPath = "ffmpeg"
+	// DefaultMakeMKVPath is the empty-string default for the makemkvcon
+	// binary path. Empty means "DVD remux feature disabled" — the SPA
+	// hides the Remux button and the GraphQL surface returns a typed
+	// error. Set via library.makemkvPath / PROMPTBOOK_LIBRARY_MAKEMKVPATH
+	// to an absolute path or to "makemkvcon" to resolve through PATH.
+	DefaultMakeMKVPath       = ""
+	DefaultWatchInterval     = 1 * time.Minute
+	DefaultStagemediaBaseURL = "https://stagemedia.me"
+	// DefaultTMDBBaseURL is TMDB's v3 API root. Override via
+	// tmdb.baseUrl / PROMPTBOOK_TMDB_BASEURL only for offline testing
+	// (e.g. an httptest server). Production should always speak to
+	// the canonical API root.
+	DefaultTMDBBaseURL = "https://api.themoviedb.org/3"
 )
 
 // Config is the top-level application configuration.
 type Config struct {
-	Encora  EncoraConfig  `mapstructure:"encora"`
-	Storage StorageConfig `mapstructure:"storage"`
-	Library LibraryConfig `mapstructure:"library"`
-	Server  ServerConfig  `mapstructure:"server"`
+	Encora     EncoraConfig     `mapstructure:"encora"`
+	Storage    StorageConfig    `mapstructure:"storage"`
+	Library    LibraryConfig    `mapstructure:"library"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Stagemedia StagemediaConfig `mapstructure:"stagemedia"`
+	TMDB       TMDBConfig       `mapstructure:"tmdb"`
 }
 
 // EncoraConfig holds Encora API client configuration.
 type EncoraConfig struct {
 	BaseURL   string          `mapstructure:"baseUrl"`
 	APIKey    string          `mapstructure:"apiKey"`
-	UserAgent string          `mapstructure:"userAgent"`
 	RateLimit RateLimitConfig `mapstructure:"rateLimit"`
 }
 
@@ -51,16 +85,51 @@ type StorageConfig struct {
 }
 
 // LibraryConfig describes the on-disk media library and naming scheme.
+//
+// ImageRoot is the on-disk directory for cached posters/backdrops/headshots.
+// Empty (the default) disables the image cache entirely — no downloads
+// during sync, no /images/* serving from the HTTP server. Set explicitly
+// to opt in; promptbook will create subdirectories under it as needed.
 type LibraryConfig struct {
-	Root           string `mapstructure:"root"`
-	FolderTemplate string `mapstructure:"folderTemplate"`
-	FileTemplate   string `mapstructure:"fileTemplate"`
+	Root           string        `mapstructure:"root"`
+	FolderTemplate string        `mapstructure:"folderTemplate"`
+	FileTemplate   string        `mapstructure:"fileTemplate"`
+	IncomingDirs   []string      `mapstructure:"incomingDirs"`
+	WatchInterval  time.Duration `mapstructure:"watchInterval"`
+	ImageRoot      string        `mapstructure:"imageRoot"`
+	// FFProbePath is the ffprobe binary used by the rename engine to
+	// extract codec/resolution metadata for the new {Container} /
+	// {VideoCodec} / {Quality} tokens. Empty falls back to "ffprobe"
+	// on PATH; the engine surfaces an error if the binary isn't
+	// reachable at probe time (no silent empty-mediainfo fallback).
+	FFProbePath string `mapstructure:"ffprobePath"`
+	// FFmpegPath is the ffmpeg binary used by the picker's fanart-
+	// fallback to extract still frames from the local video file.
+	// Empty falls back to "ffmpeg" on PATH; the picker surfaces an
+	// empty options array (with a logged reason) when ffmpeg is
+	// unavailable, so the rest of the modal stays usable.
+	FFmpegPath string `mapstructure:"ffmpegPath"`
+	// MakeMKVPath is the makemkvcon binary used by the DVD remux
+	// feature. Empty disables the feature entirely — the SPA hides
+	// the "Remux to MKV" menu item on DVD recordings and the GraphQL
+	// surface returns a typed error if the mutation/query is invoked
+	// anyway. Set to an absolute path or "makemkvcon" to enable.
+	MakeMKVPath string `mapstructure:"makemkvPath"`
 }
 
 // ServerConfig holds HTTP server configuration (used by `promptbook serve`).
+//
+// PublicURL is the externally-reachable base URL of the promptbook server.
+// Used as the base for image URLs written into NFO files so media servers
+// can fetch posters, fanart, and actor headshots over HTTP. Empty disables
+// URL emission — NFOs fall back to local sibling files (poster.jpg,
+// fanart.jpg) for movie images and skip actor thumbs entirely. No default
+// is set: the empty string is a valid (no-URL) state that mirrors how
+// local-only setups expect the writer to behave.
 type ServerConfig struct {
-	Listen string     `mapstructure:"listen"`
-	OIDC   OIDCConfig `mapstructure:"oidc"`
+	Listen    string     `mapstructure:"listen"`
+	PublicURL string     `mapstructure:"publicURL"`
+	OIDC      OIDCConfig `mapstructure:"oidc"`
 }
 
 // OIDCConfig configures JWT validation for /api/v1/*.
@@ -68,6 +137,23 @@ type OIDCConfig struct {
 	Issuer      string        `mapstructure:"issuer"`
 	Audience    string        `mapstructure:"audience"`
 	JWKSRefresh time.Duration `mapstructure:"jwksRefresh"`
+}
+
+// StagemediaConfig holds StageMedia.me API client configuration. Optional —
+// leave APIKey blank to disable poster + headshot fetching.
+type StagemediaConfig struct {
+	BaseURL string `mapstructure:"baseUrl"`
+	APIKey  string `mapstructure:"apiKey"`
+}
+
+// TMDBConfig holds TMDB API client configuration. Optional — leave
+// APIKey blank to disable the TMDB picker source (poster + fanart
+// suggestions for recordings that carry a TMDB / IMDB external id).
+// The picker handlers nil-check and degrade to "no TMDB options"
+// cleanly when the key is unset.
+type TMDBConfig struct {
+	BaseURL string `mapstructure:"baseUrl"`
+	APIKey  string `mapstructure:"apiKey"`
 }
 
 // LoadOptions configures how configuration is loaded.
@@ -126,14 +212,18 @@ func Load(opts LoadOptions) (Config, error) {
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("encora.baseUrl", DefaultEncoraBaseURL)
-	v.SetDefault("encora.userAgent", DefaultEncoraUserAgent)
 	v.SetDefault("encora.rateLimit.requestsPerMinute", DefaultRequestsPerMinute)
 	v.SetDefault("encora.rateLimit.burstReserve", DefaultBurstReserve)
 	v.SetDefault("storage.databasePath", DefaultDatabasePath)
 	v.SetDefault("library.folderTemplate", DefaultFolderTemplate)
 	v.SetDefault("library.fileTemplate", DefaultFileTemplate)
+	v.SetDefault("library.watchInterval", DefaultWatchInterval)
+	v.SetDefault("library.ffprobePath", DefaultFFProbePath)
+	v.SetDefault("library.ffmpegPath", DefaultFFmpegPath)
 	v.SetDefault("server.listen", DefaultListenAddr)
 	v.SetDefault("server.oidc.jwksRefresh", DefaultJWKSRefreshInterval)
+	v.SetDefault("stagemedia.baseUrl", DefaultStagemediaBaseURL)
+	v.SetDefault("tmdb.baseUrl", DefaultTMDBBaseURL)
 }
 
 // asConfigNotFound reports whether err is viper.ConfigFileNotFoundError.

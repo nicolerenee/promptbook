@@ -32,7 +32,7 @@ at per_page=100 (Laravel-style: `next_page_url`, `current_page`, `last_page`, `t
 Plain JSON array of URL strings to encora's CDN:
 
 ```json
-["https://fixture.invalid/storage/0099/marigold-junction-screenshot.png"]
+["https://encora.invalid/storage/0001/fixture-screenshot.png"]
 ```
 
 Hot-linkable. For "custom images" requirement, we cache or override in promptbook.
@@ -45,7 +45,8 @@ Structured object:
 {"full_date": "2009-12-01", "month_known": true, "day_known": false, "date_variant": null, "time": "evening|matinee|unknown"}
 ```
 
-`full_date` always ISO. `day_known=false` means the day part is a placeholder — show as "December 2009" not "December 1, 2009". `date_variant` likely numeric for multi-recordings-same-date disambiguation (null in samples).
+`full_date` always ISO. `day_known=false` means the day part is a placeholder — show as "December 2009" not "December 1, 2009".
+`date_variant` likely numeric for multi-recordings-same-date disambiguation (null in samples).
 
 ### 5. Tour name canonicalization
 
