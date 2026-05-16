@@ -49,10 +49,10 @@ const fixturesDir = "../encora/testdata"
 func newFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	routes := map[string]string{
-		"/api/profile":                  "profile.json",
-		"/api/collection":               "collection.json",
-		"/api/wants":                    "wants.json",
-		"/api/recording/90100222/subtitles": "recording_8222_subtitles.json",
+		"/api/profile":                      "profile.json",
+		"/api/collection":                   "collection.json",
+		"/api/wants":                        "wants.json",
+		"/api/recording/90100222/subtitles": "recording_pilot_subtitles.json",
 	}
 	mux := http.NewServeMux()
 	for path, file := range routes {

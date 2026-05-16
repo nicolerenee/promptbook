@@ -73,7 +73,7 @@ Five new migrations (`00003`-`00007`), each matching its purpose:
   `cast_entries` are still populated — annotated as legacy in
   `refreshCastEntries`'s comment block — so consumers can migrate
   gradually. `TestSyncPopulatesPeopleTables` proves Avery Morrison
-  James (id 90001001) and Marigold (character id 90002001) round-trip.
+  (id 90001001) and Marigold (character id 90002001) round-trip.
 - `history` (`00005`) is a generic event log keyed by kind + optional
   `recording_id` + JSON details column. `internal/storage/history.go`'s
   `RecordEvent` defaults `OccurredAt` and `Details` so callers stay

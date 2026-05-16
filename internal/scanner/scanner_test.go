@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -435,4 +436,184 @@ func TestScanLooseFileExtrasCountIsZero(t *testing.T) {
 	assert.Equal(t, path, got[0].FilePath)
 	assert.Equal(t, 0, got[0].ExtrasCount,
 		"loose-file rows always have extras_count = 0")
+}
+
+// TestScanSkipsInFlightLooseFile covers the rclone-partial bug. A
+// loose `<name>.mp4.<chunk>.partial` file at the watched-dir root is
+// rclone's in-flight marker; enqueuing it would strand a queue row
+// keyed on a path that's about to be renamed when the transfer
+// finishes. The scan must skip it, leaving the queue empty.
+func TestScanSkipsInFlightLooseFile(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	f.writeVideo(t, "Sextet - Coastal Tour - November, 2024 [fixturetrader14].mp4.780b8258.partial")
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, res.Enqueued, "in-flight file must not be enqueued")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	assert.Empty(t, got, "in-flight partial file must not leak into the queue")
+}
+
+// TestScanSkipsInFlightInsideFolderUnit covers the folder-as-unit
+// branch: if a folder contains a settled main video AND a still-
+// downloading sibling, the partial must be excluded from the
+// classification so it neither shows up as an extra nor risks
+// becoming the chosen main on a future scan once it grows past the
+// real file.
+func TestScanSkipsInFlightInsideFolderUnit(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	folder := filepath.Join(f.watchDir, "Some Show - 2024-03-15")
+	settled := filepath.Join(folder, "main.mkv")
+	rclonePartial := filepath.Join(folder, "main.mkv.780b8258.partial")
+	chromePartial := filepath.Join(folder, "trailer.mp4.crdownload")
+	rcloneTmp := filepath.Join(folder, ".main.mkv.rclone-tmp123")
+
+	writeFile(t, settled, 1024*1024)
+	writeFile(t, rclonePartial, 4*1024*1024) // larger than settled on purpose.
+	writeFile(t, chromePartial, 2*1024*1024)
+	writeFile(t, rcloneTmp, 8*1024*1024)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued, "exactly one queue row for the folder")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, settled, got[0].FilePath,
+		"main must be the settled file, not the larger .partial")
+	assert.Equal(t, 0, got[0].ExtrasCount,
+		"in-flight files must not be counted as extras")
+}
+
+// TestScanEvictsStaleQueueRow covers the "rescan should be fresh"
+// requirement. We pre-seed a queue row whose file_path lives under the
+// watched dir but whose actual file no longer exists on disk (the
+// canonical "rclone renamed `.partial` -> real name and the old row
+// was never cleaned up" shape). A subsequent Scan must drop the stale
+// row and enqueue the settled file, even when the queue already
+// contained an entry that looked plausible.
+func TestScanEvictsStaleQueueRow(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	// Seed a stale row that points under the watched dir but at a path
+	// that no longer exists (simulating an old rclone-partial enqueue
+	// from a buggier version of the scanner).
+	stalePath := filepath.Join(f.watchDir,
+		"Show - 2024-03-15.mp4.780b8258.partial")
+	_, err := storage.EnqueueFile(f.ctx, f.db, storage.QueueEntry{
+		FilePath:      stalePath,
+		FileSizeBytes: 1234,
+	})
+	require.NoError(t, err)
+
+	// Now drop the settled file at the destination name and rescan.
+	settled := f.writeVideo(t, "Show - 2024-03-15.mp4")
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Enqueued)
+	// reconcileMissing handles the stat-not-found path; the explicit
+	// "Removed" count covers either the reconcile-time delete or the
+	// end-of-pass eviction, whichever caught it first.
+	assert.GreaterOrEqual(t, res.Removed, 1, "stale row must be removed")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, settled, got[0].FilePath,
+		"only the settled file should remain in the queue")
+}
+
+// TestScanEvictsStaleRowWithSurvivingFile pins the bit
+// reconcileMissing alone can't fix: a queue row whose backing path
+// still exists, but which the current walk no longer produces (e.g.
+// the folder was reorganized and the previous "main" is now an extra
+// of a different recording). The end-of-pass eviction must drop it
+// because its last_seen_at predates the pass start.
+func TestScanEvictsStaleRowWithSurvivingFile(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	// Pre-seed a row under the watch dir whose file actually exists,
+	// so reconcileMissing won't touch it. We then run a Scan with no
+	// matching content on disk for that row (the walk doesn't visit
+	// it because the file lives in a sibling location), so the only
+	// thing that can evict it is the LastSeenAt-based sweep.
+	orphan := filepath.Join(f.watchDir, "abandoned.mkv")
+	writeFile(t, orphan, 1024)
+	_, err := storage.EnqueueFile(f.ctx, f.db, storage.QueueEntry{
+		FilePath:      orphan,
+		FileSizeBytes: 1024,
+	})
+	require.NoError(t, err)
+
+	// Engine.IsTracked returns true for the orphan path so the walk
+	// finds the file but refuses to re-enqueue it. This is the closest
+	// stand-in for "the walk no longer wants this row" without needing
+	// a full ingest fixture.
+	f.engine.IsTracked = func(path string) bool { return path == orphan }
+
+	// Sleep a hair so EnqueueFile's last_seen_at < scanStartedAt for
+	// the Scan call below. time.Now is sub-millisecond precise on
+	// linux/darwin but ent-stored datetimes are second-resolution in
+	// sqlite, so we pad past the second boundary.
+	time.Sleep(1100 * time.Millisecond)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Removed,
+		"surviving file whose row went un-touched this pass must be evicted")
+	assert.Empty(t, res.Errors)
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	assert.Empty(t, got, "stale row must be gone after the sweep")
+}
+
+// TestScanEvictionScopedToWatchDirs guarantees the end-of-pass sweep
+// doesn't touch rows that live OUTSIDE any of Engine.WatchDirs. We
+// stash a real file in a sibling tempdir, enqueue it, and verify the
+// scanner leaves it alone: reconcileMissing can't drop it (the file
+// stats fine) and the eviction sweep's WatchDirs prefix filter must
+// exclude it.
+func TestScanEvictionScopedToWatchDirs(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	sibling := filepath.Join(filepath.Dir(f.watchDir), "elsewhere")
+	require.NoError(t, os.MkdirAll(sibling, 0o755))
+	external := filepath.Join(sibling, "external.mkv")
+	writeFile(t, external, 1024)
+	_, err := storage.EnqueueFile(f.ctx, f.db, storage.QueueEntry{
+		FilePath:      external,
+		FileSizeBytes: 1024,
+	})
+	require.NoError(t, err)
+
+	// Pad past the second boundary so the seeded row's last_seen_at
+	// predates scanStartedAt — that's the exact precondition where a
+	// missing prefix scope would otherwise let the sweep evict it.
+	time.Sleep(1100 * time.Millisecond)
+
+	res, err := f.engine.Scan(f.ctx)
+	require.NoError(t, err)
+	assert.Empty(t, res.Errors)
+	assert.Equal(t, 0, res.Removed,
+		"sweep must not touch rows outside Engine.WatchDirs")
+
+	got, err := storage.ListQueue(f.ctx, f.db)
+	require.NoError(t, err)
+	require.Len(t, got, 1, "external row must survive the scan")
+	assert.Equal(t, external, got[0].FilePath)
 }

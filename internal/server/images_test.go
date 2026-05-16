@@ -114,8 +114,8 @@ func TestImagesRoute_PlaceholderOnMiss_Headshot(t *testing.T) {
 	assert.Equal(t, "image/svg+xml; charset=utf-8", rr.Header().Get("Content-Type"))
 	body := rr.Body.String()
 	assert.True(t, strings.HasPrefix(body, "<svg"), "placeholder must be SVG")
-	// Initials BD = "Brian" + "d'Arcy" — matches the performer row seeded above.
-	assert.Contains(t, body, ">BD<")
+	// Initials AM = "Avery" + "Morrison" — matches the performer row seeded above.
+	assert.Contains(t, body, ">AM<")
 }
 
 func TestImagesRoute_PlaceholderOnMiss_ShowBanner(t *testing.T) {

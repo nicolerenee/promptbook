@@ -41,9 +41,9 @@ func TestParseCorpus(t *testing.T) {
 			wantFlags: map[string]bool{"matinee": true},
 		},
 		{
-			name:     "Company plain ISO date",
-			in:       "Company 2023-11-11.mp4",
-			wantShow: "Company",
+			name:     "Drift House plain ISO date",
+			in:       "Drift House 2023-11-11.mp4",
+			wantShow: "Drift House",
 			wantDate: match.ParsedDate{Year: 2023, Month: 11, Day: 11},
 		},
 		{
@@ -81,9 +81,9 @@ func TestParseCorpus(t *testing.T) {
 			wantFlags: map[string]bool{"matinee": true},
 		},
 		{
-			name:     "Six short ISO",
-			in:       "Six 2024-6-15.mp4",
-			wantShow: "Six",
+			name:     "Sextet short ISO",
+			in:       "Sextet 2024-6-15.mp4",
+			wantShow: "Sextet",
 			wantDate: match.ParsedDate{Year: 2024, Month: 6, Day: 15},
 		},
 		{

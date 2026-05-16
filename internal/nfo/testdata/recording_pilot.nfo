@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<movie>
+  <title>Marigold Junction — Broadway — August 2010</title>
+  <originaltitle>Marigold Junction</originaltitle>
+  <year>2010</year>
+  <plot>Fictional pro-shot used as a fixture. Two performers cover a single role across alternating songs so the parser exercises the duplicate-character path. File information varies across fictional traders.&#xA;&#xA;A wholly fictional musical used as a test fixture for promptbook. Any resemblance to real recordings is unintended.</plot>
+  <set>
+    <name>Marigold Junction</name>
+    <overview>A wholly fictional musical used as a test fixture for promptbook. Any resemblance to real recordings is unintended.</overview>
+  </set>
+  <tag>pro-shot</tag>
+  <actor>
+    <name>Avery Morrison</name>
+    <role>Marigold</role>
+    <order>1</order>
+  </actor>
+  <actor>
+    <name>Jordan Kessler</name>
+    <role>Captain Vex</role>
+    <order>2</order>
+  </actor>
+  <actor>
+    <name>Riley Chen</name>
+    <role>The Tinker</role>
+    <order>3</order>
+  </actor>
+  <actor>
+    <name>Quinn Walsh</name>
+    <role>Junebug</role>
+    <order>4</order>
+  </actor>
+  <actor>
+    <name>Sasha Dornan</name>
+    <role>Wren</role>
+    <order>5</order>
+  </actor>
+  <actor>
+    <name>Theo Maddox</name>
+    <role>Echo</role>
+    <order>6</order>
+  </actor>
+  <actor>
+    <name>Imogen Pryce</name>
+    <role>The Cartographer</role>
+    <order>7</order>
+  </actor>
+  <actor>
+    <name>Felix Yarrow</name>
+    <role>Bramble</role>
+    <order>8</order>
+  </actor>
+  <actor>
+    <name>Nia Halloran</name>
+    <role>The Lantern Maker</role>
+    <order>9</order>
+  </actor>
+  <actor>
+    <name>Sasha Dornan</name>
+    <role>Hollow</role>
+    <order>10</order>
+  </actor>
+  <actor>
+    <name>Hollow Bly</name>
+    <role>The Constable</role>
+    <order>11</order>
+  </actor>
+  <actor>
+    <name>Margot Eisley</name>
+    <role>Greta</role>
+    <order>12</order>
+  </actor>
+  <actor>
+    <name>Owen Tate</name>
+    <role>Smudge</role>
+    <order>13</order>
+  </actor>
+  <actor>
+    <name>Linnea Quist</name>
+    <role>u/s Junior</role>
+    <order>14</order>
+  </actor>
+  <actor>
+    <name>Bex Caldwell</name>
+    <role>Junior</role>
+    <order>14</order>
+  </actor>
+  <actor>
+    <name>Roan Petrosian</name>
+    <role>Old Mariner</role>
+    <order>15</order>
+  </actor>
+  <actor>
+    <name>Dahlia Greaves</name>
+    <role>Ensemble</role>
+    <order>20</order>
+  </actor>
+  <actor>
+    <name>Mateo Vance</name>
+    <role>Ensemble</role>
+    <order>20</order>
+  </actor>
+  <actor>
+    <name>Soren Iwami</name>
+    <role>Ensemble</role>
+    <order>20</order>
+  </actor>
+  <uniqueid type="encora" default="true">90100222</uniqueid>
+  <fileinfo>
+    <notes>Fictional pro-shot used as a fixture. Two performers cover a single role across alternating songs so the parser exercises the duplicate-character path. File information varies across fictional traders.</notes>
+  </fileinfo>
+</movie>

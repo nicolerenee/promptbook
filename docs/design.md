@@ -127,14 +127,14 @@ Examples:
 Tideline Manor - First US National Tour - 2024-01-21 [encora-90118317]/
   Tideline Manor - First US National Tour - 2024-01-21 [Standard Master].mp4
 
-Mockingbird Lane - Second US National Tour (Non-Equity) - 2023-10-26 [encora-NNNNNN]/
-  Mockingbird Lane - Second US National Tour (Non-Equity) - 2023-10-26 [Standard Master].mp4
+Chasing Polaris - Second US National Tour (Non-Equity) - 2023-10-26 [encora-NNNNNN]/
+  Chasing Polaris - Second US National Tour (Non-Equity) - 2023-10-26 [Standard Master].mp4
 
 Halcyon Crossing - Broadway - 2024-02-09 [encora-NNNNNN]/
   Halcyon Crossing - Broadway - 2024-02-09 [fixturetaper].mp4
 
-Company - Broadway Revival - 2006 [encora-NNNNNN]/
-  Company - Broadway Revival - 2006 [Unknown].mp4
+Greenwich Beacon - Broadway Revival - 2006 [encora-NNNNNN]/
+  Greenwich Beacon - Broadway Revival - 2006 [Unknown].mp4
 ```
 
 Decisions:
@@ -146,7 +146,7 @@ Decisions:
 - **Master in the filename, not folder** — the encora ID already uniquely
   identifies the recording at the folder level.
 - **Year-only fallback** for older recordings without precise dates
-  (`Company - Broadway Revival - 2006`).
+  (`Drift House - Broadway Revival - 2006`).
 
 Pro shots already managed by Radarr (`[tmdbid-...]`) keep their existing
 naming; we don't touch them.
@@ -344,7 +344,7 @@ NFO shape:
   <genre>Stage Recording</genre>
   <actor>
     <name>Natalie Goodin</name>
-    <role>U/s Elsa</role>
+    <role>u/s Lead</role>
     <order>0</order>
   </actor>
   ...

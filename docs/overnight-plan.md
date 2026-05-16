@@ -239,8 +239,8 @@ internal/
 - `internal/rename/planner_test.go` — build plans against fixture recordings.
 - `internal/rename/mover_test.go` — actual `os.Rename` against `t.TempDir()`.
 - `internal/nfo/writer_test.go` — golden test: build NFO from the Marigold
-  recording fixture (`testdata/recording_8222.json`), compare to a checked-in
-  golden file at `internal/nfo/testdata/recording_8222.nfo`. (Generate the
+  recording fixture (`testdata/recording_pilot.json`), compare to a checked-in
+  golden file at `internal/nfo/testdata/recording_pilot.nfo`. (Generate the
   golden once and check it in.)
 - `internal/ingest/ingest_test.go` — end-to-end with a `t.TempDir()` source +
   dest, an httptest server with the encora fixtures, an in-memory SQLite

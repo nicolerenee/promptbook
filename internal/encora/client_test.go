@@ -23,13 +23,13 @@ func fixtureServer(t *testing.T, remaining int) *httptest.Server {
 	t.Helper()
 
 	routes := map[string]string{
-		"/api/profile":                    "profile.json",
-		"/api/collection":                 "collection.json",
-		"/api/wants":                      "wants.json",
-		"/api/recording/90100222":             "recording_8222.json",
-		"/api/recording/90100222/subtitles":   "recording_8222_subtitles.json",
-		"/api/recording/90100222/screenshots": "recording_8222_screenshots.json",
-		"/api/recording/90100312":          "probe_2008312.json",
+		"/api/profile":                        "profile.json",
+		"/api/collection":                     "collection.json",
+		"/api/wants":                          "wants.json",
+		"/api/recording/90100222":             "recording_pilot.json",
+		"/api/recording/90100222/subtitles":   "recording_pilot_subtitles.json",
+		"/api/recording/90100222/screenshots": "recording_pilot_screenshots.json",
+		"/api/recording/90100312":             "probe_unowned.json",
 	}
 
 	mux := http.NewServeMux()
@@ -127,7 +127,7 @@ func TestClientFixtureRoundTrip(t *testing.T) {
 		assert.Equal(t, "Broadway", r.Tour)
 		assert.Equal(t, "pro-shot", r.Master)
 		assert.True(t, r.Date.MonthKnown)
-		assert.False(t, r.Date.DayKnown, "marigold date is December 2009 — day unknown")
+		assert.False(t, r.Date.DayKnown, "pilot fixture has month-only date")
 	})
 
 	t.Run("subtitles", func(t *testing.T) {
@@ -151,7 +151,7 @@ func TestClientFixtureRoundTrip(t *testing.T) {
 		assert.Equal(t, 28, rl.Remaining)
 	})
 
-	t.Run("recording_2008312_not_in_collection", func(t *testing.T) {
+	t.Run("recording_unowned_lookup", func(t *testing.T) {
 		t.Parallel()
 		// /recording/{id} works for any ID, not just owned.
 		r, _, err := c.Recording(ctx, 90100312)
@@ -163,8 +163,8 @@ func TestClientFixtureRoundTrip(t *testing.T) {
 func TestClientCastStatusParsing(t *testing.T) {
 	t.Parallel()
 
-	// The Chasing Polaris wants entry (id 90001143) has multiple cast members
-	// with status objects; verify they parse as CastStatus, not strings.
+	// At least one synthetic wants entry carries a status object so we can
+	// verify it parses as CastStatus, not a raw string.
 	wantsBytes, err := os.ReadFile(filepath.Join("testdata", "wants.json"))
 	require.NoError(t, err)
 

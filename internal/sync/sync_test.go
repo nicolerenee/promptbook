@@ -133,26 +133,26 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 		assert.False(t, res.RateLimitedBailedOut)
 	})
 
-	t.Run("marigold_recording_landed", func(t *testing.T) {
+	t.Run("pilot_recording_landed", func(t *testing.T) {
 		t.Parallel()
 		r, lerr := db.Recording.Get(t.Context(), 90100222)
 		require.NoError(t, lerr)
 		assert.Equal(t, "Broadway", r.Tour)
 		assert.Equal(t, "pro-shot", r.Master)
-		assert.Equal(t, "2009-12-01", r.DateFull)
+		assert.Equal(t, "2010-08-01", r.DateFull)
 		assert.True(t, r.DateMonthKnown)
-		assert.False(t, r.DateDayKnown, "marigold date is December 2009, day unknown")
+		assert.False(t, r.DateDayKnown, "pilot fixture date is month-only")
 		assert.Equal(t, int64(90004089), r.ShowID)
 	})
 
-	t.Run("marigold_show_landed", func(t *testing.T) {
+	t.Run("pilot_show_landed", func(t *testing.T) {
 		t.Parallel()
 		s, sErr := db.Show.Get(t.Context(), 90004089)
 		require.NoError(t, sErr)
 		assert.Equal(t, "Marigold Junction", s.Name)
 	})
 
-	t.Run("marigold_cast_landed", func(t *testing.T) {
+	t.Run("pilot_cast_landed", func(t *testing.T) {
 		t.Parallel()
 		// CastEntry doesn't expose a typed predicate package; use the
 		// ent query builder's recording-edge filter via the parent
@@ -161,7 +161,7 @@ func TestSyncFixtureRoundTrip(t *testing.T) {
 		require.NoError(t, lerr)
 		n, cErr := recRow.QueryCastEntries().Count(t.Context())
 		require.NoError(t, cErr)
-		assert.Positive(t, n, "marigold should have cast entries")
+		assert.Positive(t, n, "pilot recording should have cast entries")
 	})
 
 	t.Run("profile_persisted", func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestSyncIsIdempotent(t *testing.T) {
 			want:  14,
 		},
 		{
-			name: "cast_entries_for_8222",
+			name: "cast_entries_for_pilot",
 			count: func() (int, error) {
 				r, gerr := db.Recording.Get(t.Context(), 90100222)
 				if gerr != nil {
@@ -299,8 +299,9 @@ func TestSyncBailsOnRateLimitFloor(t *testing.T) {
 // upserting one row per Encora id so LoadPerformer / LoadCharacter work
 // against the same data the cast_entries denormalization carries.
 //
-// The Marigold fixture (recording 90100222) lists Avery Morrison (performer id
-// 90001001) playing Marigold (character id 90002001); both must land and round-trip.
+// The pilot fixture (recording 90100222) lists Avery Morrison (performer id
+// 90001001) playing Marigold (character id 90002001); both must land and
+// round-trip.
 func TestSyncPopulatesPeopleTables(t *testing.T) {
 	t.Parallel()
 
@@ -331,7 +332,7 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 		assert.Positive(t, n, "characters table should have rows")
 	})
 
-	t.Run("brian_darcy_james_round_trips", func(t *testing.T) {
+	t.Run("pilot_lead_performer_round_trips", func(t *testing.T) {
 		t.Parallel()
 		const performerID int64 = 90001001
 		got, lerr := storage.LoadPerformer(context.Background(), db, performerID)
@@ -341,7 +342,7 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 		assert.WithinDuration(t, velvet-antlersNow, got.LastSeenAt, time.Second)
 	})
 
-	t.Run("marigold_character_round_trips", func(t *testing.T) {
+	t.Run("pilot_lead_character_round_trips", func(t *testing.T) {
 		t.Parallel()
 		const characterID int64 = 90002001
 		got, lerr := storage.LoadCharacter(context.Background(), db, characterID)
@@ -350,13 +351,13 @@ func TestSyncPopulatesPeopleTables(t *testing.T) {
 		assert.WithinDuration(t, velvet-antlersNow, got.LastSeenAt, time.Second)
 	})
 
-	t.Run("brian_darcy_james_recording_join", func(t *testing.T) {
+	t.Run("pilot_lead_performer_recording_join", func(t *testing.T) {
 		t.Parallel()
 		const performerID int64 = 90001001
 		ids, lerr := storage.ListRecordingsForPerformer(context.Background(), db, performerID)
 		require.NoError(t, lerr)
 		assert.Contains(t, ids, int64(90100222),
-			"Avery Morrison must be wired to the Marigold recording 90100222")
+			"lead performer must be wired to the pilot recording")
 	})
 }
 

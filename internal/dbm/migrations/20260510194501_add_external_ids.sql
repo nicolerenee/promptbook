@@ -7,7 +7,7 @@
 -- secondary UNIQUE INDEX on (provider, external_id) lets
 -- FindRecordingByExternalID look up a local recording in O(1).
 --
--- external_id is TEXT because IMDB ids are not numeric (tt99999999).
+-- external_id is TEXT because IMDB ids are not numeric (tt-prefixed).
 -- Encora ids round-trip through this column as the decimal string
 -- form of the int64 (strconv.FormatInt) — see
 -- internal/externalids/externalids.go for the encoding contract.

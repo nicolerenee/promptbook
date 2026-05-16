@@ -125,7 +125,7 @@ leakage between cobra tests is a classic gotcha).
   explains why), `<plot>` with HTML stripped, `<set><name>` for the show
   collection grouping, `<tag>` per metadata flag, `<actor>`, and
   `<uniqueid type="encora" default="true">` per spec.
-- The Marigold golden lives at `internal/nfo/testdata/recording_8222.nfo`
+- The Marigold golden lives at `internal/nfo/testdata/recording_pilot.nfo`
   and is checked in. The golden test (`writer_test.go:36`) supports the
   standard `-update` flag pattern. Comparing the file character-for-character
   catches any future drift in `encoding/xml`'s output.

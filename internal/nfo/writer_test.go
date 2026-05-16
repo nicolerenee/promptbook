@@ -29,9 +29,9 @@ import (
 //nolint:gochecknoglobals // standard golden-file pattern
 var updateGolden = flag.Bool("update", false, "regenerate golden NFO files")
 
-func loadMarigold(t *testing.T) encora.Recording {
+func loadPilot(t *testing.T) encora.Recording {
 	t.Helper()
-	path := filepath.Join("..", "encora", "testdata", "recording_8222.json")
+	path := filepath.Join("..", "encora", "testdata", "recording_pilot.json")
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
 	var r encora.Recording
@@ -39,16 +39,16 @@ func loadMarigold(t *testing.T) encora.Recording {
 	return r
 }
 
-func TestWriteMarigoldGolden(t *testing.T) {
+func TestWritePilotGolden(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	model := nfo.FromRecording(rec)
 
 	var buf bytes.Buffer
 	require.NoError(t, nfo.Write(&buf, model))
 
-	goldenPath := filepath.Join("testdata", "recording_8222.nfo")
+	goldenPath := filepath.Join("testdata", "recording_pilot.nfo")
 	if *updateGolden {
 		require.NoError(t, os.MkdirAll(filepath.Dir(goldenPath), 0o755))
 		require.NoError(t, os.WriteFile(goldenPath, buf.Bytes(), 0o644))
@@ -57,7 +57,7 @@ func TestWriteMarigoldGolden(t *testing.T) {
 	}
 
 	want, err := os.ReadFile(goldenPath)
-	require.NoError(t, err, "golden missing — run `go test -run TestWriteMarigoldGolden -update`")
+	require.NoError(t, err, "golden missing — run `go test -run TestWritePilotGolden -update`")
 	assert.Equal(t, string(want), buf.String())
 }
 
@@ -69,7 +69,7 @@ func TestWriteMarigoldGolden(t *testing.T) {
 func TestWriteRecordingFileWithImages(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
@@ -106,7 +106,7 @@ func TestWriteRecordingFileWithImages(t *testing.T) {
 func TestWriteRecordingFileNoCache(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	folder := t.TempDir()
 	written, err := nfo.WriteRecordingFile(t.Context(), folder, rec, nfo.WriteOptions{})
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestWriteRecordingFileNoCache(t *testing.T) {
 func TestWriteRecordingFileFanartOnly(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
 
@@ -153,7 +153,7 @@ func TestWriteRecordingFileFanartOnly(t *testing.T) {
 func TestNFO_WithPublicURL(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 
 	// Trailing-slash on the public URL should be stripped so the
 	// resulting URLs don't have "//images" — verify with both shapes.
@@ -195,11 +195,11 @@ func TestNFO_WithPublicURL(t *testing.T) {
 				got,
 				`<thumb>https://promptbook.example.com/images/recordings/90100222/fanart.jpg?v=generated</thumb>`,
 			)
-			// First cast entry on the Marigold fixture is Avery Morrison
-			// James (performer id 90001001, role Marigold).
+			// First cast entry on the pilot fixture is Avery Morrison
+			// (performer id 90001001, role Marigold).
 			assert.Contains(t, got,
 				`<thumb>https://promptbook.example.com/images/actors/90001001.jpg?v=generated</thumb>`)
-			// And the last named cast entry is Marisol Vandermeer (id 90001018).
+			// And the last cast entry is Soren Iwami (id 90001018).
 			assert.Contains(t, got,
 				`<thumb>https://promptbook.example.com/images/actors/90001018.jpg?v=generated</thumb>`)
 			// No double-slash anywhere.
@@ -217,7 +217,7 @@ func TestNFO_WithPublicURL(t *testing.T) {
 func TestNFO_PublicURLCacheBust(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
 
@@ -228,13 +228,13 @@ func TestNFO_PublicURLCacheBust(t *testing.T) {
 	posterMtime := int64(1_700_000_001)
 	fanartMtime := int64(1_700_000_002)
 	bannerMtime := int64(1_700_000_003)
-	headshot1380Mtime := int64(1_700_000_004)
-	headshot3003Mtime := int64(1_700_000_005)
+	headshot90001001Mtime := int64(1_700_000_004)
+	headshot90001018Mtime := int64(1_700_000_005)
 	writeImageWithMtime(t, cache.RecordingPosterPath(rec.ID), posterMtime)
 	writeImageWithMtime(t, cache.RecordingFanartPath(rec.ID), fanartMtime)
 	writeImageWithMtime(t, cache.ShowBannerPath(rec.Metadata.ShowID), bannerMtime)
-	writeImageWithMtime(t, cache.HeadshotPath(90001001), headshot1380Mtime)
-	writeImageWithMtime(t, cache.HeadshotPath(90001018), headshot3003Mtime)
+	writeImageWithMtime(t, cache.HeadshotPath(90001001), headshot90001001Mtime)
+	writeImageWithMtime(t, cache.HeadshotPath(90001018), headshot90001018Mtime)
 
 	folder := t.TempDir()
 	written, err := nfo.WriteRecordingFile(
@@ -269,10 +269,10 @@ func TestNFO_PublicURLCacheBust(t *testing.T) {
 	// Headshots carry the per-actor mtime.
 	assert.Contains(t, got, fmt.Sprintf(
 		`<thumb>https://promptbook.example.com/images/actors/90001001.jpg?v=%d</thumb>`,
-		headshot1380Mtime))
+		headshot90001001Mtime))
 	assert.Contains(t, got, fmt.Sprintf(
 		`<thumb>https://promptbook.example.com/images/actors/90001018.jpg?v=%d</thumb>`,
-		headshot3003Mtime))
+		headshot90001018Mtime))
 }
 
 // TestNFO_PublicURLNoCacheBareURLs covers the negative path:
@@ -282,7 +282,7 @@ func TestNFO_PublicURLCacheBust(t *testing.T) {
 func TestNFO_PublicURLNoCacheBareURLs(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	folder := t.TempDir()
 
 	written, err := nfo.WriteRecordingFile(
@@ -321,7 +321,7 @@ func TestNFO_PublicURLNoCacheBareURLs(t *testing.T) {
 func TestNFO_PublicURLPartialMtime(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	cacheRoot := t.TempDir()
 	cache := imagecache.New(cacheRoot, nil, zerologNop())
 
@@ -378,7 +378,7 @@ func writeImageWithMtime(t *testing.T, path string, mtime int64) {
 func TestNFO_NoPublicURL(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	folder := t.TempDir()
 
 	written, err := nfo.WriteRecordingFile(
@@ -423,12 +423,12 @@ func zerologNop() zerolog.Logger { return zerolog.Nop() }
 func TestFromRecordingPartialDate(t *testing.T) {
 	t.Parallel()
 
-	rec := loadMarigold(t) // Marigold's day is unknown → premiered should be empty.
+	rec := loadPilot(t) // pilot fixture's day is unknown → premiered should be empty.
 	model := nfo.FromRecording(rec)
 
 	assert.Empty(t, model.Premiered, "day_known=false ⇒ omit premiered")
-	assert.Equal(t, "2009", model.Year)
-	assert.Equal(t, "Marigold Junction — Broadway — December 2009", model.Title)
+	assert.Equal(t, "2010", model.Year)
+	assert.Equal(t, "Marigold Junction — Broadway — August 2010", model.Title)
 	assert.Equal(t, "Marigold Junction", model.Set.Name)
 }
 
@@ -436,24 +436,24 @@ func TestFromRecordingFullDate(t *testing.T) {
 	t.Parallel()
 
 	full := encora.Recording{
-		ID:   90118317,
-		Show: "Tideline Manor",
+		ID:   90100777,
+		Show: "Painted Stallions",
 		Tour: "First US National Tour",
 		Date: encora.Date{FullDate: "2024-01-21", MonthKnown: true, DayKnown: true},
 		Cast: []encora.CastEntry{
 			{
-				Performer: encora.Performer{Name: "Riley Chen"},
-				Character: encora.Character{Name: "Tideline Manor", Order: 1},
+				Performer: encora.Performer{Name: "Cyrus Halle"},
+				Character: encora.Character{Name: "Lead", Order: 1},
 			},
 		},
-		Notes: "Great recording.",
+		Notes: "Synthetic fixture recording.",
 	}
 	model := nfo.FromRecording(full)
 	assert.Equal(t, "2024-01-21", model.Premiered)
-	assert.Equal(t, "Tideline Manor — First US National Tour — 2024-01-21", model.Title)
+	assert.Equal(t, "Painted Stallions — First US National Tour — 2024-01-21", model.Title)
 	require.Len(t, model.UniqueIDs, 1)
 	assert.Equal(t, "encora", model.UniqueIDs[0].Type)
-	assert.Equal(t, "90118317", model.UniqueIDs[0].Value)
+	assert.Equal(t, "90100777", model.UniqueIDs[0].Value)
 	assert.True(t, model.UniqueIDs[0].Default)
 }
 
@@ -461,7 +461,7 @@ func TestWriteFile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	path, err := nfo.WriteFile(dir, nfo.FromRecording(rec))
 	require.NoError(t, err)
 
@@ -481,7 +481,7 @@ func TestWriteRecordingFileEmitsOneUniqueIDPerExternalID(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	_, err := nfo.WriteRecordingFile(
 		context.Background(),
 		dir,
@@ -512,7 +512,7 @@ func TestWriteRecordingFileFallbackEncoraWhenListEmpty(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	rec := loadMarigold(t)
+	rec := loadPilot(t)
 	_, err := nfo.WriteRecordingFile(context.Background(), dir, rec, nfo.WriteOptions{})
 	require.NoError(t, err)
 
@@ -526,7 +526,7 @@ func TestWriteRecordingFileFallbackEncoraWhenListEmpty(t *testing.T) {
 
 // TestFormatRolePrefixesStatus asserts the role string carries the
 // understudy/swing/etc. abbreviation as a leading token, matching the
-// "U/s Elsa" convention the legacy hand-rolled writer used and that
+// "u/s Lead" convention the legacy hand-rolled writer used and that
 // Jellyfin echoes verbatim into the cast list.
 func TestFormatRoleWithStatus(t *testing.T) {
 	t.Parallel()
@@ -537,9 +537,9 @@ func TestFormatRoleWithStatus(t *testing.T) {
 		role   string
 		want   string
 	}{
-		{"no status", nil, "Elsa", "Elsa"},
-		{"empty abbrev", &encora.CastStatus{}, "Elsa", "Elsa"},
-		{"understudy", &encora.CastStatus{Abbreviation: "u/s"}, "Elsa", "u/s Elsa"},
+		{"no status", nil, "Lead", "Lead"},
+		{"empty abbrev", &encora.CastStatus{}, "Lead", "Lead"},
+		{"understudy", &encora.CastStatus{Abbreviation: "u/s"}, "Lead", "u/s Lead"},
 		{"alternate", &encora.CastStatus{Abbreviation: "alt"}, "Companion", "alt Companion"},
 		{"swing", &encora.CastStatus{Abbreviation: "s/w"}, "", "s/w"},
 	}
@@ -549,7 +549,7 @@ func TestFormatRoleWithStatus(t *testing.T) {
 			t.Parallel()
 			rec := encora.Recording{
 				ID:   1,
-				Show: "Velvet Antlers",
+				Show: "Fixture Show",
 				Cast: []encora.CastEntry{{
 					Performer: encora.Performer{ID: 99, Name: "Test Performer"},
 					Character: encora.Character{Name: tt.role, Order: 1},

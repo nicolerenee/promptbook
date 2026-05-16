@@ -168,8 +168,21 @@ func (e *Engine) runOne(ctx context.Context) {
 // rows whose file is gone), then walk every WatchDir and enqueue or
 // skip each video. Pure over (DB, disk) so it's straightforward to
 // test without time.
+//
+// At the end of the pass, every queue row under one of WatchDirs that
+// was NOT touched (i.e. last_seen_at is still older than this pass's
+// start) is evicted. This gives rescans full-replace semantics: a
+// queue row whose backing file still happens to exist but whose
+// classification has gone stale (e.g. the folder's largest media
+// file changed between passes after an in-flight download settled)
+// gets cleaned out so the fresh walk's row stands alone.
 func (e *Engine) Scan(ctx context.Context) (Result, error) {
 	res := Result{}
+	// Stamp the pass start BEFORE any EnqueueFile call. EnqueueFile
+	// upserts last_seen_at to time.Now().UTC(), so rows touched during
+	// the walk will have last_seen_at >= scanStartedAt; rows we didn't
+	// touch keep their older stamp and become eviction candidates.
+	scanStartedAt := time.Now().UTC()
 
 	if err := e.reconcileMissing(ctx, &res); err != nil {
 		return res, fmt.Errorf("reconcile queue: %w", err)
@@ -181,6 +194,15 @@ func (e *Engine) Scan(ctx context.Context) (Result, error) {
 		}
 		e.walkDir(ctx, dir, &res)
 	}
+
+	removed, err := storage.DeleteStaleQueueEntriesUnder(ctx, e.DB, e.WatchDirs, scanStartedAt)
+	if err != nil {
+		// Per-pass eviction failure shouldn't poison the whole Scan
+		// result — the next pass will retry — but record it so the
+		// operator can see the sweep didn't complete.
+		recordError(&res, fmt.Errorf("evict stale queue rows: %w", err))
+	}
+	res.Removed += removed
 
 	return res, nil
 }
@@ -255,6 +277,13 @@ func (e *Engine) walkDir(ctx context.Context, dir string, res *Result) {
 		path := filepath.Join(dir, entry.Name())
 		if entry.IsDir() {
 			e.walkFolderUnit(ctx, path, res)
+			continue
+		}
+		if isInFlightDownload(entry.Name()) {
+			// rclone / browser / curl partial-download artifact. Skip
+			// outright so we don't bake a path that's about to be
+			// renamed into a queue row.
+			res.Skipped++
 			continue
 		}
 		if _, ok := ingest.VideoExtensions[strings.ToLower(filepath.Ext(path))]; !ok {
@@ -394,6 +423,38 @@ func isMetadataSidecar(base string) bool {
 	return ok
 }
 
+// inFlightDownloadSuffixes is the lowercase set of trailing-extension
+// markers that mean "this file is still being written." Matched against
+// the *last* extension of the basename so multi-extension forms like
+// `Show.mp4.780b8258.partial` (rclone) and `Show.mp4.crdownload`
+// (Chrome) are both caught.
+//
+//nolint:gochecknoglobals // immutable lookup table.
+var inFlightDownloadSuffixes = map[string]struct{}{
+	".partial":    {}, // rclone default --partial-suffix.
+	".part":       {}, // curl, wget, transmission, firefox.
+	".crdownload": {}, // chrome / chromium / edge.
+	".download":   {}, // safari.
+	".filepart":   {}, // kde / kget.
+}
+
+// isInFlightDownload reports whether base names a file that's still
+// being written by an external transfer tool (rclone, a browser, curl,
+// etc.). The scanner must NOT enqueue or classify these — the path is
+// about to be renamed and any row keyed on it would be stranded after
+// the rename completes. Also catches rclone's `.rclone-tmp*`
+// per-transfer temp files via substring match.
+func isInFlightDownload(base string) bool {
+	low := strings.ToLower(base)
+	if _, ok := inFlightDownloadSuffixes[filepath.Ext(low)]; ok {
+		return true
+	}
+	if strings.Contains(low, ".rclone-tmp") {
+		return true
+	}
+	return false
+}
+
 // collectMediaFiles walks folder recursively and returns every file
 // it finds (video, audio, image, subtitle, document, …) so the
 // classifier and the eventual extras-mover can preserve everything
@@ -432,6 +493,16 @@ func collectMediaFiles(folder string) ([]mediaFile, error) {
 			// doesn't surface them as importable extras. Only filter
 			// at the folder root — a `photos/backdrop.jpg` inside the
 			// drop is real user content, not a sidecar.
+			return nil
+		}
+		if isInFlightDownload(base) {
+			// Partial-download artifact from rclone / a browser / curl.
+			// Including it in the folder's classification would bake a
+			// path that's about to be renamed into the queue row's
+			// classification_json (or, if it happens to be the largest
+			// "media" file, into FilePath itself). Skip so the folder
+			// is classified from settled files only — the in-flight
+			// transfer will land on the next pass once it finishes.
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))

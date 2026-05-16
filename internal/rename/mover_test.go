@@ -23,8 +23,8 @@ func TestPlanApplyMoves(t *testing.T) {
 	plan := rename.Plan{
 		Source:       source,
 		LibraryRoot:  library,
-		TargetFolder: "Marigold - Broadway - December 2009 [encora-90100222]",
-		TargetFile:   "Marigold - Broadway - December 2009 [pro-shot]",
+		TargetFolder: "Marigold - Broadway - August 2010 [encora-90100222]",
+		TargetFile:   "Marigold - Broadway - August 2010 [pro-shot]",
 		Extension:    ".mp4",
 	}
 
@@ -51,8 +51,8 @@ func TestPlanApplySameFileNoOp(t *testing.T) {
 	root := t.TempDir()
 	plan := rename.Plan{
 		LibraryRoot:  root,
-		TargetFolder: "Marigold - Broadway - December 2009 [encora-90100222]",
-		TargetFile:   "Marigold - Broadway - December 2009 [pro-shot]",
+		TargetFolder: "Marigold - Broadway - August 2010 [encora-90100222]",
+		TargetFile:   "Marigold - Broadway - August 2010 [pro-shot]",
 		Extension:    ".mp4",
 	}
 	require.NoError(t, os.MkdirAll(plan.AbsoluteFolder(), 0o755))

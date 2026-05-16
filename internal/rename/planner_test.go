@@ -18,7 +18,7 @@ import (
 // suites.
 func fixtureRecording(t *testing.T) encora.Recording {
 	t.Helper()
-	path := filepath.Join("..", "encora", "testdata", "recording_8222.json")
+	path := filepath.Join("..", "encora", "testdata", "recording_pilot.json")
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
 	var r encora.Recording
@@ -45,8 +45,8 @@ func TestBuildPlan(t *testing.T) {
 			folderTmpl:    "{Show} - {Tour} - {Date} [encora-{EncoraID}]",
 			fileTmpl:      "{Show} - {Tour} - {Date} [{Master}]",
 			source:        "/incoming/Marigold.mp4",
-			wantFolder:    "Marigold Junction - Broadway - December 2009 [encora-90100222]",
-			wantFile:      "Marigold Junction - Broadway - December 2009 [pro-shot]",
+			wantFolder:    "Marigold Junction - Broadway - August 2010 [encora-90100222]",
+			wantFile:      "Marigold Junction - Broadway - August 2010 [pro-shot]",
 			wantExtension: ".mp4",
 		},
 		{
@@ -54,8 +54,8 @@ func TestBuildPlan(t *testing.T) {
 			folderTmpl:    "{Show} - {Tour} - {Year}",
 			fileTmpl:      "{Show} - {Year}",
 			source:        "/whatever.mkv",
-			wantFolder:    "Marigold Junction - Broadway - 2009",
-			wantFile:      "Marigold Junction - 2009",
+			wantFolder:    "Marigold Junction - Broadway - 2010",
+			wantFile:      "Marigold Junction - 2010",
 			wantExtension: ".mkv",
 		},
 	}

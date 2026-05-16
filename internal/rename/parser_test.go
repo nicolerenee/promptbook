@@ -22,7 +22,10 @@ func TestResolveFromName(t *testing.T) {
 		wantID int64
 		wantOK bool
 	}{
-		{name: "encora_brackets", base: "Marigold - Broadway - 2009 [encora-90100222].mp4", wantID: 90100222, wantOK: true},
+		{
+			name: "encora_brackets", base: "Marigold - Broadway - 2009 [encora-90100222].mp4",
+			wantID: 90100222, wantOK: true,
+		},
 		{name: "e_brackets", base: "Some Show [e-1234].mp4", wantID: 1234, wantOK: true},
 		{name: "e_braces", base: "Some Show {e-9999}.mp4", wantID: 9999, wantOK: true},
 		{name: "encora_parens", base: "Some Show (encora-77).mp4", wantID: 77, wantOK: true},

@@ -32,7 +32,7 @@ at per_page=100 (Laravel-style: `next_page_url`, `current_page`, `last_page`, `t
 Plain JSON array of URL strings to encora's CDN:
 
 ```json
-["https://fixture.invalid/storage/0099/marigold-junction-screenshot.png"]
+["https://encora.invalid/storage/0001/fixture-screenshot.png"]
 ```
 
 Hot-linkable. For "custom images" requirement, we cache or override in promptbook.

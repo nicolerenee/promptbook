@@ -43,10 +43,10 @@ func rendererHarness(t *testing.T) (context.Context, *ent.Client, *imagecache.Ca
 	return ctx, db, cache, r
 }
 
-// rawGreenwich BeaconJSON is the raw_json blob for the seeded test recording.
+// rawFixtureJSON is the raw_json blob for the seeded test recording.
 // Pulled out as a const so the long inline string doesn't trip the
 // 120-char line lint.
-const rawGreenwich BeaconJSON = `{"id":90004242,"show":"Greenwich Beacon","tour":"Broadway",` +
+const rawFixtureJSON = `{"id":90004242,"show":"Greenwich Beacon","tour":"Broadway",` +
 	`"date":{"full_date":"2017-04-21","month_known":true,"day_known":true,"time":"evening"},` +
 	`"master":"X","metadata":{"show_id":7}}`
 
@@ -55,7 +55,7 @@ func seedRecordingForRender(ctx context.Context, t *testing.T, db *ent.Client, r
 	require.NoError(t, db.Show.Create().SetID(7).SetName("Greenwich Beacon").Exec(ctx))
 	require.NoError(t, db.Recording.Create().
 		SetID(rid).SetShowID(7).SetTour("Broadway").
-		SetDateFull("2017-04-21").SetRawJSON(rawGreenwich BeaconJSON).Exec(ctx))
+		SetDateFull("2017-04-21").SetRawJSON(rawFixtureJSON).Exec(ctx))
 }
 
 func writeRenderHarnessPosterSrc(t *testing.T, cache *imagecache.Cache, rid int64) {

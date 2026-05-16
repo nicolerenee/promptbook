@@ -71,17 +71,17 @@ func TestLoadRecording(t *testing.T) {
 		require.NoError(t, lerr)
 		assert.Equal(t, "Marigold Junction", loaded.Recording.Show)
 		assert.Equal(t, "Broadway", loaded.Recording.Tour)
-		assert.True(t, loaded.InCollection, "marigold is owned in fixtures")
-		assert.False(t, loaded.InWants, "marigold is owned, not wanted")
+		assert.True(t, loaded.InCollection, "pilot fixture is owned in collection")
+		assert.False(t, loaded.InWants, "pilot fixture is owned, not wanted")
 		assert.NotEmpty(t, loaded.Format)
 	})
 
 	t.Run("found_in_wants", func(t *testing.T) {
 		t.Parallel()
-		// Chasing Polaris 90001143 is in wants.json fixture.
-		loaded, lerr := storage.LoadRecording(t.Context(), db, 90001143)
+		// 90000200 is the first wants entry in the synthetic fixture.
+		loaded, lerr := storage.LoadRecording(t.Context(), db, 90000200)
 		require.NoError(t, lerr)
-		assert.Equal(t, "Chasing Polaris", loaded.Recording.Show)
+		assert.Equal(t, "Velvet Antlers", loaded.Recording.Show)
 		assert.False(t, loaded.InCollection)
 		assert.True(t, loaded.InWants)
 	})
@@ -206,7 +206,7 @@ func TestLoadRecordingMissingPerformerSilent(t *testing.T) {
 		performerID int64 = 90203
 		characterID int64 = 90204
 	)
-	seedShow(ctx, t, db, showID, "Six")
+	seedShow(ctx, t, db, showID, "Sextet")
 
 	rec := encora.Recording{
 		ID: recordingID,

@@ -25,8 +25,8 @@ func TestRenderHeadshot(t *testing.T) {
 	// circular visual.
 	assert.NotContains(t, body, "<circle ",
 		"portrait headshot should be a solid rectangle, not a circle")
-	// Initials: first letter of each of the first two words: "B" + "D".
-	assert.Contains(t, body, ">BD<", "expected initials BD in headshot text node")
+	// Initials: first letter of each of the first two words: "A" + "M".
+	assert.Contains(t, body, ">AM<", "expected initials AM in headshot text node")
 	assert.Contains(t, body, `viewBox="0 0 400 600"`,
 		"headshot viewBox should be 400x600 (2:3 portrait)")
 }

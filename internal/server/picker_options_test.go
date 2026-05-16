@@ -246,7 +246,7 @@ func TestPickerRecordingFanartOptions(t *testing.T) {
 func TestPickerRecordingFanartOptionsNoScreenshots(t *testing.T) {
 	t.Parallel()
 
-	const recID int64 = 8326 // has_screenshots = false in fixture.
+	const recID int64 = 90000100 // has_screenshots = false in synthetic fixture.
 	enc := &fakeScreenshotClient{
 		err: errors.New("must not be called"),
 	}

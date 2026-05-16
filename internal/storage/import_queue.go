@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/nicolerenee/promptbook/internal/ent"
 	"github.com/nicolerenee/promptbook/internal/ent/manualimportqueue"
+	"github.com/nicolerenee/promptbook/internal/ent/predicate"
 )
 
 // Confidence labels for the scanner's auto-suggested Encora ID. Empty
@@ -121,6 +123,43 @@ func RemoveQueueEntryByPath(ctx context.Context, client *ent.Client, path string
 		return fmt.Errorf("delete manual_import_queue path %q: %w", path, err)
 	}
 	return nil
+}
+
+// DeleteStaleQueueEntriesUnder removes queue rows whose file_path lives
+// under one of dirs AND whose last_seen_at is strictly before cutoff.
+// This is the scanner's end-of-pass sweep: rows still on disk but not
+// touched by the current walk (because their classification has gone
+// stale, or because an in-flight-download filter dropped the file) get
+// flushed so the next scan can rebuild them from current state. The
+// dirs filter scopes the delete to the calling Engine's watched roots
+// so other queue rows (other scanners, manual uploads) aren't touched.
+//
+// Returns the number of rows removed. An empty dirs argument is a
+// no-op — the safer default when a caller forgot to pass its roots.
+func DeleteStaleQueueEntriesUnder(
+	ctx context.Context, client *ent.Client, dirs []string, cutoff time.Time,
+) (int, error) {
+	if len(dirs) == 0 {
+		return 0, nil
+	}
+	prefixes := make([]predicate.ManualImportQueue, 0, len(dirs))
+	for _, d := range dirs {
+		// Append the path separator so "/store01/incoming" doesn't also
+		// match "/store01/incoming-old/..."; filepath.Clean strips any
+		// caller-supplied trailing slash so the join is canonical.
+		prefix := filepath.Clean(d) + string(filepath.Separator)
+		prefixes = append(prefixes, manualimportqueue.FilePathHasPrefix(prefix))
+	}
+	n, err := client.ManualImportQueue.Delete().
+		Where(
+			manualimportqueue.LastSeenAtLT(cutoff),
+			manualimportqueue.Or(prefixes...),
+		).
+		Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("delete stale manual_import_queue rows: %w", err)
+	}
+	return n, nil
 }
 
 // ListQueue returns all queue rows in (discovered_at ASC, id ASC) order

@@ -18,12 +18,12 @@ import (
 // based on the show_id query and presence/absence of actor_ids.
 //
 // Routes:
-//   - show_id=90100728 + actor_ids present → 200 + 90100728.json
-//   - show_id=90100728 + actor_ids absent  → 400 + 90100728-no-actor.json
-//   - show_id=greenwich-beacon  + actor_ids present → 400 + greenwich-beacon.json (used by the
-//     invalid-show-id test, where a synthetic httptest server forces this
-//     route regardless of the int64 the client serializes — the fixture's
-//     job is to exercise the 400 error-shape parser).
+//   - show_id=90100728 + actor_ids present → 200 + fixture-show.json
+//   - show_id=90100728 + actor_ids absent  → 400 + fixture-show-no-actor.json
+//   - show_id=invalid-slug + actor_ids present → 400 + fixture-show-invalid.json
+//     (used by the invalid-show-id test, where a synthetic httptest server
+//     forces this route regardless of the int64 the client serializes — the
+//     fixture's job is to exercise the 400 error-shape parser).
 //
 // Anything else 404s so a misrouted test fails loudly instead of silently
 // passing on an empty body.
@@ -37,11 +37,11 @@ func fixtureServer(t *testing.T) *httptest.Server {
 
 		switch {
 		case showID == "90100728" && actorIDs != "":
-			writeFixture(t, w, http.StatusOK, "90100728.json")
+			writeFixture(t, w, http.StatusOK, "fixture-show.json")
 		case showID == "90100728" && actorIDs == "":
-			writeFixture(t, w, http.StatusBadRequest, "90100728-no-actor.json")
-		case showID == "greenwich-beacon":
-			writeFixture(t, w, http.StatusBadRequest, "greenwich-beacon.json")
+			writeFixture(t, w, http.StatusBadRequest, "fixture-show-no-actor.json")
+		case showID == "invalid-slug":
+			writeFixture(t, w, http.StatusBadRequest, "fixture-show-invalid.json")
 		default:
 			http.NotFound(w, r)
 		}
@@ -141,15 +141,15 @@ func TestImagesEmptyPerformerIDsErrors(t *testing.T) {
 }
 
 // TestImagesInvalidShowIDError uses a hand-rolled server that always
-// returns the greenwich-beacon.json fixture (400 + "Invalid show_id") regardless of
-// the show_id integer the client serializes. The fixture's role is to
-// exercise the 400 error-shape parser — making the upstream message
-// available in the wrapped error.
+// returns the fixture-show-invalid.json fixture (400 + "Invalid show_id")
+// regardless of the show_id integer the client serializes. The fixture's
+// role is to exercise the 400 error-shape parser — making the upstream
+// message available in the wrapped error.
 func TestImagesInvalidShowIDError(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		b, err := os.ReadFile(filepath.Join("testdata", "greenwich-beacon.json"))
+		b, err := os.ReadFile(filepath.Join("testdata", "fixture-show-invalid.json"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
